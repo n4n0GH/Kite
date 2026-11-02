@@ -162,7 +162,22 @@ pub struct Runtime {
     notifications: HashMap<String, Vec<String>>,
     /// Background contexts that called `_ready`.
     ready: HashMap<String, String>,
+    /// Messages/connections sent before the extension's background page
+    /// finished loading; replayed on `_ready` (Firefox semantics).
+    waiting_for_background: HashMap<String, Vec<QueuedCall>>,
 }
+
+struct QueuedCall {
+    origin: Origin,
+    ctx: String,
+    method: String,
+    args: Vec<Value>,
+    call_id: i64,
+    since: std::time::Instant,
+}
+
+/// How long callers wait for a starting background page.
+const BACKGROUND_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 const NO_RECEIVER: &str = "Could not establish connection. Receiving end does not exist.";
 
@@ -226,6 +241,7 @@ impl Runtime {
             uninstall_urls: HashMap::new(),
             notifications: HashMap::new(),
             ready: HashMap::new(),
+            waiting_for_background: HashMap::new(),
         };
         let ids: Vec<String> = rt.registry.extensions.iter().map(|e| e.info.id.clone()).collect();
         for id in ids {
@@ -321,6 +337,7 @@ impl Runtime {
     }
 
     fn drop_ext_state(&mut self, id: &str) {
+        self.waiting_for_background.remove(id);
         self.menus.retain(|m| m.ext != id);
         self.alarms.retain(|(e, _), _| e != id);
         self.web_request.remove(id);
@@ -444,8 +461,8 @@ impl Runtime {
 
     fn sender(&self, ctx: &Context, ext: &str) -> Value {
         let mut s = json!({"id": ext, "url": ctx.url, "frameId": ctx.frame_id, "envType": if ctx.kind == "content" { "content_child" } else { "addon_child" }});
-        if let Ok(u) = url::Url::parse(&ctx.url) {
-            s["origin"] = u.origin().ascii_serialization().into();
+        if let Some(o) = origin_of(&ctx.url) {
+            s["origin"] = o.into();
         }
         if ctx.tab_id >= 0 {
             if let Some(t) = self.tabs.get(&ctx.tab_id) {
@@ -759,6 +776,22 @@ impl Runtime {
     pub fn tick(&mut self) -> Vec<Effect> {
         let now = now_ms() as f64;
         let mut fx = vec![];
+        // Give up on background pages that never finished loading.
+        for queue in self.waiting_for_background.values_mut() {
+            queue.retain(|q| {
+                if q.since.elapsed() < BACKGROUND_STARTUP_TIMEOUT {
+                    return true;
+                }
+                if q.method.ends_with("connect") {
+                    let port = q.args.first().and_then(Value::as_str).unwrap_or_default();
+                    fx.push(Effect::Deliver { view: q.origin.view.clone(), ctxs: vec![q.ctx.clone()], payload: json!({"type": "portDisconnect", "portId": port, "error": NO_RECEIVER}) });
+                } else {
+                    fx.push(Effect::Reply { view: q.origin.view.clone(), ctx: q.ctx.clone(), call_id: q.call_id, result: Err(NO_RECEIVER.into()) });
+                }
+                false
+            });
+        }
+        self.waiting_for_background.retain(|_, q| !q.is_empty());
         let due: Vec<(String, String)> = self.alarms.iter().filter(|(_, a)| a.scheduled <= now).map(|(k, _)| k.clone()).collect();
         for key in due {
             let a = self.alarms.get(&key).cloned().unwrap();
@@ -798,6 +831,34 @@ impl Runtime {
         vec![]
     }
 
+    /// Contexts of `ext` (other than `except`) that receive runtime messages:
+    /// extension pages, but a background page only once it finished loading.
+    fn page_targets(&self, ext: &str, except: &str) -> Vec<String> {
+        self.ctxs
+            .iter()
+            .filter(|(k, c)| c.ext == ext && c.kind != "content" && *k != except)
+            .filter(|(k, c)| c.kind != "background" || self.ready.get(ext).is_some_and(|r| r == *k))
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+
+    /// The extension has a background page that has not finished loading.
+    fn background_starting(&self, ext: &str) -> bool {
+        !self.ready.contains_key(ext) && self.registry.get(ext).is_some_and(|e| e.info.enabled && e.manifest.background.is_some())
+    }
+
+    fn queue_for_background(&mut self, ext: &str, origin: &Origin, ctx: &str, method: &str, args: &[Value], call_id: i64) {
+        log::debug!("{ext}: background not ready, queueing {method} from {ctx}");
+        self.waiting_for_background.entry(ext.to_owned()).or_default().push(QueuedCall {
+            origin: origin.clone(),
+            ctx: ctx.to_owned(),
+            method: method.to_owned(),
+            args: args.to_vec(),
+            call_id,
+            since: std::time::Instant::now(),
+        });
+    }
+
     fn send_message(&mut self, origin: &Origin, from_ctx: &str, call_id: i64, ext: &str, targets: Vec<String>, message: Value, kind: &str) -> Handled {
         let Some(c) = self.ctxs.get(from_ctx).cloned() else { return Handled::Now(Err("context not registered".into())) };
         if targets.is_empty() {
@@ -815,6 +876,7 @@ impl Runtime {
 
     fn port_disconnect_from(&mut self, port: &str, from: &str, error: Option<String>) -> Vec<Effect> {
         let Some(p) = self.ports.get_mut(port) else { return vec![] };
+        log::debug!("port {port}: disconnect from {from} (opener {}, others {:?})", p.opener, p.others);
         let payload = json!({"type": "portDisconnect", "portId": port, "error": error});
         if p.opener == from {
             let others = p.others.clone();
@@ -1165,6 +1227,7 @@ impl Runtime {
             // ---------------- internal ----------------
             ("_", "register") => {
                 let info = arg(args, 0);
+                log::debug!("context {ctx} registered: {} in {}", info["kind"], origin.view);
                 let kind = info["kind"].as_str().unwrap_or("content").to_owned();
                 let url = info["url"].as_str().unwrap_or_default().to_owned();
                 self.ctxs.insert(
@@ -1182,13 +1245,31 @@ impl Runtime {
                 let tab = (origin.tab_id >= 0).then(|| self.tabs.get(&origin.tab_id).cloned()).flatten();
                 now!(Ok(json!({"tabId": origin.tab_id, "windowId": origin.window_id, "tab": tab})))
             }
-            ("_", "unregister") => Handled::With(Ok(Value::Null), self.unregister(ctx)),
+            ("_", "unregister") => {
+                log::debug!("context {ctx} unregistered by page");
+                Handled::With(Ok(Value::Null), self.unregister(ctx))
+            }
             ("_", "ready") => {
                 self.ready.insert(ext_id.into(), ctx.into());
                 let mut fx = vec![];
                 if let Some(ev) = self.pending_startup.remove(ext_id) {
                     let payload = json!({"type": "event", "name": ev["event"], "args": ev["args"]});
                     fx.extend(self.deliver(&[ctx.to_owned()], payload));
+                }
+                // Deliver what was sent while the background page was loading.
+                for q in self.waiting_for_background.remove(ext_id).unwrap_or_default() {
+                    if !self.ctxs.contains_key(&q.ctx) {
+                        continue;
+                    }
+                    let replay = match self.dispatch(&q.origin, ext_id, &q.ctx, &q.method, &q.args, q.call_id) {
+                        Handled::Now(r) => vec![Effect::Reply { view: q.origin.view.clone(), ctx: q.ctx.clone(), call_id: q.call_id, result: r }],
+                        Handled::Later(e) => e,
+                        Handled::With(r, mut e) => {
+                            e.insert(0, Effect::Reply { view: q.origin.view.clone(), ctx: q.ctx.clone(), call_id: q.call_id, result: r });
+                            e
+                        }
+                    };
+                    fx.extend(replay);
                 }
                 Handled::With(Ok(Value::Null), fx)
             }
@@ -1198,6 +1279,7 @@ impl Runtime {
             }
             ("_", "portPost") => {
                 let port = arg_str(args, 0);
+                log::debug!("port {port}: post from {ctx} (known: {})", self.ports.contains_key(&port));
                 let Some(p) = self.ports.get(&port) else { return now!(Err("Attempt to postMessage on disconnected port".into())) };
                 let targets = if p.opener == ctx { p.others.clone() } else { vec![p.opener.clone()] };
                 Handled::With(Ok(Value::Null), self.deliver(&targets, json!({"type": "portMessage", "portId": port, "message": arg(args, 1)})))
@@ -1227,7 +1309,12 @@ impl Runtime {
                     let targets: Vec<String> = self.ctxs.iter().filter(|(_, c)| c.ext == target_ext && c.kind != "content").map(|(k, _)| k.clone()).collect();
                     return self.send_message(origin, ctx, call_id, ext_id, targets, message, "messageExternal");
                 }
-                let targets: Vec<String> = self.ctxs.iter().filter(|(k, c)| c.ext == ext_id && c.kind != "content" && *k != ctx).map(|(k, _)| k.clone()).collect();
+                let targets = self.page_targets(ext_id, ctx);
+                // The background page is the usual receiver: wait for it.
+                if self.background_starting(ext_id) {
+                    self.queue_for_background(ext_id, origin, ctx, method, args, call_id);
+                    return Handled::Later(vec![]);
+                }
                 self.send_message(origin, ctx, call_id, ext_id, targets, message, "message")
             }
             ("tabs", "sendMessage") => {
@@ -1258,13 +1345,19 @@ impl Runtime {
                 } else {
                     let target_ext = arg_str(args, 1);
                     let te = if target_ext.is_empty() { ext_id.to_owned() } else { target_ext };
-                    (self.ctxs.iter().filter(|(k, c)| c.ext == te && c.kind != "content" && *k != ctx).map(|(k, _)| k.clone()).collect(), arg(args, 2))
+                    let targets = self.page_targets(&te, ctx);
+                    if te == ext_id && self.background_starting(ext_id) {
+                        self.queue_for_background(ext_id, origin, ctx, method, args, call_id);
+                        return Handled::Now(Ok(Value::Null));
+                    }
+                    (targets, arg(args, 2))
                 };
                 let Some(c) = self.ctxs.get(ctx).cloned() else { return now!(Err("context not registered".into())) };
                 if targets.is_empty() {
                     let fx = self.deliver(&[ctx.to_owned()], json!({"type": "portDisconnect", "portId": port, "error": NO_RECEIVER}));
                     return Handled::With(Ok(Value::Null), fx);
                 }
+                log::debug!("port {port}: {ctx} connected to {targets:?}");
                 self.ports.insert(port.clone(), Port { opener: ctx.into(), others: targets.clone() });
                 let fx = self.deliver(&targets, json!({"type": "connect", "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id)}));
                 Handled::With(Ok(Value::Null), fx)
@@ -2326,6 +2419,19 @@ impl Runtime {
     }
 }
 
+/// Origin as browsers report it in `MessageSender.origin`. The WHATWG URL
+/// spec gives non-special schemes (like moz-extension:) an opaque "null"
+/// origin, but Firefox reports `moz-extension://<uuid>`, and extensions such
+/// as uBlock Origin rely on that to recognise their own pages.
+pub fn origin_of(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u.host_str()?;
+    Some(match u.port() {
+        Some(p) => format!("{}://{host}:{p}", u.scheme()),
+        None => format!("{}://{host}", u.scheme()),
+    })
+}
+
 pub fn download_json(i: &crate::downloads::DownloadRecord) -> Value {
     json!({
         "id": i.id, "url": i.url, "filename": i.path, "mime": i.mime, "totalBytes": i.total, "bytesReceived": i.received,
@@ -2403,6 +2509,7 @@ mod tests {
         let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1 };
         rt.browser_event("tabCreated", &json!({"tab": {"id": 5, "windowId": 1, "index": 0, "url": "https://kde.org/", "title": "KDE", "active": true}}));
         rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        rt.call(&bg, &tok, "bg", "_.ready", json!([]), 1);
         rt.call(&tab, &tok, "cs", "_.register", json!([{"kind": "content", "url": "https://kde.org/"}]), 1);
         // content -> background
         let fx = rt.call(&tab, &tok, "cs", "runtime.sendMessage", json!(["", {"hi": 1}]), 7);
@@ -2470,6 +2577,33 @@ mod tests {
         assert!(rt.tick().is_empty());
         // unsupported API rejects instead of hanging
         assert!(reply(&rt.call(&bg, &tok, "bg", "foo.bar", json!([]), 8)).is_err());
+    }
+
+    #[test]
+    fn waits_for_background_page() {
+        let (_d, mut rt, tok) = setup();
+        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let popup = Origin { view: "popup:t@x".into(), tab_id: -1, window_id: -1 };
+        rt.call(&popup, &tok, "pp", "_.register", json!([{"kind": "popup"}]), 1);
+        // Another extension page is open (it must not swallow the messages).
+        rt.call(&popup, &tok, "pp2", "_.register", json!([{"kind": "tab"}]), 1);
+        // Background page exists but has not finished loading yet.
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        let fx = rt.call(&popup, &tok, "pp", "runtime.connect", json!(["P1", "", {"name": "n"}]), 2);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Deliver { .. })), "connect must wait: {fx:?}");
+        let fx = rt.call(&popup, &tok, "pp", "runtime.sendMessage", json!(["", "hi"]), 3);
+        assert!(fx.is_empty(), "message must wait: {fx:?}");
+        // Background finished loading: both are delivered.
+        let fx = rt.call(&bg, &tok, "bg", "_.ready", json!([]), 4);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { view, payload, .. } if view == "bg:t@x" && payload["type"] == "connect")));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { view, payload, .. } if view == "bg:t@x" && payload["type"] == "message")));
+    }
+
+    #[test]
+    fn sender_origins() {
+        assert_eq!(origin_of("moz-extension://abc-123/popup.html?x").as_deref(), Some("moz-extension://abc-123"));
+        assert_eq!(origin_of("https://kde.org:8443/a").as_deref(), Some("https://kde.org:8443"));
+        assert_eq!(origin_of("about:blank"), None);
     }
 
     #[test]
