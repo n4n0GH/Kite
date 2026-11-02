@@ -53,6 +53,9 @@ pub fn defaults() -> Map<String, Value> {
         "privacy.cookies": "all",             // "all" | "noThirdParty" | "none"
         "privacy.clearOnExit": false,
         "privacy.sendReferer": true,
+        // Passwords
+        "passwords.save": true,
+        "passwords.autofill": true,
         // Downloads
         "downloads.directory": downloads,
         "downloads.askWhereToSave": false,

@@ -13,6 +13,14 @@ QtObject {
     property string viewKind: "tab"
     signal deliver(string json)
 
+    // Password manager hooks, called by the bridge world of a tab. Handlers
+    // (WebTab) use the view's own URL, never anything supplied by the page.
+    signal fillLogin(string json)
+    signal passwordFormSubmitted(string json)
+    signal loginFormDetected(bool emptyPassword)
+    function formSubmitted(json) { if (viewKind === "tab") passwordFormSubmitted(json) }
+    function loginFormFound(emptyPassword) { if (viewKind === "tab") loginFormDetected(emptyPassword) }
+
     function call(token, ctx, method, args, callId) {
         Extensions.call(viewKey, tabId, windowId, token, ctx, method, args, callId)
     }

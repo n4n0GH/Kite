@@ -24,6 +24,7 @@ Kirigami.ApplicationWindow {
         {key: "browsing", title: "Browsing", icon: "internet-web-browser"},
         {key: "search", title: "Search Engines", icon: "search"},
         {key: "privacy", title: "Privacy", icon: "preferences-system-privacy"},
+        {key: "passwords", title: "Passwords", icon: "dialog-password"},
         {key: "adblock", title: "Content Blocking", icon: "security-high"},
         {key: "downloads", title: "Downloads", icon: "download"},
         {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
@@ -49,6 +50,7 @@ Kirigami.ApplicationWindow {
                 case "browsing": return browsing
                 case "search": return search
                 case "privacy": return privacy
+                case "passwords": return passwords
                 case "adblock": return adblock
                 case "downloads": return downloads
                 case "sites": return sites
@@ -175,6 +177,148 @@ Kirigami.ApplicationWindow {
                         Browser.clearPrivateData(JSON.stringify({since: s, history: cHistory.checked, cookies: cCookies.checked, cache: cCache.checked, downloads: cDownloads.checked, closedTabs: cClosed.checked}))
                         w.app.toast("Browsing data cleared", "edit-clear-history")
                     }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: passwords
+        ColumnLayout {
+            id: pw
+            spacing: Kirigami.Units.largeSpacing
+            property var entries: []
+            property var exceptions: []
+            property var revealed: ({})
+            property string message: ""
+            function reload() {
+                entries = Passwords.locked ? [] : JSON.parse(Passwords.list())
+                exceptions = JSON.parse(Passwords.exceptions())
+            }
+            Component.onCompleted: reload()
+            Connections { target: Passwords; function onChanged() { pw.reload() } }
+            readonly property var shown: entries.filter(e => search.text === "" || (e.host + " " + e.username).toLowerCase().includes(search.text.toLowerCase()))
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                QQC2.CheckBox { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; checked: w.get("passwords.save"); onToggled: w.set("passwords.save", checked) }
+                QQC2.CheckBox { text: "Fill in saved logins automatically"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
+                RowLayout {
+                    Kirigami.FormData.label: "Master password:"
+                    QQC2.Label { text: Passwords.encrypted ? (Passwords.locked ? "Set (locked)" : "Set (unlocked)") : "Not set — passwords are stored unencrypted" }
+                }
+                RowLayout {
+                    QQC2.Button { text: Passwords.encrypted ? "Change…" : "Set Master Password…"; icon.name: "document-encrypt"; onClicked: { masterDlg.mode = Passwords.encrypted ? "change" : "set"; masterDlg.open() } }
+                    QQC2.Button { visible: Passwords.encrypted; text: "Remove…"; icon.name: "document-decrypt"; onClicked: { masterDlg.mode = "remove"; masterDlg.open() } }
+                    QQC2.Button { visible: Passwords.encrypted && !Passwords.locked; text: "Lock Now"; icon.name: "object-locked"; onClicked: Passwords.lock() }
+                }
+            }
+
+            Kirigami.Heading { level: 3; text: "Saved Logins" }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: Passwords.locked
+                text: "Saved logins are protected by your master password."
+                actions: [Kirigami.Action { text: "Unlock"; icon.name: "object-unlocked"; onTriggered: w.app.unlockPasswords(ok => pw.reload()) }]
+            }
+            RowLayout {
+                visible: !Passwords.locked
+                Kirigami.SearchField { id: search; Layout.fillWidth: true }
+                QQC2.Button { text: "Add"; icon.name: "list-add"; onClicked: { editDlg.entry = null; editDlg.open() } }
+                QQC2.Button { text: "Import…"; icon.name: "document-import"; onClicked: importDlg.open() }
+                QQC2.Button { text: "Export…"; icon.name: "document-export"; enabled: pw.entries.length > 0; onClicked: exportWarn.open() }
+            }
+            QQC2.Label { visible: !Passwords.locked && pw.entries.length === 0; text: "No saved logins."; opacity: 0.7 }
+            Repeater {
+                model: pw.shown
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Kirigami.Icon { source: "globe"; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+                    QQC2.Label { text: modelData.host; Layout.preferredWidth: Kirigami.Units.gridUnit * 11; elide: Text.ElideMiddle; font.bold: true }
+                    QQC2.Label { text: modelData.username || "(no username)"; Layout.preferredWidth: Kirigami.Units.gridUnit * 9; elide: Text.ElideRight }
+                    QQC2.Label { text: pw.revealed[modelData.id] ? modelData.password : "••••••••"; Layout.fillWidth: true; elide: Text.ElideRight; font.family: "monospace" }
+                    QQC2.ToolButton { icon.name: pw.revealed[modelData.id] ? "password-show-off" : "password-show-on"; onClicked: { const r = Object.assign({}, pw.revealed); r[modelData.id] = !r[modelData.id]; pw.revealed = r } QQC2.ToolTip.text: "Show password"; QQC2.ToolTip.visible: hovered }
+                    QQC2.ToolButton { icon.name: "edit-copy"; onClicked: { clip.text = modelData.password; clip.selectAll(); clip.copy(); clip.text = ""; w.app.toast("Password copied", "edit-copy") } QQC2.ToolTip.text: "Copy password"; QQC2.ToolTip.visible: hovered }
+                    QQC2.ToolButton { icon.name: "document-edit"; onClicked: { editDlg.entry = modelData; editDlg.open() } }
+                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: Passwords.remove(modelData.id) }
+                }
+            }
+            TextEdit { id: clip; visible: false }
+            QQC2.Button { visible: pw.entries.length > 0; text: "Remove All Logins…"; icon.name: "edit-delete"; onClicked: removeAllDlg.open() }
+
+            Kirigami.Heading { level: 3; text: "Never Saved For" }
+            QQC2.Label { visible: pw.exceptions.length === 0; text: "No exceptions."; opacity: 0.7 }
+            Repeater {
+                model: pw.exceptions
+                delegate: RowLayout {
+                    required property string modelData
+                    QQC2.Label { text: modelData; Layout.preferredWidth: Kirigami.Units.gridUnit * 16 }
+                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: Passwords.removeException(modelData) }
+                }
+            }
+            QQC2.Label { visible: pw.message !== ""; text: pw.message }
+
+            FileDialog { id: importDlg; title: "Import Passwords"; nameFilters: ["Passwords (*.csv *.xml)", "CSV from Firefox, Chrome, Bitwarden (*.csv)", "Falkon export (*.xml)"]; onAccepted: pw.message = Passwords.importFile(selectedFile.toString()) }
+            FileDialog { id: exportDlg; title: "Export Passwords"; fileMode: FileDialog.SaveFile; nameFilters: ["CSV for Firefox/Chrome (*.csv)", "Falkon XML (*.xml)"]; currentFile: "file://" + w.get("downloads.directory") + "/kite-passwords.csv"; onAccepted: pw.message = Passwords.exportFile(selectedFile.toString()) }
+            Kirigami.PromptDialog {
+                id: exportWarn
+                title: "Export Passwords?"
+                subtitle: "Your passwords will be saved as readable text. Anyone who can open the file can see them."
+                standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                onAccepted: exportDlg.open()
+            }
+            Kirigami.PromptDialog {
+                id: removeAllDlg
+                title: "Remove All Saved Logins?"
+                subtitle: "This cannot be undone."
+                standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                onAccepted: Passwords.removeAll()
+            }
+            Kirigami.Dialog {
+                id: editDlg
+                property var entry: null
+                title: entry ? "Edit Login" : "Add Login"
+                standardButtons: Kirigami.Dialog.Save | Kirigami.Dialog.Cancel
+                padding: Kirigami.Units.largeSpacing
+                onOpened: { eHost.text = entry ? entry.host : ""; eUser.text = entry ? entry.username : ""; ePass.text = entry ? entry.password : ""; eHost.forceActiveFocus() }
+                Kirigami.FormLayout {
+                    QQC2.TextField { id: eHost; Kirigami.FormData.label: "Site:"; placeholderText: "example.com"; Layout.preferredWidth: Kirigami.Units.gridUnit * 18 }
+                    QQC2.TextField { id: eUser; Kirigami.FormData.label: "Username:" }
+                    Kirigami.PasswordField { id: ePass; Kirigami.FormData.label: "Password:" }
+                }
+                onAccepted: {
+                    const d = {host: eHost.text, username: eUser.text, password: ePass.text}
+                    pw.message = editDlg.entry ? Passwords.update(JSON.stringify(Object.assign({id: editDlg.entry.id}, d))) : Passwords.add(JSON.stringify(d))
+                }
+            }
+            Kirigami.Dialog {
+                id: masterDlg
+                property string mode: "set"   // set | change | remove
+                title: mode === "set" ? "Set Master Password" : mode === "change" ? "Change Master Password" : "Remove Master Password"
+                standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                padding: Kirigami.Units.largeSpacing
+                onOpened: { mCur.text = ""; mNew.text = ""; mNew2.text = ""; mErr.text = "" }
+                ColumnLayout {
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 22; wrapMode: Text.Wrap
+                        text: masterDlg.mode === "remove" ? "Your saved logins will be stored without encryption."
+                            : "Saved logins will be encrypted. You'll need this password once per session to use them. If you forget it, the saved logins cannot be recovered."
+                    }
+                    Kirigami.FormLayout {
+                        Kirigami.PasswordField { id: mCur; Kirigami.FormData.label: "Current password:"; visible: masterDlg.mode !== "set" }
+                        Kirigami.PasswordField { id: mNew; Kirigami.FormData.label: "New password:"; visible: masterDlg.mode !== "remove" }
+                        Kirigami.PasswordField { id: mNew2; Kirigami.FormData.label: "Repeat:"; visible: masterDlg.mode !== "remove" }
+                    }
+                    QQC2.Label { id: mErr; color: Kirigami.Theme.negativeTextColor; visible: text !== "" }
+                }
+                onAccepted: {
+                    let err = ""
+                    if (mode !== "remove" && mNew.text !== mNew2.text) err = "The new passwords do not match"
+                    else if (mode !== "remove" && mNew.text.length < 6) err = "Use at least 6 characters"
+                    else err = mode === "remove" ? Passwords.removeMasterPassword(mCur.text) : Passwords.setMasterPassword(mCur.text, mNew.text)
+                    if (err !== "") { mErr.text = err; Qt.callLater(open) }
+                    else { pw.message = mode === "remove" ? "Master password removed" : "Master password set"; pw.reload() }
                 }
             }
         }

@@ -141,6 +141,37 @@ QQC2.TextField {
             }
         }
         QQC2.ToolButton {
+            id: keyButton
+            Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
+            padding: 2
+            visible: field.tab && field.tab.loginForm && (field.tab.logins.length > 0 || Passwords.locked)
+            icon.name: Passwords.locked ? "object-locked" : "dialog-password"
+            onClicked: keyMenu.popup(keyButton, 0, keyButton.height)
+            QQC2.ToolTip.text: Passwords.locked ? "Saved logins are locked" : "Saved logins for this site"; QQC2.ToolTip.visible: hovered
+            QQC2.Menu {
+                id: keyMenu
+                Instantiator {
+                    model: field.tab ? field.tab.logins : []
+                    delegate: QQC2.MenuItem {
+                        required property var modelData
+                        text: modelData.username || "(no username)"
+                        icon.name: "user-identity"
+                        onTriggered: field.tab.fillLogin(modelData.id)
+                    }
+                    onObjectAdded: (i, o) => keyMenu.insertItem(i, o)
+                    onObjectRemoved: (i, o) => keyMenu.removeItem(o)
+                }
+                QQC2.MenuItem {
+                    visible: Passwords.locked
+                    height: visible ? implicitHeight : 0
+                    text: "Unlock Saved Logins…"; icon.name: "object-unlocked"
+                    onTriggered: field.win.app.unlockPasswords(ok => { if (ok) field.tab.refreshLogins() })
+                }
+                QQC2.MenuSeparator {}
+                QQC2.MenuItem { text: "Manage Passwords…"; icon.name: "configure"; onTriggered: field.win.app.showPreferences("passwords") }
+            }
+        }
+        QQC2.ToolButton {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
             visible: field.tab && field.tab.url.startsWith("http")

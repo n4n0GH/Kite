@@ -21,6 +21,11 @@ percent-encoding = "2"
 base64 = "0.22"
 mime_guess = "2"
 log = "0.4"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
+zeroize = { version = "1", features = ["derive"] }
+csv = "1"
 
 [dev-dependencies]
 tempfile = "3"

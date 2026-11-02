@@ -465,6 +465,8 @@ QtObject {
     // ---- dialogs (shared) --------------------------------------------------------------
     property InstallDialog installDialog: InstallDialog {}
     property PermissionDialog permissionDialog: PermissionDialog {}
+    property MasterPasswordDialog masterPasswordDialog: MasterPasswordDialog {}
+    function unlockPasswords(cb) { masterPasswordDialog.ask(cb || (() => {})) }
     property var optionsDialog: null
     property Component _optionsComp: Component { ExtensionOptionsDialog {} }
     property SaveDialog saveDialog: SaveDialog { onAccepted2: d => app.startDownload(d) }

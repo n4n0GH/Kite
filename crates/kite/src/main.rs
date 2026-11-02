@@ -9,6 +9,7 @@
 mod browser;
 mod extensions;
 mod ffi;
+mod passwords;
 mod startpage;
 mod state;
 

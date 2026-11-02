@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 pub struct App {
     pub shared: Shared,
     pub runtime: Mutex<Runtime>,
+    pub passwords: Mutex<kite_core::passwords::PasswordStore>,
     pub adblock: Arc<AdBlock>,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
@@ -37,6 +38,7 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     let profile = kite_core::Profile::open(profile)?;
     let shared = Shared::open(profile.clone())?;
     let runtime = Runtime::new(shared.clone())?;
+    let passwords = Mutex::new(kite_core::passwords::PasswordStore::open(&shared.db())?);
     let adblock = Arc::new(AdBlock::new(profile.path("adblock")));
     {
         let s = shared.settings();
@@ -44,7 +46,7 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         adblock.set_allowlist(serde_json::from_value(s.get("adblock.allowlist")).unwrap_or_default());
     }
     adblock.load_cached();
-    APP.set(App { shared, runtime: Mutex::new(runtime), adblock, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }

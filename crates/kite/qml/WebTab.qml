@@ -30,6 +30,24 @@ Item {
     property bool crashed: false
     property var pendingPermissions: []
     property var certError: null
+    // Password manager
+    property var logins: []
+    property bool loginForm: false
+    property var savePrompt: null
+
+    function refreshLogins() { logins = loginForm ? JSON.parse(Passwords.logins(web.url.toString())) : [] }
+    function fillLogin(id) {
+        const data = Passwords.fillData(web.url.toString(), id)
+        if (data !== "null") bridge.fillLogin(data)
+    }
+    function answerSavePrompt(choice) {
+        const p = savePrompt
+        savePrompt = null
+        if (!p) return
+        const finish = () => { const err = Passwords.answer(p.request, choice); if (err) wt.window.toast(err, "dialog-error"); else refreshLogins() }
+        if (choice === "save" && Passwords.locked) wt.app.unlockPasswords(ok => { if (ok) finish(); else Passwords.answer(p.request, "dismiss") })
+        else finish()
+    }
     readonly property bool isExtensionPage: url.startsWith("moz-extension:")
     readonly property bool isSecure: url.startsWith("https:") || url.startsWith("kite:") || isExtensionPage
     signal activated()
@@ -136,6 +154,21 @@ Item {
             }
         }
 
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: wt.savePrompt !== null
+            type: Kirigami.MessageType.Information
+            icon.name: "dialog-password"
+            text: !wt.savePrompt ? "" : (wt.savePrompt.action === "update"
+                ? "Update the saved password for <b>" + wt.savePrompt.username + "</b> on " + wt.savePrompt.host + "?"
+                : "Save the login" + (wt.savePrompt.username ? " for <b>" + wt.savePrompt.username + "</b>" : "") + " on " + wt.savePrompt.host + "?")
+            actions: [
+                Kirigami.Action { text: wt.savePrompt && wt.savePrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerSavePrompt("save") },
+                Kirigami.Action { text: "Never for This Site"; icon.name: "dialog-cancel"; visible: !wt.savePrompt || wt.savePrompt.action === "save"; onTriggered: wt.answerSavePrompt("never") },
+                Kirigami.Action { text: "Not Now"; onTriggered: wt.answerSavePrompt("dismiss") }
+            ]
+        }
+
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -196,6 +229,8 @@ Item {
                     switch (info.status) {
                     case WebEngineView.LoadStartedStatus:
                         wt.crashed = false
+                        wt.loginForm = false
+                        wt.logins = []
                         wt.navEvent("onBeforeNavigate", {url: u, parentFrameId: -1})
                         wt.navEvent("onCommitted", {url: u, transitionType: "link", transitionQualifiers: []})
                         wt._lastCommitted = u
@@ -248,6 +283,11 @@ Item {
                 }
 
                 onRegisterProtocolHandlerRequested: request => request.accept()
+
+                onAuthenticationDialogRequested: request => {
+                    request.accepted = true
+                    authDialog.ask(request)
+                }
 
                 onContextMenuRequested: request => {
                     request.accepted = true
@@ -325,9 +365,23 @@ Item {
     function dropPermission(i) { const l = pendingPermissions.slice(); l.splice(i, 1); pendingPermissions = l }
 
     WebChannel { id: channel; registeredObjects: [bridge] }
-    ExtBridge { id: bridge; viewKey: "tab:" + wt.tabId; tabId: wt.tabId; windowId: wt.window.windowId; viewKind: "tab" }
+    ExtBridge {
+        id: bridge
+        viewKey: "tab:" + wt.tabId; tabId: wt.tabId; windowId: wt.window.windowId; viewKind: "tab"
+        onPasswordFormSubmitted: json => {
+            const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
+            if (r) wt.savePrompt = r
+        }
+        onLoginFormDetected: emptyPassword => {
+            wt.loginForm = true
+            wt.refreshLogins()
+            if (emptyPassword && wt.logins.length > 0 && Passwords.autofillEnabled()) wt.fillLogin(wt.logins[0].id)
+        }
+    }
+    Connections { target: Passwords; function onChanged() { wt.refreshLogins() } }
 
     PageContextMenu { id: contextMenu; tab: wt }
+    AuthDialog { id: authDialog; tab: wt }
 
     Loader {
         id: devTools

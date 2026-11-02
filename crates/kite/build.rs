@@ -21,7 +21,7 @@ fn main() {
         .qt_module("WebEngineCore")
         .cpp_file("cpp/bootstrap.cpp")
         .cpp_file("cpp/glue.cpp")
-        .files(["src/browser.rs", "src/extensions.rs"])
+        .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs"])
         .build();
 
     // QtWebEngineQuick::initialize() and QQuickWebEngineProfile — link the

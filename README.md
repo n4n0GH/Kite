@@ -71,6 +71,20 @@ Verified with unmodified AMO add-ons: **Dark Reader** (background, storage, tabs
 content scripts, popup UI), **uBlock Origin Lite** (DNR blocking incl. surrogate
 redirects), **uBlock Origin** (loads, downloads and compiles its filter lists).
 
+## Password manager
+
+Port of Falkon's AutoFill: login forms are detected (including script-driven
+and late-rendered ones) in the privileged bridge world, Kite offers to save or
+update, and fills saved logins automatically or from the key icon in the
+location bar. HTTP authentication can be remembered too.
+
+* **Storage:** Falkon's plain `autofill` table (Falkon-compatible), or encrypted
+  with a master password (Argon2id + XChaCha20-Poly1305; key only in memory).
+* **Safety:** credentials are only released for the host of the tab's actual URL
+  (taken from the view, never from page JavaScript), only to http(s) pages, never
+  to extension pages; nothing is saved from private windows.
+* **Import/export:** Firefox/Chrome/Bitwarden CSV and Falkon XML; exports are 0600.
+
 ## Known limitations
 
 * Blocking `webRequest` listeners are called but cannot cancel/modify requests (Qt's
@@ -80,6 +94,8 @@ redirects), **uBlock Origin** (loads, downloads and compiles its filter lists).
 * `webRequest.filterResponseData`, native messaging, `runtime.getBackgroundPage`,
   containers, `find`, `dns` and themes are not implemented.
 * Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
-* Falkon features not yet ported: password manager/autofill, named session manager,
+* Password manager: no KWallet/Secret Service backend yet; logins inside iframes
+  are not detected.
+* Falkon features not yet ported: named session manager,
   speed-dial editing, cookie/certificate managers, proxy settings, mouse gestures,
   vertical/tree tabs, KWallet/KIO integration, user stylesheets.
