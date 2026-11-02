@@ -1,0 +1,31 @@
+[package]
+name = "kite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Kite — a KDE web browser written in Rust, with native support for Firefox WebExtensions"
+
+[[bin]]
+name = "kite"
+path = "src/main.rs"
+
+[dependencies]
+kite-core = { path = "../kite-core" }
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
+serde_json.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+url.workspace = true
+mime_guess = "2"
+percent-encoding = "2"
+log = "0.4"
+regex = "1"
+ureq = "3"
+base64 = "0.22"
+directories = "6"
+env_logger = "0.11"
+
+[build-dependencies]
+cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }

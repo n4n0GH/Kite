@@ -1,0 +1,280 @@
+import QtQuick
+import QtQuick.Controls as QQC2
+import QtQuick.Layouts
+import QtQuick.Dialogs
+import org.kde.kirigami as Kirigami
+import org.kde.kite
+
+// Falkon's Preferences dialog.
+Kirigami.ApplicationWindow {
+    id: w
+    property var app
+    property string page: "general"
+    title: "Settings — Kite"
+    width: Kirigami.Units.gridUnit * 50
+    height: Kirigami.Units.gridUnit * 36
+
+    function get(k) { return JSON.parse(Browser.setting(k)) }
+    function set(k, v) { Browser.setSetting(k, JSON.stringify(v)) }
+
+    readonly property var pages: [
+        {key: "general", title: "General", icon: "go-home"},
+        {key: "appearance", title: "Appearance", icon: "preferences-desktop-theme"},
+        {key: "tabs", title: "Tabs", icon: "tab-new"},
+        {key: "browsing", title: "Browsing", icon: "internet-web-browser"},
+        {key: "search", title: "Search Engines", icon: "search"},
+        {key: "privacy", title: "Privacy", icon: "preferences-system-privacy"},
+        {key: "adblock", title: "Content Blocking", icon: "security-high"},
+        {key: "downloads", title: "Downloads", icon: "download"},
+        {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
+        {key: "extensions", title: "Extensions", icon: "preferences-plugin"},
+    ]
+
+    globalDrawer: Kirigami.GlobalDrawer {
+        modal: false
+        width: Kirigami.Units.gridUnit * 12
+        actions: w.pages.map(p => pageAction.createObject(w, {text: p.title, iconName: p.icon, key: p.key}))
+    }
+    Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: iconName; checked: w.page === key; onTriggered: w.page = key } }
+
+    pageStack.initialPage: Kirigami.ScrollablePage {
+        id: sp
+        title: (w.pages.find(p => p.key === w.page) || {}).title || ""
+        Loader {
+            width: sp.width - Kirigami.Units.gridUnit * 2
+            sourceComponent: {
+                switch (w.page) {
+                case "appearance": return appearance
+                case "tabs": return tabs
+                case "browsing": return browsing
+                case "search": return search
+                case "privacy": return privacy
+                case "adblock": return adblock
+                case "downloads": return downloads
+                case "sites": return sites
+                case "extensions": return extensions
+                default: return general
+                }
+            }
+        }
+    }
+
+    Component {
+        id: general
+        Kirigami.FormLayout {
+            QQC2.ComboBox {
+                Kirigami.FormData.label: "When Kite starts:"
+                model: [{k: "restore", t: "Restore previous session"}, {k: "homepage", t: "Open home page"}, {k: "speeddial", t: "Open start page"}, {k: "blank", t: "Open blank page"}]
+                textRole: "t"
+                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("general.startup")))
+                onActivated: i => w.set("general.startup", model[i].k)
+            }
+            QQC2.TextField { Kirigami.FormData.label: "Home page:"; Layout.fillWidth: true; text: w.get("general.homepage"); onEditingFinished: w.set("general.homepage", text) }
+            QQC2.TextField { Kirigami.FormData.label: "New tab page:"; Layout.fillWidth: true; text: w.get("general.newTabPage"); onEditingFinished: w.set("general.newTabPage", text); placeholderText: "kite:start" }
+            QQC2.Button { text: "Use Current Page as Home Page"; enabled: !!w.app.activeWindow && !!w.app.activeWindow.currentTab; onClicked: w.set("general.homepage", w.app.activeWindow.currentTab.url) }
+            Item { Kirigami.FormData.isSection: true }
+            QQC2.ComboBox {
+                Kirigami.FormData.label: "Default search engine:"
+                model: JSON.parse(Browser.engines()).map(e => e.name)
+                currentIndex: Math.max(0, model.indexOf(w.get("general.searchEngine")))
+                onActivated: i => w.set("general.searchEngine", model[i])
+            }
+            QQC2.CheckBox { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; checked: w.get("general.searchFromLocationBar"); onToggled: w.set("general.searchFromLocationBar", checked) }
+            QQC2.CheckBox { text: "Show search suggestions"; checked: w.get("general.showSearchSuggestions"); onToggled: w.set("general.showSearchSuggestions", checked) }
+            Item { Kirigami.FormData.isSection: true }
+            QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        }
+    }
+
+    Component {
+        id: appearance
+        Kirigami.FormLayout {
+            QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: { w.set("appearance.showBookmarksToolbar", checked); for (const x of w.app.windows) x.showBookmarksBar = checked } }
+            QQC2.CheckBox { text: "Show home button"; checked: w.get("appearance.showHomeButton"); onToggled: w.set("appearance.showHomeButton", checked) }
+            QQC2.CheckBox { text: "Show link targets when hovering links"; checked: w.get("appearance.showStatusBar"); onToggled: w.set("appearance.showStatusBar", checked) }
+            QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }
+            QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Force dark mode on websites"; checked: w.get("appearance.forceDarkMode"); onToggled: w.set("appearance.forceDarkMode", checked) }
+            QQC2.Label { text: "Some changes apply to new tabs and windows."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+        }
+    }
+
+    Component {
+        id: tabs
+        Kirigami.FormLayout {
+            QQC2.CheckBox { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; checked: w.get("tabs.newTabAfterActive"); onToggled: w.set("tabs.newTabAfterActive", checked) }
+            QQC2.CheckBox { text: "Open links in background tabs"; checked: w.get("tabs.openNewTabsInBackground"); onToggled: w.set("tabs.openNewTabsInBackground", checked) }
+            QQC2.CheckBox { text: "Switch to tabs opened from links"; checked: w.get("tabs.switchToNewTabFromLink"); onToggled: w.set("tabs.switchToNewTabFromLink", checked) }
+            QQC2.CheckBox { text: "Open popup windows in tabs"; checked: w.get("tabs.openPopupsInTabs"); onToggled: w.set("tabs.openPopupsInTabs", checked) }
+            QQC2.CheckBox { Kirigami.FormData.label: "Closing:"; text: "Close window when the last tab is closed"; checked: w.get("tabs.closeWindowWithLastTab"); onToggled: w.set("tabs.closeWindowWithLastTab", checked) }
+        }
+    }
+
+    Component {
+        id: browsing
+        Kirigami.FormLayout {
+            QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Enable JavaScript"; checked: w.get("web.javascript"); onToggled: w.set("web.javascript", checked) }
+            QQC2.CheckBox { text: "Load images automatically"; checked: w.get("web.autoloadImages"); onToggled: w.set("web.autoloadImages", checked) }
+            QQC2.CheckBox { text: "Allow local storage"; checked: w.get("web.localStorage"); onToggled: w.set("web.localStorage", checked) }
+            QQC2.CheckBox { text: "Enable plugins (PDF viewer is always on)"; checked: w.get("web.pluginsEnabled"); onToggled: w.set("web.pluginsEnabled", checked) }
+            QQC2.CheckBox { text: "Spatial navigation (arrow keys between links)"; checked: w.get("web.spatialNavigation"); onToggled: w.set("web.spatialNavigation", checked) }
+            QQC2.CheckBox { text: "Prefetch DNS"; checked: w.get("web.dnsPrefetch"); onToggled: w.set("web.dnsPrefetch", checked) }
+            QQC2.CheckBox { text: "Print backgrounds"; checked: w.get("web.printBackgrounds"); onToggled: w.set("web.printBackgrounds", checked) }
+            QQC2.CheckBox { Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; checked: w.get("web.spellcheck"); onToggled: w.set("web.spellcheck", checked) }
+            QQC2.TextField { Kirigami.FormData.label: "Languages:"; text: w.get("web.spellcheckLanguages").join(", "); onEditingFinished: w.set("web.spellcheckLanguages", text.split(",").map(s => s.trim()).filter(s => s)) }
+            QQC2.TextField { Kirigami.FormData.label: "User agent:"; Layout.fillWidth: true; placeholderText: "Default"; text: w.get("web.userAgent"); onEditingFinished: w.set("web.userAgent", text) }
+            QQC2.Label { text: "User agent and spelling changes apply after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+        }
+    }
+
+    Component {
+        id: search
+        ColumnLayout {
+            id: se
+            property var engines: JSON.parse(Browser.engines())
+            function save() { Browser.saveEngines(JSON.stringify(engines)); engines = JSON.parse(Browser.engines()) }
+            QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "Type a shortcut followed by a space and your search in the location bar, e.g. “w KDE”. Use %s where the search terms go." }
+            Repeater {
+                model: se.engines
+                delegate: RowLayout {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    QQC2.TextField { text: modelData.name; Layout.preferredWidth: Kirigami.Units.gridUnit * 8; onEditingFinished: { se.engines[index].name = text; se.save() } }
+                    QQC2.TextField { text: modelData.url; Layout.fillWidth: true; onEditingFinished: { se.engines[index].url = text; se.save() } }
+                    QQC2.TextField { text: modelData.shortcut; Layout.preferredWidth: Kirigami.Units.gridUnit * 3; placeholderText: "key"; onEditingFinished: { se.engines[index].shortcut = text; se.save() } }
+                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { se.engines.splice(index, 1); se.save() } }
+                }
+            }
+            QQC2.Button { text: "Add Search Engine"; icon.name: "list-add"; onClicked: { se.engines = se.engines.concat([{name: "New engine", url: "https://example.com/search?q=%s", shortcut: "", suggestions_url: "", post_data: ""}]); se.save() } }
+        }
+    }
+
+    Component {
+        id: privacy
+        ColumnLayout {
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                QQC2.CheckBox { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; checked: w.get("privacy.saveHistory"); onToggled: w.set("privacy.saveHistory", checked) }
+                QQC2.CheckBox { text: "Clear history, cookies and cache when Kite closes"; checked: w.get("privacy.clearOnExit"); onToggled: w.set("privacy.clearOnExit", checked) }
+                QQC2.CheckBox { Kirigami.FormData.label: "Tracking:"; text: "Send “Do Not Track” requests"; checked: w.get("web.doNotTrack"); onToggled: w.set("web.doNotTrack", checked) }
+            }
+            Kirigami.Heading { level: 3; text: "Clear Recent History" }
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                QQC2.ComboBox { id: since; Kirigami.FormData.label: "Time range:"; model: ["Last hour", "Today", "Last 7 days", "Everything"] }
+                QQC2.CheckBox { id: cHistory; Kirigami.FormData.label: "Clear:"; text: "Browsing history"; checked: true }
+                QQC2.CheckBox { id: cCookies; text: "Cookies and site data"; checked: true }
+                QQC2.CheckBox { id: cCache; text: "Cache"; checked: true }
+                QQC2.CheckBox { id: cDownloads; text: "Download history"; checked: false }
+                QQC2.CheckBox { id: cClosed; text: "Recently closed tabs and windows"; checked: false }
+                QQC2.Button {
+                    text: "Clear Now"; icon.name: "edit-clear-history"
+                    onClicked: {
+                        const now = Date.now()
+                        const s = [now - 3600000, new Date().setHours(0, 0, 0, 0), now - 7 * 86400000, 0][since.currentIndex]
+                        Browser.clearPrivateData(JSON.stringify({since: s, history: cHistory.checked, cookies: cCookies.checked, cache: cCache.checked, downloads: cDownloads.checked, closedTabs: cClosed.checked}))
+                        w.app.toast("Browsing data cleared", "edit-clear-history")
+                    }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: adblock
+        ColumnLayout {
+            id: ab
+            property var subs: w.get("adblock.subscriptions")
+            property string status: ""
+            Connections { target: Browser; function onAdblockStatus(m) { ab.status = m } }
+            QQC2.CheckBox { text: "Block ads and trackers"; checked: w.get("adblock.enabled"); onToggled: w.set("adblock.enabled", checked) }
+            Kirigami.Heading { level: 3; text: "Filter Subscriptions" }
+            Repeater {
+                model: ab.subs
+                delegate: RowLayout {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    QQC2.CheckBox { checked: modelData.enabled; onToggled: { const s = ab.subs.slice(); s[index].enabled = checked; ab.subs = s; w.set("adblock.subscriptions", s) } }
+                    ColumnLayout { spacing: 0; Layout.fillWidth: true
+                        QQC2.Label { text: modelData.title }
+                        QQC2.Label { text: modelData.url; font: Kirigami.Theme.smallFont; opacity: 0.7; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                    }
+                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { const s = ab.subs.slice(); s.splice(index, 1); ab.subs = s; w.set("adblock.subscriptions", s) } }
+                }
+            }
+            RowLayout {
+                QQC2.TextField { id: subTitle; placeholderText: "Title" }
+                QQC2.TextField { id: subUrl; placeholderText: "https://… list URL"; Layout.fillWidth: true }
+                QQC2.Button { text: "Add"; icon.name: "list-add"; enabled: subUrl.text.startsWith("http"); onClicked: { const s = ab.subs.concat([{title: subTitle.text || subUrl.text, url: subUrl.text, enabled: true}]); ab.subs = s; w.set("adblock.subscriptions", s); subUrl.text = ""; subTitle.text = "" } }
+            }
+            QQC2.Menu {
+                id: presets
+                QQC2.MenuItem { text: "uBlock filters"; onTriggered: { subTitle.text = text; subUrl.text = "https://ublockorigin.github.io/uAssets/filters/filters.min.txt" } }
+                QQC2.MenuItem { text: "Peter Lowe's list"; onTriggered: { subTitle.text = text; subUrl.text = "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&mimetype=plaintext" } }
+                QQC2.MenuItem { text: "Fanboy's Annoyances"; onTriggered: { subTitle.text = text; subUrl.text = "https://easylist.to/easylist/fanboy-annoyance.txt" } }
+                QQC2.MenuItem { text: "EasyList Germany"; onTriggered: { subTitle.text = text; subUrl.text = "https://easylist.to/easylistgermany/easylistgermany.txt" } }
+            }
+            QQC2.Button { text: "Suggested Lists…"; icon.name: "view-list-details"; onClicked: presets.popup() }
+            Kirigami.Heading { level: 3; text: "Custom Rules" }
+            QQC2.TextArea {
+                id: rules
+                Layout.fillWidth: true
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 8
+                font.family: "monospace"
+                placeholderText: "||ads.example.com^\nexample.org##.banner"
+                text: w.get("adblock.customRules")
+                onEditingFinished: w.set("adblock.customRules", text)
+            }
+            Kirigami.Heading { level: 3; text: "Disabled on These Sites" }
+            QQC2.Label { text: w.get("adblock.allowlist").join(", ") || "None"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            RowLayout {
+                QQC2.Button { text: "Apply"; icon.name: "dialog-ok-apply"; onClicked: { w.set("adblock.customRules", rules.text); Browser.reloadAdblock(false); ab.status = "Rebuilding…" } }
+                QQC2.Button { text: "Update Lists Now"; icon.name: "view-refresh"; onClicked: { Browser.reloadAdblock(true); ab.status = "Downloading lists…" } }
+                QQC2.Label { text: ab.status; opacity: 0.8 }
+            }
+        }
+    }
+
+    Component {
+        id: downloads
+        Kirigami.FormLayout {
+            RowLayout {
+                Kirigami.FormData.label: "Save files to:"
+                QQC2.TextField { id: dir; text: w.get("downloads.directory"); Layout.preferredWidth: Kirigami.Units.gridUnit * 20; onEditingFinished: w.set("downloads.directory", text) }
+                QQC2.Button { icon.name: "document-open-folder"; onClicked: folderDialog.open() }
+                FolderDialog { id: folderDialog; onAccepted: { dir.text = selectedFolder.toString().replace("file://", ""); w.set("downloads.directory", dir.text) } }
+            }
+            QQC2.CheckBox { text: "Always ask where to save files"; checked: w.get("downloads.askWhereToSave"); onToggled: w.set("downloads.askWhereToSave", checked) }
+        }
+    }
+
+    Component {
+        id: sites
+        ColumnLayout {
+            id: ss
+            property var list: JSON.parse(Browser.allSiteSettings())
+            QQC2.Label { visible: ss.list.length === 0; text: "No site-specific settings yet. Zoom levels you set are remembered per site." }
+            Repeater {
+                model: ss.list
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    QQC2.Label { text: modelData.host; Layout.fillWidth: true; font.bold: true }
+                    QQC2.Label { text: modelData.settings.zoom > 0 ? "Zoom " + modelData.settings.zoom + "%" : "" }
+                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { Browser.clearSiteSettings(modelData.host); ss.list = JSON.parse(Browser.allSiteSettings()) } }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: extensions
+        Kirigami.FormLayout {
+            QQC2.CheckBox { Kirigami.FormData.label: "Extensions:"; text: "Enable extensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
+            QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
+            QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
+            QQC2.Button { text: "Manage Add-ons…"; icon.name: "preferences-plugin"; onClicked: w.app.showAddons() }
+        }
+    }
+}

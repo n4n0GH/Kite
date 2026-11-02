@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=Kite
+GenericName=Web Browser
+Comment=KDE web browser with Firefox extension support
+Exec=kite %u
+Icon=internet-web-browser
+Terminal=false
+Categories=Qt;KDE;Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;application/x-xpinstall;
+StartupWMClass=kite
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=kite
+
+[Desktop Action new-private-window]
+Name=New Private Window
+Exec=kite --private

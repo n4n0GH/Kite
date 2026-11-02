@@ -1,0 +1,221 @@
+//! C ABI between the C++ glue (scheme handlers, request interceptor, cookie
+//! store) and Rust.
+
+use crate::state::app;
+use kite_core::webext::scripts;
+use std::ffi::{c_char, CStr, CString};
+
+#[repr(C)]
+pub struct KiteBuf {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub cap: usize,
+}
+
+impl KiteBuf {
+    fn from_vec(v: Vec<u8>) -> Self {
+        let mut v = std::mem::ManuallyDrop::new(v);
+        KiteBuf { ptr: v.as_mut_ptr(), len: v.len(), cap: v.capacity() }
+    }
+    fn empty() -> Self {
+        Self::from_vec(Vec::new())
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn kite_buf_free(b: KiteBuf) {
+    if !b.ptr.is_null() {
+        unsafe { drop(Vec::from_raw_parts(b.ptr, b.len, b.cap)) };
+    }
+}
+
+unsafe fn s<'a>(p: *const c_char) -> &'a str {
+    if p.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(p).to_str().unwrap_or("")
+    }
+}
+
+extern "C" {
+    fn kite_cpp_set_cookie(json: *const c_char);
+    fn kite_cpp_delete_cookie(json: *const c_char);
+    fn kite_cpp_delete_all_cookies();
+    fn kite_cpp_clear_http_cache();
+    fn kite_cpp_qwebchannel_js() -> *const c_char;
+}
+
+pub fn set_cookie(json: &str) {
+    let c = CString::new(json).unwrap_or_default();
+    unsafe { kite_cpp_set_cookie(c.as_ptr()) }
+}
+pub fn delete_cookie(json: &str) {
+    let c = CString::new(json).unwrap_or_default();
+    unsafe { kite_cpp_delete_cookie(c.as_ptr()) }
+}
+pub fn delete_all_cookies() {
+    unsafe { kite_cpp_delete_all_cookies() }
+}
+pub fn clear_http_cache() {
+    unsafe { kite_cpp_clear_http_cache() }
+}
+
+pub fn qwebchannel_js() -> &'static str {
+    app().qwebchannel_js.get_or_init(|| unsafe { s(kite_cpp_qwebchannel_js()).to_owned() })
+}
+
+/// Serve `moz-extension://` and `kite:` URLs. Returns the body; sets HTTP-like
+/// status and mime type.
+#[no_mangle]
+pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, status: *mut i32, mime: *mut KiteBuf) -> KiteBuf {
+    let (code, ty, body) = serve(s(url), s(initiator));
+    *status = code;
+    *mime = KiteBuf::from_vec(ty.into_bytes());
+    KiteBuf::from_vec(body)
+}
+
+fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
+    if let Some(rest) = url.strip_prefix("kite:") {
+        let page = rest.split(['?', '#']).next().unwrap_or("");
+        return match page {
+            "start" | "speeddial" | "newtab" | "home" => (200, "text/html".into(), crate::startpage::render().into_bytes()),
+            "search" => {
+                // kite:search?q=... from the start page form
+                let q = url::Url::parse(url)
+                    .ok()
+                    .and_then(|u| u.query_pairs().find(|(k, _)| k == "q").map(|(_, v)| v.into_owned()))
+                    .unwrap_or_default();
+                let target = crate::browser::resolve_input(&q);
+                let html = format!("<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url={}\">", target.replace('"', "%22"));
+                (200, "text/html".into(), html.into_bytes())
+            }
+            _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),
+        };
+    }
+    let Ok(u) = url::Url::parse(url) else { return (400, "text/plain".into(), vec![]) };
+    let uuid = u.host_str().unwrap_or("");
+    let path = u.path().trim_start_matches('/').to_owned();
+    let rt = app().runtime();
+    let Some(ext) = rt.registry.by_uuid(uuid).filter(|e| e.info.enabled) else {
+        return (404, "text/plain".into(), b"Extension not found".to_vec());
+    };
+    // Same-extension or top-level navigations may load anything; other
+    // origins only web_accessible_resources (Firefox semantics).
+    let same_origin = initiator.is_empty() || initiator == "null" || initiator.trim_end_matches('/').eq_ignore_ascii_case(ext.base_url().trim_end_matches('/'));
+    if path == scripts::API_PATH {
+        if !same_origin {
+            return (403, "text/plain".into(), vec![]);
+        }
+        let token = rt.token_of(&ext.info.id).unwrap_or("").to_owned();
+        return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js()).into_bytes());
+    }
+    if path == scripts::BACKGROUND_PAGE {
+        return match scripts::background_page(ext) {
+            Some(html) => (200, "text/html".into(), html.into_bytes()),
+            None => (404, "text/plain".into(), vec![]),
+        };
+    }
+    if !same_origin {
+        let allowed = ext.manifest.web_accessible_resources.iter().any(|g| {
+            let g = g.trim_start_matches('/');
+            regex::Regex::new(&kite_core::webext::matchpattern::glob_to_regex(g)).map(|r| r.is_match(&path)).unwrap_or(false)
+        });
+        if !allowed {
+            return (403, "text/plain".into(), vec![]);
+        }
+    }
+    let Some(file) = ext.resolve(&path) else { return (403, "text/plain".into(), vec![]) };
+    let file = if file.is_dir() { file.join("index.html") } else { file };
+    match std::fs::read(&file) {
+        Ok(bytes) => {
+            let mime = mime_guess::from_path(&file).first_or_octet_stream().essence_str().to_owned();
+            let mime = if path.ends_with(".mjs") { "application/javascript".into() } else { mime };
+            if mime == "text/html" {
+                let html = String::from_utf8_lossy(&bytes);
+                (200, mime, scripts::inject_api_into_html(&html).into_bytes())
+            } else if mime == "text/css" {
+                // Firefox supports __MSG_*__ in extension CSS.
+                let css = String::from_utf8_lossy(&bytes);
+                (200, mime, ext.messages.localize(&css, &ext.info.uuid).into_bytes())
+            } else {
+                (200, mime, bytes)
+            }
+        }
+        Err(_) => (404, "text/plain".into(), b"Not found".to_vec()),
+    }
+}
+
+/// Network request interceptor. Returns "" (allow), "block",
+/// "redirect:<url>" or "headers:<json [[name, value], ...]>".
+#[no_mangle]
+pub unsafe extern "C" fn kite_intercept(
+    url: *const c_char,
+    first_party: *const c_char,
+    initiator: *const c_char,
+    rtype: *const c_char,
+    method: *const c_char,
+) -> KiteBuf {
+    let (url, first_party, initiator, rtype, method) = (s(url), s(first_party), s(initiator), s(rtype), s(method));
+    let a = app();
+    let out = (|| {
+        if !(url.starts_with("http") || url.starts_with("ws")) {
+            return String::new();
+        }
+        // Never interfere with add-on installs from AMO.
+        if kite_core::webext::amo::is_amo_download(url) {
+            return String::new();
+        }
+        let mut rt = a.runtime();
+        // webRequest observers (non-blocking)
+        if rt.has_web_request_listeners() {
+            let tab = rt.tab_for_first_party(first_party);
+            let details = serde_json::json!({
+                "requestId": format!("{}", kite_core::util::now_ms()), "url": url, "method": method,
+                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": if rtype == "mainFrame" { 0 } else { -1 },
+                "parentFrameId": -1, "originUrl": initiator, "documentUrl": first_party, "timeStamp": kite_core::util::now_ms(),
+                "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
+            });
+            let fx = rt.web_request(&details);
+            drop(rt);
+            crate::extensions::apply_effects_async(fx);
+            rt = a.runtime();
+        }
+        match rt.dnr_check(url, if initiator.is_empty() { first_party } else { initiator }, method, rtype) {
+            kite_core::webext::dnr::Outcome::Block => return "block".into(),
+            kite_core::webext::dnr::Outcome::Redirect(u) => return format!("redirect:{u}"),
+            kite_core::webext::dnr::Outcome::Headers(h) => return format!("headers:{}", serde_json::to_string(&h).unwrap_or_default()),
+            kite_core::webext::dnr::Outcome::None => {}
+        }
+        drop(rt);
+        match a.adblock.check(url, first_party, rtype) {
+            kite_core::adblock::Verdict::Block => "block".into(),
+            kite_core::adblock::Verdict::Redirect(r) if r.starts_with("http") => format!("redirect:{r}"),
+            kite_core::adblock::Verdict::Redirect(r) => {
+                // adblock redirect resources are data: URLs
+                format!("redirect:{r}")
+            }
+            kite_core::adblock::Verdict::Allow => String::new(),
+        }
+    })();
+    KiteBuf::from_vec(out.into_bytes())
+}
+
+/// Cookie store change (from QWebEngineCookieStore signals).
+#[no_mangle]
+pub unsafe extern "C" fn kite_cookie_event(json: *const c_char, removed: i32, initial: i32) {
+    let Ok(cookie) = serde_json::from_str::<serde_json::Value>(s(json)) else { return };
+    let fx = app().runtime().browser_event("cookieChanged", &serde_json::json!({"cookie": cookie, "removed": removed != 0, "initial": initial != 0}));
+    crate::extensions::apply_effects_async(fx);
+}
+
+/// Should this user agent override apply (AMO sees Kite as Firefox so it
+/// offers "Add to Firefox" buttons that lead to .xpi files).
+#[no_mangle]
+pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
+    let url = s(url);
+    let spoof = app().shared.settings().get_bool("extensions.amoSpoofFirefox");
+    if spoof && kite_core::util::host_of(url) == "addons.mozilla.org" {
+        return KiteBuf::from_vec(kite_core::webext::amo::USER_AGENT.as_bytes().to_vec());
+    }
+    KiteBuf::empty()
+}

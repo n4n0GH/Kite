@@ -1,0 +1,21 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Milliseconds since the Unix epoch (Falkon stores history dates this way).
+pub fn now_ms() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+}
+
+/// Write `data` to `path` atomically (write temp file, then rename).
+pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp~");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(tmp, path)
+}
+
+/// Host part of a URL string, or empty.
+pub fn host_of(url: &str) -> String {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
+}
