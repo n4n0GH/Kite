@@ -178,7 +178,12 @@ fn backend_name(b: Backend) -> &'static str {
 /// then hand it to the store on the Qt thread.
 fn open_wallet_then(thread: cxx_qt::CxxQtThread<qobject::Passwords>, then: impl FnOnce(Pin<&mut qobject::Passwords>, Result<(), String>) + Send + 'static) {
     std::thread::spawn(move || {
+        log::info!("opening KDE Wallet");
         let r = kite_core::kwallet::KWallet::open(0);
+        match &r {
+            Ok(_) => log::info!("KDE Wallet opened"),
+            Err(e) => log::warn!("KDE Wallet could not be opened: {e}"),
+        }
         let _ = thread.queue(move |mut o| {
             let res = r.map_err(|e| e.to_string()).and_then(|kw| with_store(|s, _| s.attach_wallet(kw)).map_err(|e| e.to_string()));
             o.as_mut().set_wallet_opening(false);
@@ -218,8 +223,13 @@ impl qobject::Passwords {
             _ => Backend::Plain,
         };
         let master = master.to_string();
+        log::info!("switching password storage to {}", backend_name(target));
         let finish = move |mut o: Pin<&mut qobject::Passwords>, r: Result<(), String>| {
             let r = r.and_then(|_| with_store(|s, db| s.set_backend(db, target, (!master.is_empty()).then_some(master.as_str()))).map_err(|e| e.to_string()));
+            match &r {
+                Ok(_) => log::info!("password storage is now {}", backend_name(target)),
+                Err(e) => log::warn!("switching password storage failed: {e}"),
+            }
             o.as_mut().refresh();
             o.as_mut().changed();
             o.backend_switched(q(r.err().unwrap_or_default()));
