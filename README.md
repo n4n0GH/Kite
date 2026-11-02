@@ -78,8 +78,10 @@ and late-rendered ones) in the privileged bridge world, Kite offers to save or
 update, and fills saved logins automatically or from the key icon in the
 location bar. HTTP authentication can be remembered too.
 
-* **Storage:** Falkon's plain `autofill` table (Falkon-compatible), or encrypted
-  with a master password (Argon2id + XChaCha20-Poly1305; key only in memory).
+* **Storage:** Falkon's plain `autofill` table (Falkon-compatible), encrypted
+  with a master password (Argon2id + XChaCha20-Poly1305; key only in memory), or
+  **KDE Wallet** over D-Bus, using Falkon's `FalkonPasswords` folder so both
+  browsers share logins. Switching storage moves saved logins along.
 * **Safety:** credentials are only released for the host of the tab's actual URL
   (taken from the view, never from page JavaScript), only to http(s) pages, never
   to extension pages; nothing is saved from private windows.
@@ -94,8 +96,7 @@ location bar. HTTP authentication can be remembered too.
 * `webRequest.filterResponseData`, native messaging, `runtime.getBackgroundPage`,
   containers, `find`, `dns` and themes are not implemented.
 * Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
-* Password manager: no KWallet/Secret Service backend yet; logins inside iframes
-  are not detected.
+* Password manager: logins inside iframes are not detected.
 * Falkon features not yet ported: named session manager,
   speed-dial editing, cookie/certificate managers, proxy settings, mouse gestures,
   vertical/tree tabs, KWallet/KIO integration, user stylesheets.

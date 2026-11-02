@@ -36,6 +36,29 @@ pub struct Entry {
 pub enum Backend {
     Plain,
     Encrypted,
+    /// KDE Wallet (shared with Falkon's KWallet backend).
+    KWallet,
+}
+
+/// Loaded KWallet folder.
+struct Wallet {
+    kw: crate::kwallet::KWallet,
+    /// (wallet key, entry with a session-local numeric id)
+    entries: Vec<(String, Entry)>,
+    next_id: i64,
+}
+
+fn wallet_map(e: &Entry) -> std::collections::BTreeMap<String, String> {
+    [
+        ("host", e.host.clone()),
+        ("username", e.username.clone()),
+        ("password", e.password.clone()),
+        ("updated", (e.last_used / 1000).to_string()),
+        ("data", e.data.clone()),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect()
 }
 
 /// What to do after a login form was submitted.
@@ -126,12 +149,13 @@ impl Sealer {
 
 pub struct PasswordStore {
     key: Option<Zeroizing<[u8; 32]>>,
+    wallet: Option<Wallet>,
 }
 
 impl PasswordStore {
     pub fn open(db: &Connection) -> anyhow::Result<Self> {
         db.execute_batch(SCHEMA)?;
-        Ok(PasswordStore { key: None })
+        Ok(PasswordStore { key: None, wallet: None })
     }
 
     fn meta(db: &Connection, key: &str) -> Option<String> {
@@ -145,17 +169,101 @@ impl PasswordStore {
     pub fn backend(&self, db: &Connection) -> Backend {
         match Self::meta(db, "backend").as_deref() {
             Some("encrypted") => Backend::Encrypted,
+            Some("kwallet") => Backend::KWallet,
             _ => Backend::Plain,
         }
     }
 
     /// Encrypted backend without the key in memory.
     pub fn is_locked(&self, db: &Connection) -> bool {
-        self.backend(db) == Backend::Encrypted && self.key.is_none()
+        match self.backend(db) {
+            Backend::Plain => false,
+            Backend::Encrypted => self.key.is_none(),
+            Backend::KWallet => self.wallet.is_none(),
+        }
     }
 
     pub fn lock(&mut self) {
         self.key = None;
+        self.wallet = None;
+    }
+
+    /// Use an opened wallet (KWallet backend). Opening is done by the caller,
+    /// off the UI thread, because KWallet may ask for the wallet password.
+    pub fn attach_wallet(&mut self, kw: crate::kwallet::KWallet) -> anyhow::Result<()> {
+        let mut w = Wallet { kw, entries: vec![], next_id: 1 };
+        for (key, m) in w.kw.entries()? {
+            let g = |k: &str| m.get(k).cloned().unwrap_or_default();
+            // Falkon also stores "exists" marker maps keyed by host; skip them.
+            if g("host").is_empty() || g("password").is_empty() {
+                continue;
+            }
+            let id = w.next_id;
+            w.next_id += 1;
+            let last_used = g("updated").parse::<i64>().unwrap_or(0) * 1000;
+            w.entries.push((key, Entry { id, host: g("host"), username: g("username"), password: g("password"), data: g("data"), last_used }));
+        }
+        self.wallet = Some(w);
+        Ok(())
+    }
+
+    fn wallet(&self) -> anyhow::Result<&Wallet> {
+        self.wallet.as_ref().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))
+    }
+
+    /// Switch storage. Entries move along: they must be readable now (the
+    /// current store unlocked) and the target must be usable (wallet
+    /// attached / `master` given for Encrypted).
+    pub fn set_backend(&mut self, db: &mut Connection, target: Backend, master: Option<&str>) -> anyhow::Result<()> {
+        let current = self.backend(db);
+        if current == target {
+            return Ok(());
+        }
+        let entries = self.all(db)?;
+        match target {
+            Backend::KWallet => {
+                let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+                for e in &entries {
+                    if w.entries.iter().any(|(_, x)| x.host == e.host && x.username == e.username && x.password == e.password) {
+                        continue;
+                    }
+                    let key = format!("{{{}}}", uuid::Uuid::new_v4());
+                    w.kw.write(&key, &wallet_map(e))?;
+                    let id = w.next_id;
+                    w.next_id += 1;
+                    w.entries.push((key, Entry { id, ..e.clone() }));
+                }
+                let tx = db.transaction()?;
+                tx.execute("DELETE FROM autofill", [])?;
+                tx.execute("DELETE FROM kite_passwords_encrypted", [])?;
+                tx.execute("DELETE FROM kite_password_meta", [])?;
+                Self::set_meta(&tx, "backend", "kwallet")?;
+                tx.commit()?;
+                let _ = db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+                self.key = None;
+            }
+            Backend::Plain | Backend::Encrypted => {
+                // Leaving an encrypted store: decrypt to plain first.
+                let tx = db.transaction()?;
+                tx.execute("DELETE FROM autofill", [])?;
+                tx.execute("DELETE FROM kite_passwords_encrypted", [])?;
+                tx.execute("DELETE FROM kite_password_meta", [])?;
+                for e in &entries {
+                    tx.execute(
+                        "INSERT INTO autofill (server, data, password, username, last_used) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![e.host, e.data, e.password, e.username, e.last_used],
+                    )?;
+                }
+                tx.commit()?;
+                // Wallet entries are left in place (Falkon may still use them).
+                self.wallet = None;
+                self.key = None;
+                if target == Backend::Encrypted {
+                    self.set_master_password(db, None, master.ok_or_else(|| anyhow::anyhow!("a master password is required"))?)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_key(db: &Connection, key: &[u8; 32]) -> bool {
@@ -178,7 +286,7 @@ impl PasswordStore {
 
     fn sealer(&self, db: &Connection) -> anyhow::Result<Option<Sealer>> {
         match self.backend(db) {
-            Backend::Plain => Ok(None),
+            Backend::Plain | Backend::KWallet => Ok(None),
             Backend::Encrypted => match &self.key {
                 Some(k) => Ok(Some(Sealer::new(k))),
                 None => anyhow::bail!("The password store is locked"),
@@ -192,8 +300,10 @@ impl PasswordStore {
         if new.is_empty() {
             anyhow::bail!("The master password must not be empty");
         }
-        if self.backend(db) == Backend::Encrypted {
-            self.unlock(db, current.unwrap_or(""))?;
+        match self.backend(db) {
+            Backend::Encrypted => self.unlock(db, current.unwrap_or(""))?,
+            Backend::KWallet => return self.set_backend(db, Backend::Encrypted, Some(new)),
+            Backend::Plain => {}
         }
         let entries = self.all(db)?;
         let salt = random::<16>();
@@ -241,6 +351,11 @@ impl PasswordStore {
 
     fn query(&self, db: &Connection, host: Option<&str>) -> anyhow::Result<Vec<Entry>> {
         let mut out = vec![];
+        if self.backend(db) == Backend::KWallet {
+            let mut v: Vec<Entry> = self.wallet()?.entries.iter().map(|(_, e)| e).filter(|e| host.map(|h| e.host == h).unwrap_or(true)).cloned().collect();
+            v.sort_by_key(|e| std::cmp::Reverse(e.last_used));
+            return Ok(v);
+        }
         match self.sealer(db)? {
             None => {
                 let sql = format!(
@@ -294,8 +409,17 @@ impl PasswordStore {
         Ok(v)
     }
 
-    pub fn add(&self, db: &Connection, e: &Entry) -> anyhow::Result<i64> {
+    pub fn add(&mut self, db: &Connection, e: &Entry) -> anyhow::Result<i64> {
         let now = crate::util::now_ms();
+        if self.backend(db) == Backend::KWallet {
+            let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+            let key = format!("{{{}}}", uuid::Uuid::new_v4());
+            let entry = Entry { id: w.next_id, last_used: now, ..e.clone() };
+            w.kw.write(&key, &wallet_map(&entry))?;
+            w.next_id += 1;
+            w.entries.push((key, entry.clone()));
+            return Ok(entry.id);
+        }
         match self.sealer(db)? {
             None => db.execute(
                 "INSERT INTO autofill (server, data, password, username, last_used) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -309,8 +433,16 @@ impl PasswordStore {
         Ok(db.last_insert_rowid())
     }
 
-    pub fn update(&self, db: &Connection, e: &Entry) -> anyhow::Result<()> {
+    pub fn update(&mut self, db: &Connection, e: &Entry) -> anyhow::Result<()> {
         let now = crate::util::now_ms();
+        if self.backend(db) == Backend::KWallet {
+            let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+            let (key, slot) = w.entries.iter_mut().find(|(_, x)| x.id == e.id).ok_or_else(|| anyhow::anyhow!("no such password entry"))?;
+            let entry = Entry { last_used: now, ..e.clone() };
+            w.kw.write(key, &wallet_map(&entry))?;
+            *slot = entry;
+            return Ok(());
+        }
         let n = match self.sealer(db)? {
             None => db.execute(
                 "UPDATE autofill SET server = ?2, data = ?3, password = ?4, username = ?5, last_used = ?6 WHERE id = ?1",
@@ -327,19 +459,42 @@ impl PasswordStore {
         Ok(())
     }
 
-    pub fn touch(&self, db: &Connection, id: i64) -> anyhow::Result<()> {
+    pub fn touch(&mut self, db: &Connection, id: i64) -> anyhow::Result<()> {
+        if self.backend(db) == Backend::KWallet {
+            let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+            if let Some((key, e)) = w.entries.iter_mut().find(|(_, x)| x.id == id) {
+                e.last_used = crate::util::now_ms();
+                w.kw.write(key, &wallet_map(e))?;
+            }
+            return Ok(());
+        }
         let table = if self.backend(db) == Backend::Encrypted { "kite_passwords_encrypted" } else { "autofill" };
         db.execute(&format!("UPDATE {table} SET last_used = ?2 WHERE id = ?1"), params![id, crate::util::now_ms()])?;
         Ok(())
     }
 
-    pub fn remove(&self, db: &Connection, id: i64) -> anyhow::Result<()> {
+    pub fn remove(&mut self, db: &Connection, id: i64) -> anyhow::Result<()> {
+        if self.backend(db) == Backend::KWallet {
+            let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+            if let Some(i) = w.entries.iter().position(|(_, x)| x.id == id) {
+                let (key, _) = w.entries.remove(i);
+                w.kw.remove(&key)?;
+            }
+            return Ok(());
+        }
         let table = if self.backend(db) == Backend::Encrypted { "kite_passwords_encrypted" } else { "autofill" };
         db.execute(&format!("DELETE FROM {table} WHERE id = ?1"), [id])?;
         Ok(())
     }
 
-    pub fn remove_all(&self, db: &Connection) -> anyhow::Result<()> {
+    pub fn remove_all(&mut self, db: &Connection) -> anyhow::Result<()> {
+        if self.backend(db) == Backend::KWallet {
+            let w = self.wallet.as_mut().ok_or_else(|| anyhow::anyhow!("KWallet is not open"))?;
+            for (key, _) in w.entries.drain(..) {
+                w.kw.remove(&key)?;
+            }
+            return Ok(());
+        }
         db.execute("DELETE FROM autofill", [])?;
         db.execute("DELETE FROM kite_passwords_encrypted", [])?;
         Ok(())
@@ -369,7 +524,7 @@ impl PasswordStore {
     }
 
     /// Falkon's AutoFill::saveForm logic.
-    pub fn decide(&self, db: &Connection, url: &str, username: &str, password: &str, data: &str) -> anyhow::Result<Decision> {
+    pub fn decide(&mut self, db: &Connection, url: &str, username: &str, password: &str, data: &str) -> anyhow::Result<Decision> {
         if password.is_empty() || Self::is_excepted(db, url) {
             return Ok(Decision::Nothing);
         }
@@ -392,7 +547,7 @@ impl PasswordStore {
     }
 
     /// Commit a decision taken by `decide` once the user agreed.
-    pub fn apply(&self, db: &Connection, d: &Decision) -> anyhow::Result<()> {
+    pub fn apply(&mut self, db: &Connection, d: &Decision) -> anyhow::Result<()> {
         match d {
             Decision::Nothing => Ok(()),
             Decision::Save(e) => self.add(db, e).map(|_| ()),
@@ -434,7 +589,7 @@ impl PasswordStore {
 
     /// Import Falkon XML or a Firefox/Chrome/Bitwarden-style CSV. Entries
     /// with an existing host+username are updated. Returns (added, updated).
-    pub fn import(&self, db: &Connection, text: &str) -> anyhow::Result<(usize, usize)> {
+    pub fn import(&mut self, db: &Connection, text: &str) -> anyhow::Result<(usize, usize)> {
         let mut entries: Vec<Entry> = vec![];
         let trimmed = text.trim_start_matches('\u{feff}').trim_start();
         if trimmed.starts_with('<') {
@@ -505,7 +660,7 @@ mod tests {
     #[test]
     fn plain_flow_and_falkon_compat() {
         let db = db();
-        let s = PasswordStore::open(&db).unwrap();
+        let mut s = PasswordStore::open(&db).unwrap();
         // An entry written by Falkon:
         db.execute("INSERT INTO autofill (server, data, password, username, last_used) VALUES ('kde.org', 'u=ann&p=pw', 'pw', 'ann', 1)", []).unwrap();
         assert_eq!(s.entries_for(&db, "https://kde.org/login").unwrap()[0].username, "ann");
@@ -551,9 +706,24 @@ mod tests {
     }
 
     #[test]
+    fn switch_backends() {
+        let mut db = db();
+        let mut s = PasswordStore::open(&db).unwrap();
+        s.add(&db, &Entry { host: "a.test".into(), username: "u".into(), password: "p".into(), ..Default::default() }).unwrap();
+        assert!(s.set_backend(&mut db, Backend::KWallet, None).is_err()); // wallet not open
+        assert_eq!(s.backend(&db), Backend::Plain);
+        s.set_backend(&mut db, Backend::Encrypted, Some("master")).unwrap();
+        assert_eq!(s.backend(&db), Backend::Encrypted);
+        assert_eq!(s.all(&db).unwrap()[0].password, "p");
+        s.set_backend(&mut db, Backend::Plain, None).unwrap();
+        assert_eq!(s.backend(&db), Backend::Plain);
+        assert_eq!(s.all(&db).unwrap().len(), 1);
+    }
+
+    #[test]
     fn import_export() {
         let db = db();
-        let s = PasswordStore::open(&db).unwrap();
+        let mut s = PasswordStore::open(&db).unwrap();
         let csv = "\u{feff}\"url\",\"username\",\"password\",\"httpRealm\"\nhttps://a.test/login,ann,p1,\nhttp://b.test:8080,bob,\"p,2\",\n";
         assert_eq!(s.import(&db, csv).unwrap(), (2, 0));
         assert_eq!(s.import(&db, csv).unwrap(), (0, 0));
@@ -561,7 +731,7 @@ mod tests {
         PasswordStore::add_exception(&db, "never.test").unwrap();
         let xml = s.export_falkon_xml(&db).unwrap();
         let db2 = crate::db::open_in_memory().unwrap();
-        let s2 = PasswordStore::open(&db2).unwrap();
+        let mut s2 = PasswordStore::open(&db2).unwrap();
         assert_eq!(s2.import(&db2, &xml).unwrap(), (2, 0));
         assert_eq!(PasswordStore::exceptions(&db2).unwrap(), vec!["never.test"]);
         let out = s2.export_csv(&db2).unwrap();

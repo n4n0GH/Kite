@@ -221,8 +221,8 @@ Item {
                     wt.window.setTabProperty(wt.tabId, "icon", s)
                     wt.sendUpdate({favIconUrl: s.startsWith("image://favicon/") ? s.substring(16) : s})
                 }
-                onRecentlyAudibleChanged: { wt.window.setTabProperty(wt.tabId, "audible", recentlyAudible); wt.sendUpdate({audible: recentlyAudible}) }
-                onAudioMutedChanged: { wt.window.setTabProperty(wt.tabId, "muted", audioMuted); wt.sendUpdate({mutedInfo: {muted: audioMuted}}) }
+                onRecentlyAudibleChanged: () => { wt.window.setTabProperty(wt.tabId, "audible", web.recentlyAudible); wt.sendUpdate({audible: web.recentlyAudible}) }
+                onAudioMutedChanged: () => { wt.window.setTabProperty(wt.tabId, "muted", web.audioMuted); wt.sendUpdate({mutedInfo: {muted: web.audioMuted}}) }
 
                 onLoadingChanged: info => {
                     const u = info.url.toString()

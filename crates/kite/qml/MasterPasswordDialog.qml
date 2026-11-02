@@ -20,6 +20,11 @@ Window {
     function ask(cb) {
         if (!Passwords.locked) { cb(true); return }
         callbacks = callbacks.concat([cb])
+        if (Passwords.backend === "kwallet") {
+            // KWallet shows its own prompt if the wallet is closed.
+            Passwords.openWallet()
+            return
+        }
         if (visible) return
         error = ""; field.text = ""
         visible = true; raise(); requestActivate(); field.forceActiveFocus()
@@ -37,6 +42,14 @@ Window {
         })
     }
     onClosing: if (callbacks.length) finish(false)
+    Connections {
+        target: Passwords
+        function onWalletOpened(error) {
+            if (Passwords.backend !== "kwallet" || dlg.callbacks.length === 0) return
+            const cbs = dlg.callbacks; dlg.callbacks = []
+            for (const cb of cbs) cb(error === "")
+        }
+    }
 
     ColumnLayout {
         id: layout

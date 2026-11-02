@@ -11,6 +11,7 @@ pub mod bookmarks;
 pub mod db;
 pub mod downloads;
 pub mod history;
+pub mod kwallet;
 pub mod passwords;
 pub mod paths;
 pub mod search;

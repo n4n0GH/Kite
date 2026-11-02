@@ -191,6 +191,30 @@ Kirigami.ApplicationWindow {
             property var exceptions: []
             property var revealed: ({})
             property string message: ""
+            property bool switching: false
+            function switchTo(target) {
+                if (target === Passwords.backend) return
+                if (target === "kwallet" && !Passwords.kwalletAvailable) { message = "KDE Wallet is not running or is disabled in System Settings."; storage.currentIndex = storage.model.findIndex(m => m.k === Passwords.backend); return }
+                const go = () => {
+                    if (target === "encrypted") { masterDlg.mode = "set"; masterDlg.open(); return }
+                    if (Passwords.backend === "encrypted" && target === "plain") { masterDlg.mode = "remove"; masterDlg.open(); return }
+                    switching = true
+                    Passwords.switchBackend(target, "")
+                }
+                // Logins must be readable before they can be moved.
+                if (Passwords.locked) w.app.unlockPasswords(ok => { if (ok) go(); else storage.currentIndex = storage.model.findIndex(m => m.k === Passwords.backend) })
+                else go()
+            }
+            Connections {
+                target: Passwords
+                function onBackendSwitched(error) {
+                    pw.switching = false
+                    pw.message = error !== "" ? "Could not change storage: " + error
+                        : Passwords.backend === "kwallet" ? "Saved logins are now stored in KDE Wallet." : "Storage changed."
+                    storage.currentIndex = storage.model.findIndex(m => m.k === Passwords.backend)
+                    pw.reload()
+                }
+            }
             function reload() {
                 entries = Passwords.locked ? [] : JSON.parse(Passwords.list())
                 exceptions = JSON.parse(Passwords.exceptions())
@@ -203,14 +227,32 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 QQC2.CheckBox { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; checked: w.get("passwords.save"); onToggled: w.set("passwords.save", checked) }
                 QQC2.CheckBox { text: "Fill in saved logins automatically"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
-                RowLayout {
-                    Kirigami.FormData.label: "Master password:"
-                    QQC2.Label { text: Passwords.encrypted ? (Passwords.locked ? "Set (locked)" : "Set (unlocked)") : "Not set — passwords are stored unencrypted" }
+                QQC2.ComboBox {
+                    id: storage
+                    Kirigami.FormData.label: "Store logins in:"
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 18
+                    enabled: !Passwords.walletOpening && !pw.switching
+                    model: [
+                        {k: "plain", t: "Kite database (not encrypted)"},
+                        {k: "encrypted", t: "Kite database, encrypted with a master password"},
+                        {k: "kwallet", t: Passwords.kwalletAvailable ? "KDE Wallet" : "KDE Wallet (not available)"}
+                    ]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === Passwords.backend))
+                    onActivated: i => pw.switchTo(model[i].k)
+                }
+                QQC2.Label {
+                    visible: Passwords.backend === "kwallet" || pw.switching || Passwords.walletOpening
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+                    wrapMode: Text.Wrap
+                    opacity: 0.75
+                    text: Passwords.walletOpening ? "Opening KDE Wallet…" : pw.switching ? "Moving saved logins…"
+                        : "Logins are kept in your network wallet, in the same folder Falkon uses, so both browsers share them."
                 }
                 RowLayout {
-                    QQC2.Button { text: Passwords.encrypted ? "Change…" : "Set Master Password…"; icon.name: "document-encrypt"; onClicked: { masterDlg.mode = Passwords.encrypted ? "change" : "set"; masterDlg.open() } }
-                    QQC2.Button { visible: Passwords.encrypted; text: "Remove…"; icon.name: "document-decrypt"; onClicked: { masterDlg.mode = "remove"; masterDlg.open() } }
-                    QQC2.Button { visible: Passwords.encrypted && !Passwords.locked; text: "Lock Now"; icon.name: "object-locked"; onClicked: Passwords.lock() }
+                    visible: Passwords.backend === "encrypted"
+                    QQC2.Button { text: "Change Master Password…"; icon.name: "document-encrypt"; onClicked: { masterDlg.mode = "change"; masterDlg.open() } }
+                    QQC2.Button { visible: !Passwords.locked; text: "Lock Now"; icon.name: "object-locked"; onClicked: Passwords.lock() }
                 }
             }
 
@@ -218,7 +260,7 @@ Kirigami.ApplicationWindow {
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
                 visible: Passwords.locked
-                text: "Saved logins are protected by your master password."
+                text: Passwords.backend === "kwallet" ? (Passwords.walletOpening ? "Opening KDE Wallet…" : "KDE Wallet is closed.") : "Saved logins are protected by your master password."
                 actions: [Kirigami.Action { text: "Unlock"; icon.name: "object-unlocked"; onTriggered: w.app.unlockPasswords(ok => pw.reload()) }]
             }
             RowLayout {
@@ -299,6 +341,7 @@ Kirigami.ApplicationWindow {
                 standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
                 padding: Kirigami.Units.largeSpacing
                 onOpened: { mCur.text = ""; mNew.text = ""; mNew2.text = ""; mErr.text = "" }
+                onRejected: storage.currentIndex = storage.model.findIndex(m => m.k === Passwords.backend)
                 ColumnLayout {
                     QQC2.Label {
                         Layout.maximumWidth: Kirigami.Units.gridUnit * 22; wrapMode: Text.Wrap
@@ -306,7 +349,7 @@ Kirigami.ApplicationWindow {
                             : "Saved logins will be encrypted. You'll need this password once per session to use them. If you forget it, the saved logins cannot be recovered."
                     }
                     Kirigami.FormLayout {
-                        Kirigami.PasswordField { id: mCur; Kirigami.FormData.label: "Current password:"; visible: masterDlg.mode !== "set" }
+                        Kirigami.PasswordField { id: mCur; Kirigami.FormData.label: "Current password:"; visible: masterDlg.mode !== "set" && Passwords.backend === "encrypted" }
                         Kirigami.PasswordField { id: mNew; Kirigami.FormData.label: "New password:"; visible: masterDlg.mode !== "remove" }
                         Kirigami.PasswordField { id: mNew2; Kirigami.FormData.label: "Repeat:"; visible: masterDlg.mode !== "remove" }
                     }
@@ -319,6 +362,7 @@ Kirigami.ApplicationWindow {
                     else err = mode === "remove" ? Passwords.removeMasterPassword(mCur.text) : Passwords.setMasterPassword(mCur.text, mNew.text)
                     if (err !== "") { mErr.text = err; Qt.callLater(open) }
                     else { pw.message = mode === "remove" ? "Master password removed" : "Master password set"; pw.reload() }
+                    storage.currentIndex = storage.model.findIndex(m => m.k === Passwords.backend)
                 }
             }
         }

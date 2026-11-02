@@ -8,7 +8,7 @@
 //! * Nothing is ever saved from private windows / sessions.
 
 use crate::state::app;
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use kite_core::passwords::{create_host, Backend, Decision, Entry, PasswordStore};
 use serde_json::{json, Value};
@@ -28,6 +28,9 @@ pub mod qobject {
         #[qml_singleton]
         #[qproperty(bool, locked)]
         #[qproperty(bool, encrypted)]
+        #[qproperty(QString, backend)]
+        #[qproperty(bool, kwallet_available, cxx_name = "kwalletAvailable")]
+        #[qproperty(bool, wallet_opening, cxx_name = "walletOpening")]
         type Passwords = super::PasswordsRust;
 
         // store state
@@ -40,6 +43,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setMasterPassword"]
         fn set_master_password(self: Pin<&mut Passwords>, current: &QString, new_password: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "openWallet"]
+        fn open_wallet(self: Pin<&mut Passwords>);
+        #[qsignal]
+        #[cxx_name = "walletOpened"]
+        fn wallet_opened(self: Pin<&mut Passwords>, error: QString);
+        #[qinvokable]
+        #[cxx_name = "switchBackend"]
+        fn switch_backend(self: Pin<&mut Passwords>, target: &QString, master: &QString);
+        #[qsignal]
+        #[cxx_name = "backendSwitched"]
+        fn backend_switched(self: Pin<&mut Passwords>, error: QString);
         #[qinvokable]
         #[cxx_name = "removeMasterPassword"]
         fn remove_master_password(self: Pin<&mut Passwords>, current: &QString) -> QString;
@@ -94,12 +109,16 @@ pub mod qobject {
     }
 
     impl cxx_qt::Initialize for Passwords {}
+    impl cxx_qt::Threading for Passwords {}
 }
 
 #[derive(Default)]
 pub struct PasswordsRust {
     locked: bool,
     encrypted: bool,
+    backend: QString,
+    kwallet_available: bool,
+    wallet_opening: bool,
     pending: HashMap<i32, Decision>,
     next: i32,
 }
@@ -132,19 +151,92 @@ fn entry_json(e: &Entry, with_password: bool) -> Value {
 }
 
 impl cxx_qt::Initialize for qobject::Passwords {
-    fn initialize(self: Pin<&mut Self>) {
-        self.refresh();
+    fn initialize(mut self: Pin<&mut Self>) {
+        self.as_mut().refresh();
+        // Detect KWallet without blocking startup.
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let ok = kite_core::kwallet::KWallet::available();
+            let _ = thread.queue(move |mut o| o.as_mut().set_kwallet_available(ok));
+        });
+        // Using KWallet: open it right away so autofill works (as Falkon does).
+        if *self.backend() == q("kwallet") {
+            self.open_wallet();
+        }
     }
+}
+
+fn backend_name(b: Backend) -> &'static str {
+    match b {
+        Backend::Plain => "plain",
+        Backend::Encrypted => "encrypted",
+        Backend::KWallet => "kwallet",
+    }
+}
+
+/// Open KWallet off the UI thread (it may show its own password prompt),
+/// then hand it to the store on the Qt thread.
+fn open_wallet_then(thread: cxx_qt::CxxQtThread<qobject::Passwords>, then: impl FnOnce(Pin<&mut qobject::Passwords>, Result<(), String>) + Send + 'static) {
+    std::thread::spawn(move || {
+        let r = kite_core::kwallet::KWallet::open(0);
+        let _ = thread.queue(move |mut o| {
+            let res = r.map_err(|e| e.to_string()).and_then(|kw| with_store(|s, _| s.attach_wallet(kw)).map_err(|e| e.to_string()));
+            o.as_mut().set_wallet_opening(false);
+            then(o, res);
+        });
+    });
 }
 
 impl qobject::Passwords {
     fn refresh(mut self: Pin<&mut Self>) {
-        let (locked, encrypted) = with_store(|s, db| (s.is_locked(db), s.backend(db) == Backend::Encrypted));
+        let (locked, backend) = with_store(|s, db| (s.is_locked(db), s.backend(db)));
         self.as_mut().set_locked(locked);
-        self.as_mut().set_encrypted(encrypted);
+        self.as_mut().set_encrypted(backend == Backend::Encrypted);
+        self.as_mut().set_backend(q(backend_name(backend)));
+    }
+
+    fn open_wallet(mut self: Pin<&mut Self>) {
+        if *self.wallet_opening() {
+            return;
+        }
+        self.as_mut().set_wallet_opening(true);
+        open_wallet_then(self.qt_thread(), |mut o, r| {
+            o.as_mut().refresh();
+            if r.is_ok() {
+                o.as_mut().changed();
+            }
+            o.wallet_opened(q(r.err().unwrap_or_default()));
+        });
+    }
+
+    /// target: "plain" | "encrypted" | "kwallet". `master` is the new master
+    /// password when switching to "encrypted".
+    fn switch_backend(mut self: Pin<&mut Self>, target: &QString, master: &QString) {
+        let target = match target.to_string().as_str() {
+            "kwallet" => Backend::KWallet,
+            "encrypted" => Backend::Encrypted,
+            _ => Backend::Plain,
+        };
+        let master = master.to_string();
+        let finish = move |mut o: Pin<&mut qobject::Passwords>, r: Result<(), String>| {
+            let r = r.and_then(|_| with_store(|s, db| s.set_backend(db, target, (!master.is_empty()).then_some(master.as_str()))).map_err(|e| e.to_string()));
+            o.as_mut().refresh();
+            o.as_mut().changed();
+            o.backend_switched(q(r.err().unwrap_or_default()));
+        };
+        if target == Backend::KWallet {
+            self.as_mut().set_wallet_opening(true);
+            open_wallet_then(self.qt_thread(), finish);
+        } else {
+            finish(self, Ok(()));
+        }
     }
 
     fn unlock(mut self: Pin<&mut Self>, password: &QString) -> QString {
+        if *self.backend() == q("kwallet") {
+            self.open_wallet();
+            return q("");
+        }
         let r = with_store(|s, db| s.unlock(db, &password.to_string()));
         self.as_mut().refresh();
         match r {
