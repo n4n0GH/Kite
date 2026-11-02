@@ -211,7 +211,9 @@ QQC2.ApplicationWindow {
     Shortcut { sequence: "Ctrl+K"; onActivated: { locationBar.focusAndSelect(); locationBar.text = "? " ; locationBar.cursorPosition = 2 } }
     Shortcut { sequences: ["Ctrl+R", "F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reload() }
     Shortcut { sequences: ["Ctrl+Shift+R", "Ctrl+F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reloadAndBypassCache() }
-    Shortcut { sequence: "Esc"; onActivated: { if (findBar.visible) findBar.close(); else if (bw.currentTab && bw.currentTab.loading) bw.currentTab.view.stop(); else if (bw.contentFullScreen) bw.currentTab.view.triggerWebAction(WebEngineView.ExitFullScreen) } }
+    // Only while the find bar is open: otherwise Escape must reach the page
+    // (web apps and extensions such as Vimium rely on it).
+    Shortcut { sequence: "Esc"; enabled: findBar.visible; onActivated: findBar.close() }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (bw.currentTab) bw.currentTab.view.goBack() }
     Shortcut { sequences: [StandardKey.Forward, "Alt+Right"]; onActivated: if (bw.currentTab) bw.currentTab.view.goForward() }
     Shortcut { sequence: "Alt+Home"; onActivated: if (bw.currentTab) bw.currentTab.load(app.setting("general.homepage")) }

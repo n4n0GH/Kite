@@ -476,6 +476,16 @@ impl Runtime {
         t
     }
 
+    /// (tab id, window id) of the active tab in the focused window.
+    pub fn active_tab(&self) -> (i64, i64) {
+        self.tabs
+            .values()
+            .find(|t| t["active"] == true && t["windowId"].as_i64() == Some(self.focused_window))
+            .or_else(|| self.tabs.values().find(|t| t["active"] == true))
+            .map(|t| (t["id"].as_i64().unwrap_or(-1), t["windowId"].as_i64().unwrap_or(-1)))
+            .unwrap_or((-1, self.focused_window))
+    }
+
     /// Best guess of the tab a network request belongs to (Qt's profile-level
     /// interceptor does not tell us), by matching the first-party URL.
     pub fn tab_for_first_party(&self, first_party: &str) -> i64 {

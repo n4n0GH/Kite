@@ -218,10 +218,19 @@ impl qobject::Extensions {
                         Ok(v) => json!({"kind": "reply", "ctx": ctx, "callId": call_id, "ok": true, "value": v}),
                         Err(e) => json!({"kind": "reply", "ctx": ctx, "callId": call_id, "ok": false, "error": e}),
                     };
-                    self.as_mut().deliver(q(view), js(&payload));
+                    if view.starts_with(crate::rpc::VIEW_PREFIX) {
+                        crate::rpc::deliver(&view, payload.to_string());
+                    } else {
+                        self.as_mut().deliver(q(view), js(&payload));
+                    }
                 }
                 Effect::Deliver { view, ctxs, payload } => {
-                    self.as_mut().deliver(q(view), js(&json!({"kind": "deliver", "ctxs": ctxs, "payload": payload})));
+                    let payload = json!({"kind": "deliver", "ctxs": ctxs, "payload": payload});
+                    if view.starts_with(crate::rpc::VIEW_PREFIX) {
+                        crate::rpc::deliver(&view, payload.to_string());
+                    } else {
+                        self.as_mut().deliver(q(view), js(&payload));
+                    }
                 }
                 Effect::Ui { view, ctx, call_id, ext, method, args } if method == "net.fetch" => {
                     let _ = ext;
@@ -277,7 +286,11 @@ impl qobject::Extensions {
     }
 
     fn tick(self: Pin<&mut Self>) {
-        let fx = app().runtime().tick();
+        let mut fx = app().runtime().tick();
+        // Sub-frame extension pages that stopped polling are gone.
+        for view in crate::rpc::sweep() {
+            fx.extend(app().runtime().view_closed(&view));
+        }
         self.apply(fx);
     }
 

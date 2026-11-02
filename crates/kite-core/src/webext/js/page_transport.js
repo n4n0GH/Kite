@@ -4,10 +4,17 @@
   'use strict';
   if (globalThis.browser && globalThis.browser.runtime && globalThis.browser.runtime.id === cfg.id) return;
   const ctx = 'p-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  // Qt's WebChannel only exists in top-level documents. Extension pages in
+  // sub-frames (e.g. an extension UI iframe inside a web page) talk to Kite
+  // through their own origin instead (see crates/kite/src/rpc.rs).
+  const inFrame = window !== top;
+  const rawFetch = globalThis.fetch.bind(globalThis);
   const pending = new Map();
   let nextId = 1, kite = null, api = null;
   const queue = [];
-  const send = (m) => (kite ? kite.call(cfg.token, ctx, m[0], m[1], m[2]) : queue.push(m));
+  const rpc = (method, argsJson, id) => rawFetch('/__kite__/rpc', { method: 'POST', cache: 'no-store', body: JSON.stringify({ token: cfg.token, ctx, method, args: JSON.parse(argsJson), callId: id }) })
+    .catch((e) => { const p = pending.get(id); if (p) { pending.delete(id); p.reject(new Error('Extension API unavailable: ' + e.message)); } });
+  const send = (m) => (inFrame ? rpc(m[0], m[1], m[2]) : kite ? kite.call(cfg.token, ctx, m[0], m[1], m[2]) : queue.push(m));
   const transport = {
     call(method, args) {
       return new Promise((resolve, reject) => {
@@ -48,11 +55,32 @@
       ready = true; maybeReady();
     });
   }
-  (function wait(n) {
+  async function pollLoop() {
+    for (;;) {
+      try {
+        const r = await rawFetch('/__kite__/poll?ctx=' + encodeURIComponent(ctx), { cache: 'no-store' });
+        if (r.status === 403 || r.status === 404) return;
+        for (const msg of await r.json()) onDeliver(JSON.stringify(msg));
+      } catch (e) {
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+    }
+  }
+  if (inFrame) {
+    // Start polling before registering so nothing is missed.
+    pollLoop();
+    const reg = nextId++;
+    pending.set(reg, { resolve: () => {}, reject: () => {} });
+    rpc('_.register', JSON.stringify([{ kind: 'frame', url: location.href, frameId: 1 }]), reg);
+    ready = true;
+  } else (function wait(n) {
     if (globalThis.qt && qt.webChannelTransport) init();
     else if (n < 400) setTimeout(() => wait(n + 1), 5);
     else console.error('[Kite] extension API transport unavailable');
   })(0);
-  addEventListener('pagehide', () => { if (kite) kite.call(cfg.token, ctx, '_.unregister', '[]', 0); });
+  addEventListener('pagehide', () => {
+    if (inFrame) navigator.sendBeacon && navigator.sendBeacon('/__kite__/rpc', JSON.stringify({ token: cfg.token, ctx, method: '_.unregister', args: [], callId: 0 }));
+    else if (kite) kite.call(cfg.token, ctx, '_.unregister', '[]', 0);
+  });
   // Extension pages in Kite close themselves via window.close(): map to tabs.remove for tab pages.
 })(__KITE_CFG__);

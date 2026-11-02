@@ -145,6 +145,49 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
     }
 }
 
+/// `__kite__/rpc` and `__kite__/poll` for extension pages in sub-frames.
+/// Returns 1 if the request is held (completed later via
+/// `kite_cpp_rpc_complete`), else 0 with `status`/`out` filled in.
+#[no_mangle]
+pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, body: *const u8, body_len: usize, job: u64, status: *mut i32, out: *mut KiteBuf) -> i32 {
+    let url = s(url);
+    let initiator = s(initiator);
+    let body = if body.is_null() { &[][..] } else { std::slice::from_raw_parts(body, body_len) };
+    let Ok(u) = url::Url::parse(url) else {
+        *status = 400;
+        *out = KiteBuf::empty();
+        return 0;
+    };
+    let base = {
+        let rt = app().runtime();
+        match rt.registry.by_uuid(u.host_str().unwrap_or("")).filter(|e| e.info.enabled) {
+            Some(e) => e.base_url(),
+            None => {
+                *status = 404;
+                *out = KiteBuf::empty();
+                return 0;
+            }
+        }
+    };
+    let pq = match u.query() {
+        Some(q) => format!("{}?{q}", u.path()),
+        None => u.path().to_owned(),
+    };
+    match crate::rpc::handle(&pq, &base, initiator, body, job) {
+        crate::rpc::Handled::Now(code, json) => {
+            *status = code;
+            *out = KiteBuf::from_vec(json.into_bytes());
+            0
+        }
+        crate::rpc::Handled::Held => 1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn kite_rpc_job_gone(job: u64) {
+    crate::rpc::job_gone(job);
+}
+
 /// Network request interceptor. Returns "" (allow), "block",
 /// "redirect:<url>" or "headers:<json [[name, value], ...]>".
 #[no_mangle]

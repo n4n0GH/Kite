@@ -10,6 +10,7 @@ mod browser;
 mod extensions;
 mod ffi;
 mod passwords;
+mod rpc;
 mod startpage;
 mod state;
 

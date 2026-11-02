@@ -5,6 +5,7 @@
 // Everything here forwards to Rust via a small C ABI (src/ffi.rs).
 #include <QBuffer>
 #include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -40,6 +41,8 @@ void kite_buf_free(KiteBuf b);
 KiteBuf kite_serve(const char *url, const char *initiator, int *status, KiteBuf *mime);
 KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method);
 void kite_cookie_event(const char *json, int removed, int initial);
+int kite_rpc(const char *url, const char *initiator, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
+void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
 }
 
@@ -54,6 +57,29 @@ static QPointer<QQuickWebEngineProfile> g_profile;
 static QPointer<QObject> g_offTheRecordProfile;
 static bool g_initialCookiesDone = false;
 
+// Held long-poll requests of sub-frame extension pages (see src/rpc.rs).
+static QHash<quint64, QPointer<QWebEngineUrlRequestJob>> g_rpcJobs;
+static quint64 g_nextJob = 1;
+
+static void replyJson(QWebEngineUrlRequestJob *job, int status, const QByteArray &body)
+{
+    if (status == 403) { job->fail(QWebEngineUrlRequestJob::RequestDenied); return; }
+    if (status >= 400) { job->fail(QWebEngineUrlRequestJob::RequestFailed); return; }
+    auto *buffer = new QBuffer(job);
+    buffer->setData(body);
+    buffer->open(QIODevice::ReadOnly);
+    QMultiMap<QByteArray, QByteArray> headers;
+    headers.insert("Cache-Control", "no-store");
+    job->setAdditionalResponseHeaders(headers);
+    job->reply("application/json", buffer);
+}
+
+extern "C" void kite_cpp_rpc_complete(quint64 id, const unsigned char *data, size_t len)
+{
+    const auto job = g_rpcJobs.take(id);
+    if (job) replyJson(job, 200, QByteArray(reinterpret_cast<const char *>(data), qsizetype(len)));
+}
+
 // ---------------------------------------------------------------------------
 class KiteSchemeHandler : public QWebEngineUrlSchemeHandler {
 public:
@@ -62,6 +88,23 @@ public:
     {
         const QByteArray url = job->requestUrl().toString(QUrl::FullyEncoded).toUtf8();
         const QByteArray initiator = job->initiator().isEmpty() ? QByteArray() : job->initiator().toString().toUtf8();
+        if (job->requestUrl().scheme() == QLatin1String("moz-extension") && job->requestUrl().path().startsWith(QLatin1String("/__kite__/")) &&
+            (job->requestUrl().path().endsWith(QLatin1String("/rpc")) || job->requestUrl().path().endsWith(QLatin1String("/poll")))) {
+            QByteArray body;
+            if (QIODevice *dev = job->requestBody()) {
+                if (dev->isOpen() || dev->open(QIODevice::ReadOnly)) body = dev->readAll();
+            }
+            const quint64 id = g_nextJob++;
+            int status = 0;
+            KiteBuf out{nullptr, 0, 0};
+            if (kite_rpc(url.constData(), initiator.constData(), reinterpret_cast<const unsigned char *>(body.constData()), size_t(body.size()), id, &status, &out) == 1) {
+                g_rpcJobs.insert(id, job);
+                QObject::connect(job, &QObject::destroyed, [id] { g_rpcJobs.remove(id); kite_rpc_job_gone(id); });
+                return;
+            }
+            replyJson(job, status, takeBuf(out));
+            return;
+        }
         int status = 0;
         KiteBuf mimeBuf{nullptr, 0, 0};
         QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), &status, &mimeBuf));
