@@ -282,7 +282,8 @@ QQC2.TextField {
                     Kirigami.FormData.label: "Folder:"
                     Layout.fillWidth: true
                     textRole: "title"
-                    delegate: QQC2.ItemDelegate { required property var modelData; width: ListView.view.width; text: "    ".repeat(modelData.depth) + modelData.title }
+                    // ListView.view is null for rows the ComboBox creates to measure them.
+                    delegate: QQC2.ItemDelegate { required property var modelData; width: ListView.view ? ListView.view.width : implicitWidth; text: "    ".repeat(modelData.depth) + modelData.title }
                 }
             }
             RowLayout {
