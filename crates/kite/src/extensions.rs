@@ -80,6 +80,12 @@ pub mod qobject {
         #[cxx_name = "omniboxKeywords"]
         fn omnibox_keywords(self: &Extensions) -> QString;
 
+        /// False while extensions that block requests are still starting;
+        /// tabs hold their first load until then.
+        #[qinvokable]
+        #[cxx_name = "networkReady"]
+        fn network_ready(self: &Extensions) -> bool;
+
         // ---- management ----
         #[qinvokable]
         fn list(self: &Extensions) -> QString;
@@ -357,6 +363,10 @@ impl qobject::Extensions {
         let rt = a.runtime();
         let list: Vec<Value> = rt.registry.enabled().filter_map(|e| scripts::background_url(e).map(|u| json!({"ext": e.info.id, "name": e.manifest.name, "url": u}))).collect();
         js(&Value::Array(list))
+    }
+
+    fn network_ready(&self) -> bool {
+        app().runtime().network_ready()
     }
 
     fn new_tab_override(&self) -> QString {

@@ -11,6 +11,7 @@
 //! its content-script world). Calls carry the token, so a web page or another
 //! extension cannot impersonate it.
 
+use super::blocking::BlockingHub;
 use super::dnr::{self, RuleSet};
 use super::matchpattern::MatchSet;
 use super::registry::{Extension, Registry};
@@ -19,6 +20,7 @@ use crate::shared::Shared;
 use crate::util::now_ms;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// Where a call came from (filled in by the GUI layer, not by page JS).
 #[derive(Debug, Clone, Default)]
@@ -131,6 +133,9 @@ struct WebRequestListener {
     urls: MatchSet,
     types: Vec<String>,
     tab_id: Option<i64>,
+    /// Registered with "blocking": answered over the [`BlockingHub`]
+    /// instead of being delivered as an event.
+    blocking: bool,
 }
 
 pub struct Runtime {
@@ -154,6 +159,7 @@ pub struct Runtime {
     menus: Vec<MenuItem>,
     alarms: HashMap<(String, String), Alarm>,
     web_request: HashMap<String, Vec<WebRequestListener>>,
+    pub blocking: Arc<BlockingHub>,
     pub dnr: HashMap<String, RuleSet>,
     dnr_disabled: HashMap<String, Vec<String>>,
     dynamic_scripts: HashMap<String, Vec<Value>>,
@@ -234,6 +240,7 @@ impl Runtime {
             menus: vec![],
             alarms: HashMap::new(),
             web_request: HashMap::new(),
+            blocking: Arc::new(BlockingHub::new()),
             dnr: HashMap::new(),
             dnr_disabled: HashMap::new(),
             dynamic_scripts: HashMap::new(),
@@ -256,6 +263,7 @@ impl Runtime {
         if !self.ext_tokens.contains_key(id) {
             let t = token();
             self.tokens.insert(t.clone(), id.to_owned());
+            self.blocking.add_token(&t, id);
             self.ext_tokens.insert(id.to_owned(), t);
         }
         if !self.worlds.contains_key(id) {
@@ -1115,33 +1123,61 @@ impl Runtime {
         )
     }
 
-    /// Fire non-blocking webRequest events for a request.
-    pub fn web_request(&mut self, details: &Value) -> Vec<Effect> {
+    /// Fire webRequest events for a request. Non-blocking listeners get
+    /// them as events; the returned extensions have blocking
+    /// `onBeforeRequest` listeners for it and must be asked through
+    /// [`Runtime::blocking`] (outside the runtime lock).
+    pub fn web_request(&mut self, details: &Value) -> (Vec<Effect>, Vec<String>) {
         if self.web_request.is_empty() {
-            return vec![];
+            return (vec![], vec![]);
         }
         let url = details["url"].as_str().unwrap_or_default();
         let ty = details["type"].as_str().unwrap_or_default();
         let tab = details["tabId"].as_i64();
         let mut fx = vec![];
+        let mut ask = vec![];
         for (ext, listeners) in &self.web_request {
             let Some(e) = self.registry.get(ext) else { continue };
+            if !e.info.enabled {
+                continue;
+            }
             let hosts = MatchSet::parse(e.host_patterns().iter().map(String::as_str));
             if !hosts.matches(url) {
                 continue;
             }
-            let mut events: Vec<&str> = listeners
+            let matching = listeners
                 .iter()
-                .filter(|l| l.urls.matches(url) && (l.types.is_empty() || l.types.iter().any(|t| t == ty)) && l.tab_id.map(|t| Some(t) == tab).unwrap_or(true))
-                .map(|l| l.event.as_str())
-                .collect();
+                .filter(|l| l.urls.matches(url) && (l.types.is_empty() || l.types.iter().any(|t| t == ty)) && l.tab_id.map(|t| Some(t) == tab).unwrap_or(true));
+            let mut events: Vec<&str> = vec![];
+            for l in matching {
+                if !l.blocking {
+                    events.push(l.event.as_str());
+                } else if l.event == "onBeforeRequest" && !ask.contains(ext) {
+                    ask.push(ext.clone());
+                }
+            }
             events.sort();
             events.dedup();
             for ev in events {
                 fx.extend(self.fire(ext, &format!("webRequest.{ev}"), json!([details]), false));
             }
         }
-        fx
+        (fx, ask)
+    }
+
+    /// May tabs start loading? Extensions that can block requests
+    /// (`webRequestBlocking`) get to finish starting up first, like Firefox
+    /// holding network requests until e.g. uBlock Origin's filters are
+    /// loaded. Ready means: answered the [`BlockingHub`] probe, or the
+    /// background page is up without any blocking listener.
+    pub fn network_ready(&self) -> bool {
+        self.registry.enabled().all(|e| {
+            let id = &e.info.id;
+            !e.has_permission("webRequestBlocking")
+                || e.manifest.background.is_none()
+                || self.blocking.is_ready(id)
+                || (self.ready.contains_key(id) && !self.web_request.get(id).is_some_and(|v| v.iter().any(|l| l.blocking)))
+        })
     }
 
     pub fn has_web_request_listeners(&self) -> bool {
@@ -1983,14 +2019,16 @@ impl Runtime {
                 let filter = arg(args, 1);
                 let urls = MatchSet::parse(filter["urls"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>()).unwrap_or_default());
                 let types = filter["types"].as_array().map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
-                let l = WebRequestListener { event: ev, urls, types, tab_id: filter["tabId"].as_i64() };
+                let blocking = arg(args, 2).as_array().is_some_and(|a| a.iter().any(|x| x == "blocking"));
+                let l = WebRequestListener { event: ev, urls, types, tab_id: filter["tabId"].as_i64(), blocking };
                 self.web_request.entry(ext_id.into()).or_default().push(l);
                 now!(Ok(Value::Null))
             }
             ("webRequest", "_unlisten") => {
                 let ev = arg_str(args, 0);
+                let blocking = arg(args, 1).as_bool().unwrap_or(false);
                 if let Some(v) = self.web_request.get_mut(ext_id) {
-                    if let Some(i) = v.iter().position(|l| l.event == ev) {
+                    if let Some(i) = v.iter().position(|l| l.event == ev && l.blocking == blocking) {
                         v.remove(i);
                     }
                     if v.is_empty() {

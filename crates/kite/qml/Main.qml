@@ -205,6 +205,15 @@ QtObject {
 
     property Timer alarmTimer: Timer { interval: 1000; repeat: true; running: true; onTriggered: Extensions.tick() }
 
+    // Web pages wait for content blockers (e.g. uBlock Origin) to load their
+    // filters at startup, so the first pages aren't loaded unfiltered.
+    property bool networkReady: false
+    property Timer networkReadyTimer: Timer {
+        interval: 50; repeat: true; running: !app.networkReady
+        readonly property double started: Date.now()
+        onTriggered: if (Extensions.networkReady() || Date.now() - started > 10000) app.networkReady = true
+    }
+
     function tabOrThrow(id) {
         const t = findTab(id)
         if (!t) throw new Error("Invalid tab ID: " + id)

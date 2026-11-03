@@ -53,12 +53,12 @@ fn with_cfg(transport: &str, cfg: &Value) -> String {
     transport.replace("__KITE_CFG__", &json)
 }
 
-/// `/__kite__/api.js` for extension pages.
-pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str) -> String {
-    format!(
-        "{qwebchannel_js}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n",
-        with_cfg(PAGE_TRANSPORT, &ext_cfg(ext, token, "page"))
-    )
+/// `/__kite__/api.js` for extension pages. `blocking_port` is the
+/// [`super::blocking::BlockingHub`] port (0: blocking webRequest unavailable).
+pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str, blocking_port: u16) -> String {
+    let mut cfg = ext_cfg(ext, token, "page");
+    cfg["blockingPort"] = blocking_port.into();
+    format!("{qwebchannel_js}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n", with_cfg(PAGE_TRANSPORT, &cfg))
 }
 
 /// Code that makes sure `browser`/`chrome` exist in the extension's

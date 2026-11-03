@@ -38,6 +38,9 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     let profile = kite_core::Profile::open(profile)?;
     let shared = Shared::open(profile.clone())?;
     let runtime = Runtime::new(shared.clone())?;
+    if let Err(e) = runtime.blocking.start() {
+        log::warn!("blocking webRequest unavailable: {e}");
+    }
     let passwords = Mutex::new(kite_core::passwords::PasswordStore::open(&shared.db())?);
     let adblock = Arc::new(AdBlock::new(profile.path("adblock")));
     {

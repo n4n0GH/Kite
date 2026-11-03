@@ -99,3 +99,33 @@ test('event filters', () => {
   api.dispatch({ type: 'event', name: 'webNavigation.onCompleted', args: [{ url: 'https://example.com/' }] });
   assert.deepStrictEqual(nav, ['https://apps.kde.org/']);
 });
+
+test('blocking webRequest listeners answer over the hub socket', async () => {
+  const sockets = [];
+  globalThis.WebSocket = class { constructor(url) { this.url = url; this.sent = []; sockets.push(this); } send(m) { this.sent.push(JSON.parse(m)); } close() {} };
+  const calls = [];
+  const transport = { call: (m, a) => { calls.push([m, a]); return Promise.resolve(null); } };
+  const cfg = { id: 'x@y', uuid: 'u', token: 'tok', kind: 'page', blockingPort: 4321, locale: 'en', manifest: {}, messages: {} };
+  const { browser, dispatch } = __kiteMakeAPI(cfg, transport);
+  const seen = [];
+  browser.webRequest.onBeforeRequest.addListener((d) => (d.url.includes('ads') ? { cancel: true } : undefined), { urls: ['<all_urls>'], types: ['script'] }, ['blocking']);
+  browser.webRequest.onBeforeRequest.addListener(async () => ({ redirectUrl: 'moz-extension://u/noop.js' }), { urls: ['*://*.tracker.test/*'] }, ['blocking']);
+  browser.webRequest.onBeforeRequest.addListener((d) => seen.push(d.url), { urls: ['<all_urls>'] });
+  assert.strictEqual(sockets.length, 1);
+  assert.strictEqual(sockets[0].url, 'ws://127.0.0.1:4321/tok');
+  assert.deepStrictEqual(calls[0][1][2], ['blocking']);
+  assert.deepStrictEqual(calls[2][1][2], []);
+
+  const ws = sockets[0];
+  ws.onmessage({ data: JSON.stringify({ id: 1, event: 'onBeforeRequest', details: { url: 'https://ads.example/a.js', type: 'script' } }) });
+  assert.deepStrictEqual(ws.sent.pop(), { id: 1, result: { cancel: true } });
+  ws.onmessage({ data: JSON.stringify({ id: 2, event: 'onBeforeRequest', details: { url: 'https://cdn.tracker.test/t.js', type: 'image' } }) });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepStrictEqual(ws.sent.pop(), { id: 2, result: { redirectUrl: 'moz-extension://u/noop.js' } });
+  ws.onmessage({ data: JSON.stringify({ id: 3, event: 'onBeforeRequest', details: { url: 'https://ok.test/', type: 'image' } }) });
+  assert.deepStrictEqual(ws.sent.pop(), { id: 3, result: null });
+  // Only the non-blocking listener sees the event.
+  dispatch({ type: 'event', name: 'webRequest.onBeforeRequest', args: [{ url: 'https://ok.test/', type: 'image' }] });
+  assert.deepStrictEqual(seen, ['https://ok.test/']);
+  delete globalThis.WebSocket;
+});

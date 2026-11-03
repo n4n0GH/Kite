@@ -17,10 +17,12 @@ Item {
     property var app
     property alias view: web
     property string pendingUrl: ""
+    // A web page load held until app.networkReady.
+    property string heldUrl: ""
     property int openerTabId: -1
     property bool pinned: false
     property string hoveredLink: ""
-    property string url: pendingUrl !== "" ? pendingUrl : web.url.toString()
+    property string url: heldUrl !== "" ? heldUrl : pendingUrl !== "" ? pendingUrl : web.url.toString()
     property string title: web.title !== "" ? web.title : (pendingUrl !== "" ? _restoredTitle : (url === "" || url === "about:blank" ? "New Tab" : url))
     property string _restoredTitle: "New Tab"
     property bool loading: web.loading
@@ -51,9 +53,15 @@ Item {
     readonly property bool isExtensionPage: url.startsWith("moz-extension:")
     readonly property bool isSecure: url.startsWith("https:") || url.startsWith("kite:") || isExtensionPage
     signal activated()
+    Connections {
+        target: wt.app
+        function onNetworkReadyChanged() { if (wt.heldUrl !== "" && wt.app.networkReady) wt.load(wt.heldUrl) }
+    }
 
     function load(u) {
         pendingUrl = ""
+        if (!app.networkReady && /^(https?|wss?):/i.test(u)) { heldUrl = u; return }
+        heldUrl = ""
         crashed = false
         certError = null
         web.url = u

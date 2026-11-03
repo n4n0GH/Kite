@@ -16,9 +16,11 @@
 //!   history, bookmarks, webRequest events, declarativeNetRequest, ...
 //!   UI-dependent calls (opening tabs, running scripts, popups) are forwarded
 //!   to the GUI layer as [`runtime::Effect::Ui`].
+//! * `blocking` — blocking webRequest listeners (off-UI-thread WebSocket hub).
 //! * `dnr` — declarativeNetRequest rule matching for the network interceptor.
 
 pub mod amo;
+pub mod blocking;
 pub mod dnr;
 pub mod i18n;
 pub mod manifest;

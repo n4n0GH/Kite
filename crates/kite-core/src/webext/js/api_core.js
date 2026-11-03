@@ -34,7 +34,7 @@ function __kiteMakeAPI(cfg, transport) {
     }
     removeListener(cb) {
       const i = this._l.findIndex((x) => x.cb === cb);
-      if (i >= 0) { this._l.splice(i, 1); if (this._hooks.remove) this._hooks.remove(cb, this._l.length); }
+      if (i >= 0) { const [{ extra }] = this._l.splice(i, 1); if (this._hooks.remove) this._hooks.remove(cb, this._l.length, extra); }
     }
     hasListener(cb) { return this._l.some((x) => x.cb === cb); }
     hasListeners() { return this._l.length > 0; }
@@ -135,9 +135,62 @@ function __kiteMakeAPI(cfg, transport) {
     const path = (m[3] || '/').split('*').map(esc).join('.*');
     return new RegExp('^' + scheme + '://' + host + path + '$').test(url.split('#')[0]);
   }
+  // webRequest. Non-blocking listeners get events through the transport.
+  // Blocking ones (extension pages only) are asked synchronously by the
+  // network interceptor over a WebSocket to Kite's blocking hub (see
+  // webext/blocking.rs) and answer with {cancel} / {redirectUrl} /
+  // {requestHeaders}, possibly through a promise.
+  const isBlocking = (extra) => !isContent && !!cfg.blockingPort && (extra[1] || []).includes('blocking');
+  const webRequestMatches = (f, d) => {
+    if (!f) return true;
+    if (f.urls && !f.urls.some((p) => matchPattern(p, d.url))) return false;
+    if (f.types && f.types.length && !f.types.includes(d.type)) return false;
+    if (f.tabId !== undefined && f.tabId !== d.tabId) return false;
+    if (f.windowId !== undefined && d.windowId !== undefined && f.windowId !== d.windowId) return false;
+    return true;
+  };
+  let blockingSocket = null, blockingListeners = 0;
+  function answerBlocking(q) {
+    const e = registry.get('webRequest.' + q.event);
+    const results = [];
+    for (const { cb, extra } of e ? e._l.slice() : []) {
+      if (!isBlocking(extra) || !webRequestMatches(extra[0], q.details)) continue;
+      try { results.push(cb(clone(q.details))); } catch (err) { console.error('Error in webRequest.' + q.event + ' listener:', err); }
+    }
+    const merge = (rs) => {
+      const out = {};
+      for (const r of rs) {
+        if (!r || typeof r !== 'object') continue;
+        if (r.cancel) out.cancel = true;
+        if (r.redirectUrl && !out.redirectUrl) out.redirectUrl = String(r.redirectUrl);
+        if (r.requestHeaders) out.requestHeaders = r.requestHeaders;
+        if (r.responseHeaders) out.responseHeaders = r.responseHeaders;
+      }
+      return Object.keys(out).length ? out : null;
+    };
+    const reply = (rs) => { try { blockingSocket && blockingSocket.send(JSON.stringify({ id: q.id, result: merge(rs) })); } catch (err) {} };
+    if (results.some((r) => r && typeof r.then === 'function')) {
+      Promise.allSettled(results).then((s) => reply(s.map((x) => x.value)));
+    } else reply(results);
+  }
+  function connectBlocking() {
+    if (blockingSocket || !blockingListeners) return;
+    const ws = new WebSocket('ws://127.0.0.1:' + cfg.blockingPort + '/' + cfg.token);
+    blockingSocket = ws;
+    ws.onmessage = (m) => { let q; try { q = JSON.parse(m.data); } catch (err) { return; } answerBlocking(q); };
+    ws.onclose = () => { if (blockingSocket === ws) blockingSocket = null; if (blockingListeners) setTimeout(connectBlocking, 1000); };
+  }
   const webRequestHooks = (name) => ({
-    add: (cb, extra) => { call('webRequest._listen', name, extra[0] || { urls: ['<all_urls>'] }, extra[1] || []).catch(() => {}); if ((extra[1] || []).includes('blocking')) console.warn('[Kite] webRequest blocking listeners are observed but cannot modify requests; use declarativeNetRequest.'); },
-    remove: () => call('webRequest._unlisten', name).catch(() => {}),
+    add: (cb, extra) => {
+      call('webRequest._listen', name, extra[0] || { urls: ['<all_urls>'] }, isBlocking(extra) ? extra[1] : (extra[1] || []).filter((x) => x !== 'blocking')).catch(() => {});
+      if (isBlocking(extra)) { blockingListeners++; connectBlocking(); }
+    },
+    remove: (cb, n, extra) => {
+      call('webRequest._unlisten', name, isBlocking(extra)).catch(() => {});
+      if (isBlocking(extra) && --blockingListeners === 0 && blockingSocket) { const ws = blockingSocket; blockingSocket = null; ws.close(); }
+    },
+    // Blocking listeners only run through answerBlocking().
+    filter: (args, extra) => !isBlocking(extra) && webRequestMatches(extra[0], args[0] || {}),
   });
 
   // ---- i18n -------------------------------------------------------------

@@ -107,7 +107,7 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
             return (403, "text/plain".into(), vec![]);
         }
         let token = rt.token_of(&ext.info.id).unwrap_or("").to_owned();
-        return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js()).into_bytes());
+        return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js(), rt.blocking.port()).into_bytes());
     }
     if path == scripts::BACKGROUND_PAGE {
         return match scripts::background_page(ext) {
@@ -188,6 +188,26 @@ pub extern "C" fn kite_rpc_job_gone(job: u64) {
     crate::rpc::job_gone(job);
 }
 
+/// How long the interceptor waits for blocking webRequest listeners.
+/// Firefox waits indefinitely, but here the UI thread waits; extensions that
+/// miss it are skipped for a moment (see `BlockingHub`).
+const BLOCKING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// webRequest redirects to an extension's own files (uBlock Origin's
+/// neutered scripts and images) become data: URLs for subresources, since
+/// web pages may not load moz-extension:// resources directly.
+fn extension_redirect(to: &str, rtype: &str) -> String {
+    if !to.starts_with("moz-extension:") || rtype == "mainFrame" || rtype == "subFrame" {
+        return to.to_owned();
+    }
+    let (code, mime, body) = serve(to, "");
+    if code != 200 {
+        return to.to_owned();
+    }
+    use base64::Engine as _;
+    format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(body))
+}
+
 /// Network request interceptor. Returns "" (allow), "block",
 /// "redirect:<url>" or "headers:<json [[name, value], ...]>".
 #[no_mangle]
@@ -209,18 +229,44 @@ pub unsafe extern "C" fn kite_intercept(
             return String::new();
         }
         let mut rt = a.runtime();
-        // webRequest observers (non-blocking)
+        // webRequest listeners
         if rt.has_web_request_listeners() {
             let tab = rt.tab_for_first_party(first_party);
+            static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            let frame_id = match rtype {
+                "mainFrame" => 0,
+                // Qt doesn't say which frame; any non-zero id marks a sub-frame.
+                "subFrame" => 1,
+                _ => 0,
+            };
             let details = serde_json::json!({
-                "requestId": format!("{}", kite_core::util::now_ms()), "url": url, "method": method,
-                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": if rtype == "mainFrame" { 0 } else { -1 },
-                "parentFrameId": -1, "originUrl": initiator, "documentUrl": first_party, "timeStamp": kite_core::util::now_ms(),
-                "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
+                "requestId": REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(), "url": url, "method": method,
+                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame_id,
+                "parentFrameId": if rtype == "mainFrame" { -1 } else { 0 }, "originUrl": initiator, "documentUrl": if rtype == "mainFrame" { "" } else { first_party },
+                "timeStamp": kite_core::util::now_ms(), "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
+                "frameAncestors": [], "incognito": a.private, "cookieStoreId": "firefox-default",
             });
-            let fx = rt.web_request(&details);
+            let (fx, ask) = rt.web_request(&details);
+            let hub = rt.blocking.clone();
             drop(rt);
             crate::extensions::apply_effects_async(fx);
+            // Never ask extensions about their own requests: the background
+            // page would be waiting for itself.
+            let from_extension = initiator.starts_with("moz-extension:") || first_party.starts_with("moz-extension:");
+            if !ask.is_empty() && !from_extension {
+                let t0 = std::time::Instant::now();
+                let replies = hub.ask(&ask, "onBeforeRequest", &details, BLOCKING_TIMEOUT);
+                log::trace!("webRequest: asked {ask:?} about {url} (tab {tab}, {rtype}) in {:?}: {replies:?}", t0.elapsed());
+                let d = kite_core::webext::blocking::combine(&replies);
+                if d.cancel {
+                    log::debug!("webRequest: blocked {url}");
+                    return "block".into();
+                }
+                if let Some((ext, to)) = d.redirect {
+                    log::debug!("webRequest: {ext} redirected {url} to {to}");
+                    return format!("redirect:{}", extension_redirect(&to, rtype));
+                }
+            }
             rt = a.runtime();
         }
         match rt.dnr_check(url, if initiator.is_empty() { first_party } else { initiator }, method, rtype) {
