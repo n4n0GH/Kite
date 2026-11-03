@@ -15,6 +15,7 @@ pub mod history;
 pub mod kwallet;
 pub mod passwords;
 pub mod paths;
+pub mod screensaver;
 pub mod search;
 pub mod session;
 pub mod settings;

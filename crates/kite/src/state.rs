@@ -10,6 +10,8 @@ pub struct App {
     pub shared: Shared,
     pub runtime: Mutex<Runtime>,
     pub passwords: Mutex<kite_core::passwords::PasswordStore>,
+    /// Screen kept on for tabs holding a Screen Wake Lock.
+    pub screen: Mutex<kite_core::screensaver::ScreenInhibitor>,
     pub adblock: Arc<AdBlock>,
     /// "web.doNotTrack", read by the network interceptor on every request.
     pub do_not_track: std::sync::atomic::AtomicBool,
@@ -59,7 +61,7 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         let s = shared.settings();
         (s.get_bool("web.doNotTrack").into(), s.get_bool("privacy.sendReferer").into(), cookie_policy(&s.get_str("privacy.cookies")).into())
     };
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, do_not_track, send_referer, cookie_policy, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }

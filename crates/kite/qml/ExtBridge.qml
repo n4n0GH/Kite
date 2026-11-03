@@ -26,6 +26,14 @@ QtObject {
     }
     function cosmetic(url) { return Browser.cosmetic(url) }
 
+    // Screen Wake Lock (crates/kite/src/js/wakelock.js, relayed by the bridge
+    // world): WebTab prompts and answers with wakeLockAnswer.
+    signal wakeLockRequested(int id)
+    signal wakeLockReleased()
+    signal wakeLockAnswer(int id, bool granted)
+    function requestWakeLock(id) { if (viewKind === "tab") wakeLockRequested(id) }
+    function releaseWakeLock() { if (viewKind === "tab") wakeLockReleased() }
+
     function _onDeliver(view, json) { if (view === viewKey) deliver(json) }
     Component.onCompleted: Extensions.deliver.connect(_onDeliver)
     Component.onDestruction: {

@@ -40,10 +40,18 @@
       s.remove();
     }
   }
+  // Screen Wake Lock: relay the page's requests (crates/kite/src/js/wakelock.js)
+  // to the browser and its answers back.
+  const wakeQueue = [];
+  const toKite = (fn) => (kite ? fn(kite) : wakeQueue.push(fn));
+  document.addEventListener('kite-wakelock-request', (e) => { const id = +e.detail; if (id > 0) toKite((k) => k.requestWakeLock(id)); });
+  document.addEventListener('kite-wakelock-release', () => toKite((k) => k.releaseWakeLock()));
   function init() {
     new QWebChannel(qt.webChannelTransport, (ch) => {
       kite = ch.objects.kite;
       kite.deliver.connect(onDeliver);
+      if (kite.wakeLockAnswer) kite.wakeLockAnswer.connect((id, granted) => document.dispatchEvent(new CustomEvent('kite-wakelock-answer', { detail: JSON.stringify({ id, granted }) })));
+      for (const fn of wakeQueue.splice(0)) fn(kite);
       for (const a of queue.splice(0)) kite.call(...a);
       kite.cosmetic(location.href, applyCosmetic);
       if (globalThis.__kiteFormsReady) globalThis.__kiteFormsReady(kite);

@@ -142,7 +142,7 @@ Item {
     }
 
     Component.onCompleted: window.registerTab(wt)
-    Component.onDestruction: window.unregisterTab(wt)
+    Component.onDestruction: { setWakeLock(false); window.unregisterTab(wt) }
 
     onUrlChanged: window.setTabProperty(tabId, "url", url)
     onTitleChanged: window.setTabProperty(tabId, "title", title)
@@ -249,6 +249,8 @@ Item {
                     switch (info.status) {
                     case WebEngineView.LoadStartedStatus:
                         wt.crashed = false
+                        // A wake lock prompt belongs to the page being left.
+                        if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
                         wt.loginForm = false
                         wt.logins = []
                         wt.navEvent("onBeforeNavigate", {url: u, parentFrameId: -1})
@@ -322,6 +324,7 @@ Item {
 
                 onRenderProcessTerminated: (status, code) => {
                     if (status !== WebEngineView.NormalTerminationStatus) wt.crashed = true
+                    wt.setWakeLock(false)
                 }
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
@@ -370,6 +373,7 @@ Item {
     property string _lastCommitted: ""
 
     function permissionText(type) {
+        if (type === "wakeLock") return "keep your screen on"
         const names = {}
         try {
             names[WebEnginePermission.PermissionType.Geolocation] = "know your location"
@@ -387,6 +391,35 @@ Item {
     }
     function dropPermission(i) { const l = pendingPermissions.slice(); l.splice(i, 1); pendingPermissions = l }
 
+    // Screen Wake Lock (crates/kite/src/js/wakelock.js): prompt in the
+    // permission bar, remember the answer per site for the session, keep the
+    // screen on while the page holds a lock.
+    property bool wakeLockHeld: false
+    function setWakeLock(on) {
+        if (on === wakeLockHeld) return
+        wakeLockHeld = on
+        Browser.setWakeLock(tabId, on, Browser.hostOf(web.url.toString()))
+    }
+    function answerWakeLock(ids, granted) {
+        if (granted) setWakeLock(true)
+        for (const id of ids) bridge.wakeLockAnswer(id, granted)
+    }
+    function requestWakeLock(id) {
+        const site = Browser.hostOf(web.url.toString()) || web.url.toString()
+        const key = (window.privateMode ? "private:" : "") + site
+        const decided = app.wakeLockSites[key]
+        if (decided !== undefined) { answerWakeLock([id], decided); return }
+        const open = pendingPermissions.find(p => p.wakeLock)
+        if (open) { open.ids.push(id); return }
+        const entry = {origin: site, wakeLock: true, ids: [id]}
+        entry.permission = {
+            permissionType: "wakeLock",
+            grant: () => { app.rememberWakeLock(key, true); answerWakeLock(entry.ids, true) },
+            deny: () => { app.rememberWakeLock(key, false); answerWakeLock(entry.ids, false) },
+        }
+        pendingPermissions = pendingPermissions.concat([entry])
+    }
+
     WebChannel { id: channel; registeredObjects: [bridge] }
     ExtBridge {
         id: bridge
@@ -395,6 +428,8 @@ Item {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r
         }
+        onWakeLockRequested: id => wt.requestWakeLock(id)
+        onWakeLockReleased: wt.setWakeLock(false)
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true
             wt.refreshLogins()

@@ -221,6 +221,14 @@ pub mod qobject {
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
         #[qinvokable]
         fn cosmetic(self: &Browser, url: &QString) -> QString;
+        /// Keep the screen on for a tab holding a Screen Wake Lock (or stop).
+        #[qinvokable]
+        #[cxx_name = "setWakeLock"]
+        fn set_wake_lock(self: &Browser, tab_id: i32, on: bool, site: &QString) -> bool;
+        /// Page-world script providing navigator.wakeLock (js/wakelock.js).
+        #[qinvokable]
+        #[cxx_name = "wakeLockScript"]
+        fn wake_lock_script(self: &Browser) -> QString;
         /// The cached favicon of `page_url`'s site as a data: URL, or "".
         #[qinvokable]
         #[cxx_name = "cachedFavicon"]
@@ -782,6 +790,21 @@ impl qobject::Browser {
         let _ = a.shared.settings().set("adblock.allowlist", json!(list));
         a.adblock.set_allowlist(list);
     }
+    fn set_wake_lock(&self, tab_id: i32, on: bool, site: &QString) -> bool {
+        let mut screen = app().screen.lock().unwrap_or_else(|e| e.into_inner());
+        match screen.set(tab_id as i64, on, &format!("{site} is keeping the screen on")) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("screen wake lock for tab {tab_id}: {e}");
+                false
+            }
+        }
+    }
+
+    fn wake_lock_script(&self) -> QString {
+        q(include_str!("js/wakelock.js"))
+    }
+
     fn cached_favicon(&self, page_url: &QString) -> QString {
         use base64::Engine;
         match kite_core::favicons::for_url(&app().shared.db(), &page_url.to_string()) {

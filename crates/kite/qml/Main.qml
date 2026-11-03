@@ -65,6 +65,10 @@ QtObject {
         }
     }
 
+    // Screen Wake Lock decisions per site for this session (WebTab).
+    property var wakeLockSites: ({})
+    function rememberWakeLock(key, allowed) { const o = Object.assign({}, wakeLockSites); o[key] = allowed; wakeLockSites = o }
+
     // Qt's own user agent, restored when the setting is cleared.
     property string defaultUserAgent: ""
     function applyProfileSettings(p) {
@@ -203,6 +207,16 @@ QtObject {
                 ws.runsOnSubFrames = s.runsOnSubFrames
                 ws.injectionPoint = s.injectionPoint === 0 ? WebEngineScript.DocumentCreation
                                   : s.injectionPoint === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
+                p.userScripts.insert(ws)
+            }
+            {
+                // navigator.wakeLock (QtWebEngine refuses wake locks itself).
+                const ws = WebEngine.script()
+                ws.name = "kite:wakeLock"
+                ws.sourceCode = Browser.wakeLockScript()
+                ws.worldId = WebEngineScript.MainWorld
+                ws.runsOnSubFrames = false
+                ws.injectionPoint = WebEngineScript.DocumentCreation
                 p.userScripts.insert(ws)
             }
             if (setting("web.doNotTrack")) {
