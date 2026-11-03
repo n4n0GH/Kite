@@ -71,6 +71,7 @@ QQC2.Popup {
         webChannel: WebChannel { registeredObjects: [bridge] }
         settings.localContentCanAccessRemoteUrls: true
         settings.javascriptCanAccessClipboard: true
+        settings.scrollAnimatorEnabled: popup.win.app.smoothScrolling
         backgroundColor: "white"
         onWindowCloseRequested: popup.close()
         onContentsSizeChanged: popup.takeSize()

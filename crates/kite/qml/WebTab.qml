@@ -203,6 +203,8 @@ Item {
                 settings.localStorageEnabled: wt.app.setting("web.localStorage")
                 settings.pluginsEnabled: wt.app.setting("web.pluginsEnabled")
                 settings.spatialNavigationEnabled: wt.app.setting("web.spatialNavigation")
+                // Animated (smooth) scrolling with the mouse wheel and keys.
+                settings.scrollAnimatorEnabled: wt.app.smoothScrolling
                 settings.dnsPrefetchEnabled: wt.app.setting("web.dnsPrefetch")
                 settings.printElementBackgrounds: wt.app.setting("web.printBackgrounds")
                 settings.fullScreenSupportEnabled: true

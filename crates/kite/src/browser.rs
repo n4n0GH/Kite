@@ -32,6 +32,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "resetSetting"]
         fn reset_setting(self: Pin<&mut Browser>, key: &QString);
+        /// A setting changed (set or reset); `json` is its new value.
+        #[qsignal]
+        #[cxx_name = "settingChanged"]
+        fn setting_changed(self: Pin<&mut Browser>, key: QString, json: QString);
         #[qinvokable]
         #[cxx_name = "webEnginePath"]
         fn web_engine_path(self: &Browser) -> QString;
@@ -306,12 +310,19 @@ impl qobject::Browser {
         let _ = a.shared.settings().set(&key, v.clone());
         match key.as_str() {
             "adblock.enabled" => a.adblock.set_enabled(v.as_bool().unwrap_or(true)),
-            "adblock.allowlist" => a.adblock.set_allowlist(serde_json::from_value(v).unwrap_or_default()),
+            "adblock.allowlist" => a.adblock.set_allowlist(serde_json::from_value(v.clone()).unwrap_or_default()),
             _ => {}
         }
+        self.setting_changed(q(&key), js(&v));
     }
     fn reset_setting(self: Pin<&mut Self>, key: &QString) {
-        let _ = app().shared.settings().reset(&key.to_string());
+        let key = key.to_string();
+        let v = {
+            let mut s = app().shared.settings();
+            let _ = s.reset(&key);
+            s.get(&key)
+        };
+        self.setting_changed(q(&key), js(&v));
     }
     fn web_engine_path(&self) -> QString {
         q(app().shared.profile.webengine_dir().to_string_lossy())

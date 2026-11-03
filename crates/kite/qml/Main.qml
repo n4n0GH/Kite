@@ -42,6 +42,14 @@ QtObject {
     }
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
+    // Settings web views follow live (others apply to new tabs).
+    property bool smoothScrolling: setting("web.smoothScrolling")
+    property Connections _settingsConn: Connections {
+        target: Browser
+        function onSettingChanged(key, json) {
+            if (key === "web.smoothScrolling") app.smoothScrolling = JSON.parse(json)
+        }
+    }
 
     function configureProfile(p) {
         const ua = setting("web.userAgent")
