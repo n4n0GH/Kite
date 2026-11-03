@@ -94,7 +94,10 @@ Rectangle {
                 const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - (footerItem ? footerItem.width : 0)
                 return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, m.count - pinned)))
             }
-            QQC2.ScrollBar.vertical: QQC2.ScrollBar { active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
+            QQC2.ScrollBar.vertical: QQC2.ScrollBar { id: verticalScrollBar; active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
+            // Width for tabs in the vertical list: the scroll bar, when shown,
+            // gets its own lane instead of covering the close buttons.
+            readonly property real itemWidth: width - (verticalScrollBar.visible ? verticalScrollBar.width : 0)
             moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
             readonly property bool overflowing: !stripRoot.vertical && contentWidth > width + 0.5
             readonly property real maxContentX: originX + Math.max(0, contentWidth - width)
@@ -125,6 +128,7 @@ Rectangle {
             // A resized strip (e.g. the window reaching its size at startup)
             // keeps the current tab in view.
             onWidthChanged: Qt.callLater(ensureCurrentVisible)
+            onHeightChanged: if (stripRoot.vertical) Qt.callLater(ensureCurrentVisible)
             // Keep the current tab in view (the last tab also brings the
             // new-tab button after it into view).
             function ensureCurrentVisible() {
@@ -142,7 +146,7 @@ Rectangle {
                 icon.name: "list-add"
                 text: "New Tab"
                 display: stripRoot.vertical ? QQC2.AbstractButton.TextBesideIcon : QQC2.AbstractButton.IconOnly
-                width: stripRoot.vertical ? strip.width : implicitWidth
+                width: stripRoot.vertical ? strip.itemWidth : implicitWidth
                 height: stripRoot.vertical ? Kirigami.Units.gridUnit * 2 : strip.height
                 onClicked: stripRoot.browser.openTab(stripRoot.browser.app.newTabUrl(), {background: false}).focusLocationBar()
                 QQC2.ToolTip.text: "New Tab (Ctrl+T)"

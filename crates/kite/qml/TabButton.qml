@@ -24,7 +24,7 @@ Item {
     readonly property bool vertical: placement === "vertical"
     readonly property bool current: index === browser.currentIndex
 
-    width: vertical ? tabList.width : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
+    width: vertical ? tabList.itemWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
     height: vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
     z: dragHandler.active ? 10 : 0
 
