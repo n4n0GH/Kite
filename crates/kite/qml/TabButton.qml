@@ -127,13 +127,37 @@ Item {
                 padding: 0
                 onClicked: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted }
             }
-            QQC2.ToolButton {
+            // Close button, drawn like Breeze's tab close indicator (as in
+            // Dolphin): a plain × that becomes a white × on a red circle on
+            // hover. Drawn here rather than taken from the icon theme, as
+            // themes differ (e.g. Qogir's close icons are all red circles).
+            Item {
                 visible: !root.pinned && (hover.hovered || root.current)
-                icon.name: "tab-close"
-                Layout.preferredWidth: Kirigami.Units.iconSizes.small + Kirigami.Units.smallSpacing * 2
-                Layout.preferredHeight: Layout.preferredWidth
-                padding: 0
-                onClicked: root.browser.closeTab(root.index)
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                Layout.rightMargin: Kirigami.Units.smallSpacing / 2
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    visible: closeHover.hovered
+                    color: Kirigami.Theme.negativeTextColor
+                }
+                Kirigami.Icon {
+                    anchors.fill: parent
+                    anchors.margins: closeHover.hovered ? 3 : 2
+                    source: "window-close-symbolic"
+                    isMask: true
+                    color: closeHover.hovered ? "white" : Kirigami.Theme.textColor
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Close Tab"
+                Accessible.onPressAction: root.browser.closeTab(root.index)
+                HoverHandler { id: closeHover }
+                // Exclusive, so closing doesn't also select the tab.
+                TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.browser.closeTab(root.index) }
+                QQC2.ToolTip.text: "Close Tab"
+                QQC2.ToolTip.visible: closeHover.hovered
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
         }
     }
