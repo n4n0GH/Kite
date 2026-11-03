@@ -44,6 +44,18 @@ Rectangle {
             Layout.margins: Kirigami.Units.smallSpacing
         }
 
+        // Scroll arrows, shown when there are more tabs than fit.
+        QQC2.ToolButton {
+            visible: strip.overflowing
+            icon.name: "go-previous"
+            display: QQC2.AbstractButton.IconOnly
+            text: "Scroll tabs left"
+            enabled: strip.contentX > strip.originX + 0.5
+            autoRepeat: true
+            Layout.fillHeight: true
+            onClicked: strip.scrollBy(-strip.normalWidth)
+        }
+
         ListView {
             id: strip
             Layout.fillWidth: true
@@ -73,8 +85,19 @@ Rectangle {
             }
             QQC2.ScrollBar.vertical: QQC2.ScrollBar { active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
             moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
-            // Keep the current tab in view in the vertical list.
-            onCurrentIndexChanged: if (stripRoot.vertical) positionViewAtIndex(currentIndex, ListView.Contain)
+            readonly property bool overflowing: !stripRoot.vertical && contentWidth > width + 0.5
+            readonly property real maxContentX: originX + Math.max(0, contentWidth - width)
+            function scrollBy(dx) { contentX = Math.max(originX, Math.min(contentX + dx, maxContentX)) }
+            Behavior on contentX { enabled: !stripRoot.vertical; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+            // Fewer tabs or a wider window: don't leave the strip scrolled past its end.
+            onMaxContentXChanged: if (contentX > maxContentX) contentX = maxContentX
+            // Keep the current tab in view
+            // (the last tab also brings the new-tab button after it into view).
+            onCurrentIndexChanged: Qt.callLater(() => {
+                if (currentIndex < 0) return
+                if (!stripRoot.vertical && currentIndex === count - 1) contentX = maxContentX
+                else positionViewAtIndex(currentIndex, ListView.Contain)
+            })
             delegate: TabButton {
                 browser: stripRoot.browser
                 tabList: strip
@@ -91,6 +114,17 @@ Rectangle {
                 QQC2.ToolTip.visible: hovered && !stripRoot.vertical
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
+        }
+
+        QQC2.ToolButton {
+            visible: strip.overflowing
+            icon.name: "go-next"
+            display: QQC2.AbstractButton.IconOnly
+            text: "Scroll tabs right"
+            enabled: strip.contentX < strip.maxContentX - 0.5
+            autoRepeat: true
+            Layout.fillHeight: true
+            onClicked: strip.scrollBy(strip.normalWidth)
         }
 
         QQC2.ToolButton {
