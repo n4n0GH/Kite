@@ -30,10 +30,14 @@ Options:
   -v, --version          Show version
 
 Environment:
-  KITE_DATA_DIR          Base directory for profiles";
+  KITE_DATA_DIR          Base directory for profiles
+  RUST_LOG               Log filter (default: warn,console::page=error). Web page
+                         consoles log to console::page, extension pages to
+                         console::extension, Qt to qt::<category>; e.g.
+                         RUST_LOG=console::page=info shows all page messages";
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,console::page=error")).init();
     let mut profile = "default".to_owned();
     let mut private = false;
     let mut urls = vec![];

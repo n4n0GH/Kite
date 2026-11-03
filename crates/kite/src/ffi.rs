@@ -296,6 +296,26 @@ pub unsafe extern "C" fn kite_intercept(
     KiteBuf::from_vec(out.into_bytes())
 }
 
+/// Qt/QML log output. QML categories `console.page` / `console.extension`
+/// become log targets `console::page` / `console::extension`; other Qt
+/// categories `qt::<category>`.
+#[no_mangle]
+pub unsafe extern "C" fn kite_log(level: std::ffi::c_int, category: *const c_char, message: *const c_char) {
+    let level = match level {
+        1 => log::Level::Error,
+        2 => log::Level::Warn,
+        3 => log::Level::Info,
+        _ => log::Level::Debug,
+    };
+    let category = s(category);
+    let target = match category {
+        c if c.starts_with("console.") => c.replace('.', "::"),
+        "default" => "qt".to_owned(),
+        c => format!("qt::{c}"),
+    };
+    log::log!(target: target.as_str(), level, "{}", s(message));
+}
+
 /// Cookie store change (from QWebEngineCookieStore signals).
 #[no_mangle]
 pub unsafe extern "C" fn kite_cookie_event(json: *const c_char, removed: i32, initial: i32) {

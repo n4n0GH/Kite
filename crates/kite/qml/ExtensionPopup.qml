@@ -85,7 +85,7 @@ QQC2.Popup {
             }
         }
         onContextMenuRequested: request => request.accepted = false
-        onJavaScriptConsoleMessage: (level, message, line, source) => { if (level >= WebEngineView.WarningMessageLevel) console.warn("[popup] " + message + " (" + source + ":" + line + ")") }
+        onJavaScriptConsoleMessage: (level, message, line, source) => popup.win.app.logConsole(true, "popup", level, message, source, line)
     }
     ExtBridge {
         id: bridge

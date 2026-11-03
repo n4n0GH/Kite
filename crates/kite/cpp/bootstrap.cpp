@@ -13,9 +13,28 @@ namespace QtWebEngineQuick { void initialize(); }
 
 void kite_register_schemes();
 void kite_install_profile_hooks(QObject *profile, bool isPrimary);
+extern "C" void kite_log(int level, const char *category, const char *message);
+
+// All Qt and QML output (including web page consoles, see Main.qml
+// logConsole) goes to Kite's logger, filtered with RUST_LOG. Qt's default
+// handler would send it to the journal whenever stderr isn't a terminal.
+static void kiteMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &message)
+{
+    int level = 4; // debug
+    switch (type) {
+    case QtInfoMsg: level = 3; break;
+    case QtWarningMsg: level = 2; break;
+    case QtCriticalMsg:
+    case QtFatalMsg: level = 1; break;
+    default: break;
+    }
+    const QByteArray text = message.toUtf8();
+    kite_log(level, context.category ? context.category : "default", text.constData());
+}
 
 extern "C" int kite_bootstrap(int argc, char **argv)
 {
+    qInstallMessageHandler(kiteMessageHandler);
     kite_register_schemes();
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     if (qEnvironmentVariableIsEmpty("QT_QUICK_CONTROLS_STYLE"))

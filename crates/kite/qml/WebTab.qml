@@ -308,9 +308,8 @@ Item {
                     if (status !== WebEngineView.NormalTerminationStatus) wt.crashed = true
                 }
 
-                onJavaScriptConsoleMessage: (level, message, line, source) => {
-                    if (wt.isExtensionPage && level >= WebEngineView.WarningMessageLevel) console.warn("[" + source + ":" + line + "] " + message)
-                }
+                // Extension content scripts (userscript:kite:<id>:...) count as extension output.
+                onJavaScriptConsoleMessage: (level, message, line, source) => wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
             }
 
             // Certificate error interstitial

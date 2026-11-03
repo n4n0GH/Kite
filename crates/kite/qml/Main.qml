@@ -205,6 +205,18 @@ QtObject {
 
     property Timer alarmTimer: Timer { interval: 1000; repeat: true; running: true; onTriggered: Extensions.tick() }
 
+    // Console messages of web pages and extension pages, logged as
+    // console::page / console::extension (see kite_log, RUST_LOG).
+    property LoggingCategory pageConsole: LoggingCategory { name: "console.page"; defaultLogLevel: LoggingCategory.Debug }
+    property LoggingCategory extensionConsole: LoggingCategory { name: "console.extension"; defaultLogLevel: LoggingCategory.Debug }
+    function logConsole(extension, prefix, level, message, source, line) {
+        const cat = extension ? extensionConsole : pageConsole
+        const text = (prefix ? "[" + prefix + "] " : "") + message + (source ? " (" + source + ":" + line + ")" : "")
+        if (level === WebEngineView.ErrorMessageLevel) console.error(cat, text)
+        else if (level === WebEngineView.WarningMessageLevel) console.warn(cat, text)
+        else console.info(cat, text)
+    }
+
     // Web pages wait for content blockers (e.g. uBlock Origin) to load their
     // filters at startup, so the first pages aren't loaded unfiltered.
     property bool networkReady: false
@@ -385,9 +397,7 @@ QtObject {
                 settings.javascriptCanAccessClipboard: true
                 webChannel: WebChannel { registeredObjects: [bgBridge] }
                 ExtBridge { id: bgBridge; viewKey: "bg:" + modelData.ext; viewKind: "background" }
-                onJavaScriptConsoleMessage: (level, message, line, source) => {
-                    if (level >= WebEngineView.WarningMessageLevel) console.warn("[" + modelData.name + "] " + message + " (" + source + ":" + line + ")")
-                }
+                onJavaScriptConsoleMessage: (level, message, line, source) => app.logConsole(true, modelData.name, level, message, source, line)
                 onRenderProcessTerminated: (status, code) => { console.warn("Background page of " + modelData.name + " crashed; reloading"); reload() }
             }
         }
