@@ -291,11 +291,12 @@ QQC2.ApplicationWindow {
         spacing: 0
         visible: !bw.contentFullScreen
 
-        Loader {
+        TabStripSlot {
             Layout.fillWidth: true
-            active: bw.tabPosition === "top" && bw.tabBarShown
-            visible: active
-            sourceComponent: TabStrip { browser: bw; position: "top" }
+            browser: bw
+            position: "top"
+            inUse: bw.tabPosition === "top"
+            shown: bw.tabBarShown
         }
 
         // Navigation toolbar
@@ -368,30 +369,48 @@ QQC2.ApplicationWindow {
             win: bw
         }
 
-        Loader {
+        TabStripSlot {
             Layout.fillWidth: true
-            active: bw.tabPosition === "belowToolbar" && bw.tabBarShown
-            visible: active
-            sourceComponent: TabStrip { browser: bw; position: "belowToolbar" }
+            browser: bw
+            position: "belowToolbar"
+            inUse: bw.tabPosition === "belowToolbar"
+            shown: bw.tabBarShown
         }
     }
 
-    footer: Loader {
-        active: bw.tabPosition === "bottom" && bw.tabBarShown && !bw.contentFullScreen
-        visible: active
-        sourceComponent: TabStrip { browser: bw; position: "bottom" }
+    footer: TabStripSlot {
+        browser: bw
+        position: "bottom"
+        inUse: bw.tabPosition === "bottom" && !bw.contentFullScreen
+        shown: bw.tabBarShown
     }
 
     QQC2.SplitView {
         anchors.fill: parent
         orientation: Qt.Horizontal
 
-        Loader {
-            active: bw.tabPosition === "vertical" && bw.tabBarShown && !bw.contentFullScreen
-            visible: active
-            QQC2.SplitView.preferredWidth: Kirigami.Units.gridUnit * 14
-            QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 8
-            sourceComponent: TabStrip { browser: bw; position: "vertical" }
+        // Vertical tab list: slides in from the left when shown (and out when
+        // hidden), at the width the user last gave it.
+        Item {
+            id: sideTabs
+            readonly property bool inUse: bw.tabPosition === "vertical" && !bw.contentFullScreen
+            readonly property bool shown: inUse && bw.tabBarShown
+            property real savedWidth: Kirigami.Units.gridUnit * 14
+            property real shownWidth: shown ? savedWidth : 0
+            Behavior on shownWidth { NumberAnimation { id: sideTabsAnimation; duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+            visible: inUse && shownWidth > 0
+            clip: true
+            QQC2.SplitView.preferredWidth: shownWidth
+            QQC2.SplitView.minimumWidth: shown && !sideTabsAnimation.running ? Kirigami.Units.gridUnit * 8 : 0
+            // Remember the width the user drags it to.
+            onWidthChanged: if (shown && !sideTabsAnimation.running && width > 0) savedWidth = width
+            Loader {
+                active: sideTabs.inUse
+                width: sideTabs.savedWidth
+                height: sideTabs.height
+                x: sideTabs.width - width
+                sourceComponent: TabStrip { browser: bw; position: "vertical" }
+            }
         }
 
         Sidebar {
