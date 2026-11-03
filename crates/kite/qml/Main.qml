@@ -103,12 +103,16 @@ QtObject {
     }
 
     function windowClosed(w) {
+        // Closing the last window quits Kite: it is the session to restore,
+        // so save it while it is still listed (not as a closed window).
+        const last = !quitting && windows.length === 1 && windows[0] === w
+        if (last) saveSession()
         windows = windows.filter(x => x !== w)
         Extensions.browserEvent("windowRemoved", JSON.stringify({windowId: w.windowId}))
-        if (!quitting && !w.privateMode) Browser.pushClosedWindow(JSON.stringify(w.saveState()))
+        if (!quitting && !last && !w.privateMode) Browser.pushClosedWindow(JSON.stringify(w.saveState()))
         if (activeWindow === w) activeWindow = windows.length ? windows[windows.length - 1] : null
-        if (windows.length === 0 && !quitting) quit()
-        else saveSession()
+        if (last) quit(true)
+        else if (!quitting) saveSession()
     }
 
     function windowActivated(w) {
@@ -139,10 +143,10 @@ QtObject {
         return w.openTab(url, {background: where === "background"})
     }
 
-    function quit() {
+    function quit(sessionSaved) {
         if (quitting) return
         quitting = true
-        saveSession()
+        if (!sessionSaved) saveSession()
         Browser.setRunning(false)
         if (setting("privacy.clearOnExit")) Browser.clearPrivateData(JSON.stringify({history: true, cookies: true, cache: true, downloads: true, closedTabs: true}))
         for (const w of windows.slice()) w.destroy()
