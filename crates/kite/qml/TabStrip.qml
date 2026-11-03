@@ -27,6 +27,23 @@ Rectangle {
     }
     TabBarMenu { id: barMenu; browser: stripRoot.browser; withTabActions: true }
 
+    // The wheel scrolls a crowded tab bar (and the vertical list); when
+    // all tabs fit, it switches tabs. (A button-less MouseArea on top gets
+    // every wheel event while clicks, hover and drags reach the tabs; a
+    // WheelHandler here receives none.)
+    MouseArea {
+        anchors.fill: parent
+        z: 1
+        acceptedButtons: Qt.NoButton
+        onWheel: wheel => {
+            const delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+            if (!stripRoot.vertical && !strip.overflowing) { stripRoot.browser.nextTab(delta > 0 ? -1 : 1); return }
+            // One wheel step (120) scrolls about half a tab.
+            const step = stripRoot.vertical ? Kirigami.Units.gridUnit * 2 : strip.normalWidth
+            strip.scrollBy(-delta / 120 * step / 2)
+        }
+    }
+
     GridLayout {
         anchors.fill: parent
         flow: stripRoot.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
@@ -77,27 +94,45 @@ Rectangle {
                 const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - (footerItem ? footerItem.width : 0)
                 return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, m.count - pinned)))
             }
-            WheelHandler {
-                onWheel: e => {
-                    if (!stripRoot.vertical) { stripRoot.browser.nextTab(e.angleDelta.y > 0 ? -1 : 1); return }
-                    strip.contentY = Math.max(strip.originY, Math.min(strip.contentY - e.angleDelta.y / 2, strip.originY + strip.contentHeight - strip.height))
-                }
-            }
             QQC2.ScrollBar.vertical: QQC2.ScrollBar { active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
             moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
             readonly property bool overflowing: !stripRoot.vertical && contentWidth > width + 0.5
             readonly property real maxContentX: originX + Math.max(0, contentWidth - width)
-            function scrollBy(dx) { contentX = Math.max(originX, Math.min(contentX + dx, maxContentX)) }
-            Behavior on contentX { enabled: !stripRoot.vertical; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
-            // Fewer tabs or a wider window: don't leave the strip scrolled past its end.
-            onMaxContentXChanged: if (contentX > maxContentX) contentX = maxContentX
-            // Keep the current tab in view
-            // (the last tab also brings the new-tab button after it into view).
-            onCurrentIndexChanged: Qt.callLater(() => {
+            readonly property real maxContentY: originY + Math.max(0, contentHeight - height)
+            // Scroll along the strip (clamped to its ends). Steps in quick
+            // succession (wheel, arrows) add up: they continue from where a
+            // running scroll animation is heading, not from where it is.
+            function scrollBy(d) {
+                if (stripRoot.vertical) { contentY = Math.max(originY, Math.min(contentY + d, maxContentY)); return }
+                const from = scrollAnimation.enabled && scrollAnimationRunning ? scrollAnimation.targetValue : contentX
+                contentX = Math.max(originX, Math.min(from + d, maxContentX))
+            }
+            property bool scrollAnimationRunning: false
+            readonly property real scrollPos: stripRoot.vertical ? contentY : contentX
+            // Set by a dragged tab near an end of the strip: scroll speed in
+            // px per frame (negative: towards the start).
+            property real autoScroll: 0
+            Timer {
+                interval: 16
+                repeat: true
+                running: strip.autoScroll !== 0
+                onTriggered: strip.scrollBy(strip.autoScroll)
+            }
+            Behavior on contentX { id: scrollAnimation; enabled: !stripRoot.vertical && strip.autoScroll === 0; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic; onRunningChanged: strip.scrollAnimationRunning = running } }
+            // Fewer tabs or a wider window: don't leave the strip scrolled past
+            // its end (nor let a running scroll animation take it there).
+            onMaxContentXChanged: if (contentX > maxContentX || scrollAnimation.targetValue > maxContentX) contentX = maxContentX
+            // A resized strip (e.g. the window reaching its size at startup)
+            // keeps the current tab in view.
+            onWidthChanged: Qt.callLater(ensureCurrentVisible)
+            // Keep the current tab in view (the last tab also brings the
+            // new-tab button after it into view).
+            function ensureCurrentVisible() {
                 if (currentIndex < 0) return
                 if (!stripRoot.vertical && currentIndex === count - 1) contentX = maxContentX
                 else positionViewAtIndex(currentIndex, ListView.Contain)
-            })
+            }
+            onCurrentIndexChanged: Qt.callLater(ensureCurrentVisible)
             delegate: TabButton {
                 browser: stripRoot.browser
                 tabList: strip

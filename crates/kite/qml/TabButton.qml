@@ -48,7 +48,7 @@ Item {
         // the strip moves it to a new index underneath; on release it
         // settles into its slot.
         readonly property bool lifted: dragHandler.active
-        readonly property real dragOffset: lifted ? dragHandler.startPos + dragHandler.along - (root.vertical ? root.y : root.x) : 0
+        readonly property real dragOffset: lifted ? dragHandler.pos - (root.vertical ? root.y : root.x) : 0
         x: root.face.x + (root.vertical ? 0 : dragOffset)
         y: root.face.y + (root.vertical ? dragOffset : 0)
         width: root.face.width
@@ -176,6 +176,12 @@ Item {
     // Exclusive, so the tab bar's own menu doesn't open as well.
     TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: menu.popup() }
 
+    Connections {
+        target: root.tabList
+        enabled: dragHandler.active
+        function onScrollPosChanged() { Qt.callLater(dragHandler.update) }
+    }
+
     // Drag to reorder: the tab swaps places with its neighbours as its
     // centre passes over them (pinned and unpinned tabs stay in their own
     // sections).
@@ -185,22 +191,44 @@ Item {
         xAxis.enabled: !root.vertical
         yAxis.enabled: root.vertical
         cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
-        // Position along the strip at drag start, and distance dragged.
+        // Position along the strip at drag start, distance dragged, and how
+        // far the strip has scrolled meanwhile give the dragged tab's
+        // position in the strip's content (`pos`). It is updated once per
+        // event-loop pass, as reacting to it moves tabs and scrolls the
+        // strip, which would otherwise feed back into it.
         property real startPos: 0
+        property real startScroll: 0
+        property real pos: 0
         readonly property real along: root.vertical ? activeTranslation.y : activeTranslation.x
+        readonly property real size: root.vertical ? root.height : root.width
         onActiveChanged: {
             if (active) {
                 startPos = root.vertical ? root.y : root.x
+                startScroll = root.tabList.scrollPos
+                pos = startPos
                 root.browser.setCurrentIndex(root.index)
+            } else {
+                root.tabList.autoScroll = 0
             }
         }
-        onAlongChanged: {
+        onAlongChanged: if (active) Qt.callLater(update)
+        function update() {
             if (!active) return
-            const centre = startPos + along + (root.vertical ? root.height : root.width) / 2
+            pos = startPos + along + root.tabList.scrollPos - startScroll
+            const centre = pos + size / 2
             let to = root.vertical ? root.tabList.indexAt(root.width / 2, centre) : root.tabList.indexAt(centre, root.height / 2)
             if (to < 0) to = centre < 0 ? 0 : root.browser.count - 1
             to = root.browser.clampToSection(root.index, to)
             if (to !== root.index) root.browser.moveTab(root.index, to)
+            // Near an end of a crowded strip, scroll it (faster the further
+            // the tab is pulled past the edge).
+            const view = pos - root.tabList.scrollPos
+            const length = root.vertical ? root.tabList.height : root.tabList.width
+            const edge = size / 3
+            let speed = 0
+            if (view < edge) speed = -Math.min(20, 2 + (edge - view) / 4)
+            else if (view + size > length - edge) speed = Math.min(20, 2 + (view + size - length + edge) / 4)
+            root.tabList.autoScroll = speed
         }
     }
 
