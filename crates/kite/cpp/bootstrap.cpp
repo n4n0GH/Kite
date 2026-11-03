@@ -89,7 +89,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
     QApplication::setApplicationDisplayName(QStringLiteral("Kite"));
     QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QApplication::setDesktopFileName(QStringLiteral("org.kde.kite"));
-    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("internet-web-browser")));
+    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("org.kde.kite"), QIcon::fromTheme(QStringLiteral("internet-web-browser"))));
     QApplication::setQuitOnLastWindowClosed(false);
 
     QQmlApplicationEngine engine;

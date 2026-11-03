@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kite application icon: a kite with its tail. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3daee9"/>
+      <stop offset="1" stop-color="#1d78b4"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#sky)"/>
+  <!-- kite body: four facets -->
+  <path d="M64 14 L96 52 L64 66 Z" fill="#fcfcfc"/>
+  <path d="M64 14 L32 52 L64 66 Z" fill="#e8f4fb"/>
+  <path d="M32 52 L64 66 L64 98 Z" fill="#f6c343"/>
+  <path d="M96 52 L64 66 L64 98 Z" fill="#f39c1f"/>
+  <!-- spars -->
+  <path d="M64 14 L64 98 M32 52 L96 52" stroke="#232629" stroke-opacity="0.35" stroke-width="2" fill="none"/>
+  <!-- tail -->
+  <path d="M64 98 C58 106 70 110 62 118" stroke="#fcfcfc" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M60 106 l-6 -3 l1 6 Z M66 112 l6 -2 l-2 6 Z" fill="#fcfcfc"/>
+</svg>

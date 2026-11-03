@@ -22,6 +22,21 @@ cargo run -p kite-core --example amo-install -- darkreader          # install an
 cargo run -p kite-core --example dnr-check -- <ext-dir> <url>       # evaluate DNR rulesets
 ```
 
+### AppImage
+
+```sh
+packaging/appimage/build-appimage.sh            # release build + bundle → dist/Kite-<version>-<arch>.AppImage
+packaging/appimage/build-appimage.sh --no-build # bundle the existing target/release/kite
+```
+
+Bundles Qt, QtWebEngine and the KDE QML modules Kite uses (including the `org.kde.desktop` style,
+Kirigami's desktop platform plugin and the Wayland client plugins) with
+[linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and linuxdeploy-plugin-qt. Both are
+downloaded into `target/appimage-tools` on first use; set `LINUXDEPLOY` / `LINUXDEPLOY_PLUGIN_QT`
+to use your own copies, and `QMAKE` to pick the Qt to bundle. An AppImage only runs on systems whose
+glibc is at least as new as the build system's, so build on an older distribution (e.g. in a
+container) for wider compatibility.
+
 ## Architecture
 
 ```
