@@ -267,6 +267,14 @@ void kite_register_schemes()
                  QWebEngineUrlScheme::FetchApiAllowed | QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
     QWebEngineUrlScheme::registerScheme(ext);
 
+    // Stand-in responses for blocked requests (see kite-core standin.rs):
+    // a redirect target web pages may load, like moz-extension.
+    QWebEngineUrlScheme res("kite-res");
+    res.setSyntax(QWebEngineUrlScheme::Syntax::Path);
+    res.setFlags(QWebEngineUrlScheme::SecureScheme | QWebEngineUrlScheme::CorsEnabled |
+                 QWebEngineUrlScheme::FetchApiAllowed | QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
+    QWebEngineUrlScheme::registerScheme(res);
+
     QWebEngineUrlScheme kite("kite");
     kite.setSyntax(QWebEngineUrlScheme::Syntax::Path);
     kite.setFlags(QWebEngineUrlScheme::SecureScheme | QWebEngineUrlScheme::LocalAccessAllowed);
@@ -280,6 +288,7 @@ void kite_install_profile_hooks(QObject *profileObject, bool isPrimary)
     auto *schemes = new KiteSchemeHandler(profileObject);
     profile->installUrlSchemeHandler("moz-extension", schemes);
     profile->installUrlSchemeHandler("kite", schemes);
+    profile->installUrlSchemeHandler("kite-res", schemes);
     profile->setUrlRequestInterceptor(new KiteInterceptor(profileObject));
     if (!isPrimary) { g_offTheRecordProfile = profileObject; return; }
 

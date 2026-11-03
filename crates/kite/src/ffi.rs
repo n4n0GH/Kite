@@ -94,6 +94,12 @@ pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char
 }
 
 fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
+    if url.starts_with(kite_core::standin::SCHEME) {
+        return match STAND_INS.get(url) {
+            Some((mime, body)) => (200, mime, body),
+            None => (404, "text/plain".into(), vec![]),
+        };
+    }
     if let Some(rest) = url.strip_prefix("kite:") {
         let page = rest.split(['?', '#']).next().unwrap_or("");
         return match page {
@@ -223,19 +229,33 @@ pub extern "C" fn kite_rpc_job_gone(job: u64) {
 /// miss it are skipped for a moment (see `BlockingHub`).
 const BLOCKING_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// webRequest redirects to an extension's own files (uBlock Origin's
-/// neutered scripts and images) become data: URLs for subresources, since
-/// web pages may not load moz-extension:// resources directly.
-fn extension_redirect(to: &str, rtype: &str) -> String {
-    if !to.starts_with("moz-extension:") || rtype == "mainFrame" || rtype == "subFrame" {
-        return to.to_owned();
+static STAND_INS: std::sync::LazyLock<kite_core::standin::StandIns> = std::sync::LazyLock::new(Default::default);
+
+/// Verdict for redirecting a request to a neutered stand-in (an extension's
+/// file, or a data: URL from uBlock Origin or the built-in blocker).
+///
+/// * XHR/fetch are blocked instead: QtWebEngine answers an interceptor
+///   redirect with an internal redirect response whose
+///   Access-Control-Allow-Origin is the *target's* origin rather than the
+///   page's, so every cross-origin redirect of a CORS request fails anyway.
+///   Blocking gives the page the same failed request without a misleading
+///   CORS error or the extension's moz-extension:// id.
+/// * data: URLs are served from kite-res: (Chromium refuses to redirect
+///   subresources to data: URLs).
+/// * Extension files are redirected to as they are (moz-extension: is a
+///   valid redirect target).
+fn stand_in(to: &str, rtype: &str) -> String {
+    let neutered = to.starts_with("data:") || to.starts_with("moz-extension:");
+    if neutered && rtype == "xhr" {
+        return "block".into();
     }
-    let (code, mime, body) = serve(to, "");
-    if code != 200 {
-        return to.to_owned();
+    if to.starts_with("data:") && !matches!(rtype, "mainFrame" | "subFrame") {
+        return match STAND_INS.register(to) {
+            Some(u) => format!("redirect:{u}"),
+            None => "block".into(),
+        };
     }
-    use base64::Engine as _;
-    format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(body))
+    format!("redirect:{to}")
 }
 
 /// Network request interceptor. Returns "" (allow), "block",
@@ -293,7 +313,7 @@ pub unsafe extern "C" fn kite_intercept(
                 }
                 if let Some((ext, to)) = d.redirect {
                     log::debug!("webRequest: {ext} redirected {url} to {to}");
-                    return format!("redirect:{}", extension_redirect(&to, rtype));
+                    return stand_in(&to, rtype);
                 }
             }
             rt = a.runtime();
@@ -312,10 +332,8 @@ pub unsafe extern "C" fn kite_intercept(
         match a.adblock.check(url, first_party, rtype) {
             kite_core::adblock::Verdict::Block => "block".into(),
             kite_core::adblock::Verdict::Redirect(r) if r.starts_with("http") => format!("redirect:{r}"),
-            kite_core::adblock::Verdict::Redirect(r) => {
-                // adblock redirect resources are data: URLs
-                format!("redirect:{r}")
-            }
+            // adblock redirect resources are data: URLs
+            kite_core::adblock::Verdict::Redirect(r) => stand_in(&r, rtype),
             kite_core::adblock::Verdict::Allow => String::new(),
         }
     })();
