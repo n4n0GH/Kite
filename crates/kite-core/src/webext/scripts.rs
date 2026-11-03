@@ -18,6 +18,8 @@ pub const PAGE_TRANSPORT: &str = include_str!("js/page_transport.js");
 pub const CONTENT_TRANSPORT: &str = include_str!("js/content_transport.js");
 pub const BRIDGE: &str = include_str!("js/bridge.js");
 pub const CORS_SHIM: &str = include_str!("js/cors_shim.js");
+/// Loaded right after Qt's qwebchannel.js (see the file).
+pub const QWEBCHANNEL_PATCH: &str = include_str!("js/qwebchannel_patch.js");
 
 /// Path (inside every extension origin) of the generated API script.
 pub const API_PATH: &str = "__kite__/api.js";
@@ -58,7 +60,7 @@ fn with_cfg(transport: &str, cfg: &Value) -> String {
 pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str, blocking_port: u16) -> String {
     let mut cfg = ext_cfg(ext, token, "page");
     cfg["blockingPort"] = blocking_port.into();
-    format!("{qwebchannel_js}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n", with_cfg(PAGE_TRANSPORT, &cfg))
+    format!("{qwebchannel_js}\n;{QWEBCHANNEL_PATCH}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n", with_cfg(PAGE_TRANSPORT, &cfg))
 }
 
 /// Code that makes sure `browser`/`chrome` exist in the extension's
@@ -73,7 +75,7 @@ pub fn content_prelude(ext: &Extension, token: &str) -> String {
 /// The bridge user script (world CONTENT_WORLD, main frame).
 pub fn bridge_js(tokens: &[String], qwebchannel_js: &str) -> String {
     format!(
-        "(function(){{\n{qwebchannel_js}\n;{}\n}})();",
+        "(function(){{\n{qwebchannel_js}\n;{QWEBCHANNEL_PATCH}\n;{}\n}})();",
         BRIDGE.replace("__KITE_TOKENS__", &serde_json::to_string(tokens).unwrap())
     )
 }
