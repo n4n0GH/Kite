@@ -13,6 +13,10 @@ pub struct App {
     pub adblock: Arc<AdBlock>,
     /// "web.doNotTrack", read by the network interceptor on every request.
     pub do_not_track: std::sync::atomic::AtomicBool,
+    /// "privacy.sendReferer", read by the network interceptor.
+    pub send_referer: std::sync::atomic::AtomicBool,
+    /// "privacy.cookies" as `cookie_policy()`, read by the cookie filter.
+    pub cookie_policy: std::sync::atomic::AtomicU8,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
     pub initial_urls: Vec<String>,
@@ -51,10 +55,22 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         adblock.set_allowlist(serde_json::from_value(s.get("adblock.allowlist")).unwrap_or_default());
     }
     adblock.load_cached();
-    let do_not_track = shared.settings().get_bool("web.doNotTrack").into();
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, do_not_track, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    let (do_not_track, send_referer, cookie_policy) = {
+        let s = shared.settings();
+        (s.get_bool("web.doNotTrack").into(), s.get_bool("privacy.sendReferer").into(), cookie_policy(&s.get_str("privacy.cookies")).into())
+    };
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, do_not_track, send_referer, cookie_policy, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
+}
+
+/// "privacy.cookies" value → policy for the cookie filter (glue.cpp).
+pub fn cookie_policy(setting: &str) -> u8 {
+    match setting {
+        "none" => 2,
+        "noThirdParty" => 1,
+        _ => 0,
+    }
 }
 
 pub fn app() -> &'static App {

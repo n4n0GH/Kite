@@ -45,6 +45,8 @@ int kite_rpc(const char *url, const char *initiator, const unsigned char *body, 
 void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
 bool kite_do_not_track();
+bool kite_send_referer();
+int kite_cookie_policy();
 }
 
 static QByteArray takeBuf(KiteBuf b)
@@ -165,6 +167,8 @@ public:
         const QByteArray fp = info.firstPartyUrl().toString(QUrl::FullyEncoded).toUtf8();
         const QByteArray ini = info.initiator().toString().toUtf8();
         if (kite_do_not_track()) info.setHttpHeader("DNT", "1");
+        // An empty Referer set here removes the request's referrer.
+        if (!kite_send_referer()) info.setHttpHeader("Referer", QByteArray());
         // Make addons.mozilla.org treat Kite as Firefox.
         {
             QByteArray ua = takeBuf(kite_user_agent_for(url.constData()));
@@ -292,6 +296,11 @@ void kite_install_profile_hooks(QObject *profileObject, bool isPrimary)
     profile->installUrlSchemeHandler("kite", schemes);
     profile->installUrlSchemeHandler("kite-res", schemes);
     profile->setUrlRequestInterceptor(new KiteInterceptor(profileObject));
+    // "privacy.cookies": 0 = all, 1 = no third-party, 2 = none.
+    profile->cookieStore()->setCookieFilter([](const QWebEngineCookieStore::FilterRequest &request) {
+        const int policy = kite_cookie_policy();
+        return policy == 0 || (policy == 1 && !request.thirdParty);
+    });
     if (!isPrimary) { g_offTheRecordProfile = profileObject; return; }
 
     g_profile = profile;

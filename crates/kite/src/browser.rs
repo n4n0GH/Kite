@@ -305,6 +305,8 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         "adblock.enabled" => a.adblock.set_enabled(v.as_bool().unwrap_or(true)),
         "adblock.allowlist" => a.adblock.set_allowlist(serde_json::from_value(v.clone()).unwrap_or_default()),
         "web.doNotTrack" => a.do_not_track.store(v.as_bool().unwrap_or(false), std::sync::atomic::Ordering::Relaxed),
+        "privacy.sendReferer" => a.send_referer.store(v.as_bool().unwrap_or(true), std::sync::atomic::Ordering::Relaxed),
+        "privacy.cookies" => a.cookie_policy.store(crate::state::cookie_policy(v.as_str().unwrap_or("all")), std::sync::atomic::Ordering::Relaxed),
         _ => {}
     }
 }

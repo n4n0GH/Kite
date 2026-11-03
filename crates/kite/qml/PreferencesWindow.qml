@@ -166,7 +166,15 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 QQC2.CheckBox { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; checked: w.get("privacy.saveHistory"); onToggled: w.set("privacy.saveHistory", checked) }
                 QQC2.CheckBox { text: "Clear history, cookies and cache when Kite closes"; checked: w.get("privacy.clearOnExit"); onToggled: w.set("privacy.clearOnExit", checked) }
+                QQC2.ComboBox {
+                    Kirigami.FormData.label: "Cookies:"
+                    model: [{k: "all", t: "Allow all cookies"}, {k: "noThirdParty", t: "Block third-party cookies"}, {k: "none", t: "Block all cookies (many sites won't work)"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("privacy.cookies")))
+                    onActivated: i => w.set("privacy.cookies", model[i].k)
+                }
                 QQC2.CheckBox { Kirigami.FormData.label: "Tracking:"; text: "Send “Do Not Track” requests"; checked: w.get("web.doNotTrack"); onToggled: w.set("web.doNotTrack", checked) }
+                QQC2.CheckBox { text: "Tell sites which page linked to them (referrer)"; checked: w.get("privacy.sendReferer"); onToggled: w.set("privacy.sendReferer", checked) }
             }
             Kirigami.Heading { level: 3; text: "Clear Recent History" }
             Kirigami.FormLayout {

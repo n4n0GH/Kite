@@ -376,6 +376,18 @@ pub extern "C" fn kite_do_not_track() -> bool {
     app().do_not_track.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Send referrers ("privacy.sendReferer").
+#[no_mangle]
+pub extern "C" fn kite_send_referer() -> bool {
+    app().send_referer.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Cookie policy ("privacy.cookies"): 0 = all, 1 = no third-party, 2 = none.
+#[no_mangle]
+pub extern "C" fn kite_cookie_policy() -> std::ffi::c_int {
+    app().cookie_policy.load(std::sync::atomic::Ordering::Relaxed) as std::ffi::c_int
+}
+
 /// Should this user agent override apply (AMO sees Kite as Firefox so it
 /// offers "Add to Firefox" buttons that lead to .xpi files).
 #[no_mangle]
