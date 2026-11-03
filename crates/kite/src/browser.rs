@@ -217,6 +217,10 @@ pub mod qobject {
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
         #[qinvokable]
         fn cosmetic(self: &Browser, url: &QString) -> QString;
+        /// The cached favicon of `page_url`'s site as a data: URL, or "".
+        #[qinvokable]
+        #[cxx_name = "cachedFavicon"]
+        fn cached_favicon(self: &Browser, page_url: &QString) -> QString;
         /// Cache the favicon `icon_url` (image://favicon/...) shown for `page_url`.
         #[qinvokable]
         #[cxx_name = "saveFavicon"]
@@ -757,6 +761,14 @@ impl qobject::Browser {
         let _ = a.shared.settings().set("adblock.allowlist", json!(list));
         a.adblock.set_allowlist(list);
     }
+    fn cached_favicon(&self, page_url: &QString) -> QString {
+        use base64::Engine;
+        match kite_core::favicons::for_url(&app().shared.db(), &page_url.to_string()) {
+            Ok(Some(png)) => q(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))),
+            _ => QString::default(),
+        }
+    }
+
     fn save_favicon(&self, page_url: &QString, icon_url: &QString) {
         crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string());
     }

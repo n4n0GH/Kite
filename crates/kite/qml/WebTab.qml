@@ -23,8 +23,16 @@ Item {
     property bool pinned: false
     property string hoveredLink: ""
     property string url: heldUrl !== "" ? heldUrl : pendingUrl !== "" ? pendingUrl : web.url.toString()
-    property string title: web.title !== "" ? web.title : (pendingUrl !== "" ? _restoredTitle : (url === "" || url === "about:blank" ? "New Tab" : url))
-    property string _restoredTitle: "New Tab"
+    // Tabs that haven't loaded yet (restored ones load when first activated)
+    // show the title and icon they had before.
+    property string title: web.title !== "" ? web.title : ((pendingUrl !== "" || heldUrl !== "") && _restoredTitle !== "" ? _restoredTitle : (url === "" || url === "about:blank" ? "New Tab" : url))
+    property string _restoredTitle: ""
+    property string _restoredIcon: ""
+    function restoreLook(savedTitle, savedUrl) {
+        _restoredTitle = savedTitle || ""
+        _restoredIcon = Browser.cachedFavicon(savedUrl || "")
+        if (_restoredIcon !== "") window.setTabProperty(tabId, "icon", _restoredIcon)
+    }
     property bool loading: web.loading
     property string status: web.loading ? "loading" : "complete"
     property var lastAccessed: Date.now()

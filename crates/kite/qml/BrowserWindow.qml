@@ -77,6 +77,7 @@ QQC2.ApplicationWindow {
 
     function restoreTab(saved) {
         const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title})
+        t.restoreLook(saved.title, saved.url)
         if (saved.zoom > 0) t.view.zoomFactor = saved.zoom
         return t
     }
