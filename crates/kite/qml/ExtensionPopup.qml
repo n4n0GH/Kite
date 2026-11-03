@@ -14,21 +14,56 @@ QQC2.Popup {
     property var action: null
     property string popupUrl: ""
     padding: 1
-    width: Math.max(Kirigami.Units.gridUnit * 4, Math.min(800, view.contentsSize.width || 320))
-    height: Math.max(Kirigami.Units.gridUnit * 2, Math.min(600, view.contentsSize.height || 200))
-    closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutside
+    // Keep the popup inside the browser window (Qt only does this when
+    // margins are set) and limit it to the space below the toolbar.
+    margins: Kirigami.Units.smallSpacing
+    property Item anchorItem: null
+    readonly property real maxPopupWidth: win ? win.width - 2 * margins : 800
+    readonly property real maxPopupHeight: {
+        if (!win || !anchorItem) return 600
+        const bottom = anchorItem.mapToItem(null, 0, anchorItem.height).y
+        return Math.max(Kirigami.Units.gridUnit * 4, win.height - bottom - 2 * margins)
+    }
+    // Firefox caps extension popups at 800×600.
+    // Size of the extension page's content. A page never reports less than
+    // the space it is given, so this is reset on every open (otherwise a
+    // popup can only grow and keeps the previous, larger size).
+    property real pageWidth: 0
+    property real pageHeight: 0
+    // From show() until closed. (Popup.opened only turns true after the
+    // open transition, by which time the page may already have laid out.)
+    property bool active: false
+    function takeSize() {
+        if (!active || view.url.toString() === "about:blank") return
+        pageWidth = view.contentsSize.width
+        pageHeight = view.contentsSize.height
+    }
+    width: Math.min(maxPopupWidth, Math.max(Kirigami.Units.gridUnit * 4, Math.min(800, pageWidth || 320)) + 2 * padding)
+    height: Math.min(maxPopupHeight, Math.max(Kirigami.Units.gridUnit * 2, Math.min(600, pageHeight || 200)) + 2 * padding)
+    // Right-aligned with the button, so it grows towards the window's inside.
+    x: anchorItem ? anchorItem.width - width : 0
+    y: anchorItem ? anchorItem.height : 0
+    // Presses on the popup's own button don't close it here; the button's
+    // click toggles it instead (otherwise press closes and release reopens).
+    closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
 
     function show(action, anchor) {
+        if (opened && anchorItem === anchor) {
+            close()
+            return
+        }
         popup.action = action
+        pageWidth = 0
+        pageHeight = 0
+        active = true
         parent = anchor
-        const p = anchor.mapToItem(win.contentItem, 0, anchor.height)
-        x = 0; y = anchor.height
+        anchorItem = anchor
         popupUrl = action.popup
         view.url = action.popup
         open()
     }
 
-    onClosed: { view.url = "about:blank"; popupUrl = "" }
+    onClosed: { active = false; view.url = "about:blank"; popupUrl = "" }
 
     contentItem: WebEngineView {
         id: view
@@ -38,6 +73,8 @@ QQC2.Popup {
         settings.javascriptCanAccessClipboard: true
         backgroundColor: "white"
         onWindowCloseRequested: popup.close()
+        onContentsSizeChanged: popup.takeSize()
+        onLoadingChanged: info => { if (info.status === WebEngineView.LoadSucceededStatus) popup.takeSize() }
         onNewWindowRequested: request => { popup.win.openTab(request.requestedUrl.toString(), {background: false}); popup.close() }
         onNavigationRequested: request => {
             // Links that leave the extension open in a tab.
