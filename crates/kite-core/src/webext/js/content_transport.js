@@ -24,7 +24,14 @@
   const post = (path, body, keepalive) => rawFetch(rpcBase + path, { method: 'POST', cache: 'no-store', credentials: 'omit', keepalive: !!keepalive, body: JSON.stringify(Object.assign({ token: cfg.token, ctx }, body)) });
   const send = inFrame
     ? (method, args, id) => post('rpc', { method, args, callId: id, top: topOrigin }).catch((e) => {
-      const p = pending.get(id); if (p) { pending.delete(id); p.reject(new Error('Extension API unavailable: ' + e.message)); }
+      // The POST only delivers the call; its result comes through the poll.
+      // A failed POST usually means the frame is being torn down (e.g. an ad
+      // frame navigating away), and the runtime got the call anyway, so
+      // don't fail it (or retry it) right away: wait for the reply, like
+      // Chrome/Firefox leave calls from dying frames unanswered.
+      setTimeout(() => {
+        const p = pending.get(id); if (p) { pending.delete(id); p.reject(new Error('Extension API unavailable: ' + e.message)); }
+      }, 10000);
     })
     : (method, args, id) => doc.dispatchEvent(new CustomEvent(UP, { detail: JSON.stringify({ ctx, method, args, id }) }));
   const transport = {
