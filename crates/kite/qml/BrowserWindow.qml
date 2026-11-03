@@ -228,6 +228,12 @@ QQC2.ApplicationWindow {
     }
 
     function openPageActionPopup(action, anchor) { extPopup.show(action, anchor) }
+    // Closes the extension popup if it is open at `anchor`; true if it was.
+    function closeExtensionPopupAt(anchor) {
+        if (!extPopup.opened || extPopup.anchorItem !== anchor) return false
+        extPopup.close()
+        return true
+    }
 
     function openExtensionPopup(extId) {
         const a = toolbarActions.find(x => x.ext === extId && x.kind === "browserAction")

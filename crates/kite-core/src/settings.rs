@@ -74,6 +74,7 @@ pub fn defaults() -> Map<String, Value> {
         // Extensions
         "extensions.enabled": true,
         "extensions.amoSpoofFirefox": true,
+        "extensions.unpinned": [],
         // Window
         "window.width": 1280,
         "window.height": 840,
