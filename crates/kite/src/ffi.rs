@@ -264,19 +264,17 @@ pub unsafe extern "C" fn kite_intercept(
         if rt.has_web_request_listeners() {
             let tab = rt.tab_for_first_party(first_party);
             static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            let frame_id = match rtype {
-                "mainFrame" => 0,
-                // Qt doesn't say which frame; any non-zero id marks a sub-frame.
-                "subFrame" => 1,
-                _ => 0,
-            };
-            let details = serde_json::json!({
+            let frame = kite_core::webext::blocking::frame_context(url, rtype, first_party, initiator);
+            let mut details = serde_json::json!({
                 "requestId": REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(), "url": url, "method": method,
-                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame_id,
-                "parentFrameId": if rtype == "mainFrame" { -1 } else { 0 }, "originUrl": initiator, "documentUrl": if rtype == "mainFrame" { "" } else { first_party },
+                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame.frame_id,
+                "parentFrameId": frame.parent_frame_id, "originUrl": initiator, "frameAncestors": frame.frame_ancestors,
                 "timeStamp": kite_core::util::now_ms(), "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
-                "frameAncestors": [], "incognito": a.private, "cookieStoreId": "firefox-default",
+                "incognito": a.private, "cookieStoreId": "firefox-default",
             });
+            if let Some(doc) = frame.document_url {
+                details["documentUrl"] = doc.into();
+            }
             let (fx, ask) = rt.web_request(&details);
             let hub = rt.blocking.clone();
             drop(rt);

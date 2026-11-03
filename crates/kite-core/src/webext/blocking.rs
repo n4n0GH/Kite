@@ -260,8 +260,90 @@ pub fn combine(replies: &[Verdict]) -> Decision {
     d
 }
 
+/// Frame information for webRequest details. Qt doesn't say which frame a
+/// request comes from, but a request whose initiator differs from the top
+/// document comes from inside an iframe. Frames are identified by origin
+/// (stable ids from a hash), so a frame's `sub_frame` load and its later
+/// requests agree, and listeners like uBlock Origin judge them in the
+/// iframe's own context (first/third party, `domain=` options).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameContext {
+    pub frame_id: i64,
+    pub parent_frame_id: i64,
+    /// The document the request belongs to (absent for main frames).
+    pub document_url: Option<String>,
+    pub frame_ancestors: Value,
+}
+
+pub fn frame_id_for_origin(origin: &str) -> i64 {
+    let h = origin.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x01000193));
+    // Positive, non-zero (0 is the main frame).
+    ((h & 0x3fff_ffff) | 1) as i64
+}
+
+fn origin_of(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let o = u.origin();
+    o.is_tuple().then(|| o.ascii_serialization())
+}
+
+pub fn frame_context(url: &str, qt_type: &str, first_party: &str, initiator: &str) -> FrameContext {
+    let top = origin_of(first_party);
+    // The document a request comes from: its initiator, unless that is the
+    // top document (or unknown).
+    let from_frame = origin_of(initiator).filter(|o| Some(o) != top.as_ref());
+    let ancestors = |doc: &Option<String>| {
+        let mut a = vec![];
+        if let Some(d) = doc {
+            a.push(json!({"url": format!("{d}/"), "frameId": frame_id_for_origin(d)}));
+        }
+        a.push(json!({"url": first_party, "frameId": 0}));
+        Value::Array(a)
+    };
+    match qt_type {
+        "mainFrame" => FrameContext { frame_id: 0, parent_frame_id: -1, document_url: None, frame_ancestors: json!([]) },
+        "subFrame" => FrameContext {
+            frame_id: origin_of(url).map_or(1, |o| frame_id_for_origin(&o)),
+            parent_frame_id: from_frame.as_deref().map_or(0, frame_id_for_origin),
+            document_url: Some(from_frame.as_ref().map_or_else(|| first_party.to_owned(), |o| format!("{o}/"))),
+            frame_ancestors: ancestors(&from_frame),
+        },
+        _ => match &from_frame {
+            Some(o) => FrameContext {
+                frame_id: frame_id_for_origin(o),
+                parent_frame_id: 0,
+                document_url: Some(format!("{o}/")),
+                frame_ancestors: json!([{"url": first_party, "frameId": 0}]),
+            },
+            None => FrameContext { frame_id: 0, parent_frame_id: -1, document_url: Some(first_party.to_owned()), frame_ancestors: json!([]) },
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn frame_context_tells_iframes_apart() {
+        let top = "https://news.example/article";
+        // Main frame and the top document's own requests.
+        assert_eq!(frame_context(top, "mainFrame", top, "").frame_id, 0);
+        let own = frame_context("https://cdn.example/a.js", "script", top, "https://news.example");
+        assert_eq!((own.frame_id, own.document_url.as_deref()), (0, Some(top)));
+        // An ad iframe and a request made from inside it share a frame id.
+        let frame = frame_context("https://ads.example/slot.html", "subFrame", top, "https://news.example");
+        assert_eq!((frame.parent_frame_id, frame.document_url.as_deref()), (0, Some(top)));
+        let inner = frame_context("https://tracker.example/p.gif", "image", top, "https://ads.example");
+        assert_eq!(inner.frame_id, frame.frame_id);
+        assert_eq!(inner.document_url.as_deref(), Some("https://ads.example/"));
+        assert_ne!(inner.frame_id, 0);
+        // Nested iframe: its parent is the ad frame.
+        let nested = frame_context("https://video.example/player", "subFrame", top, "https://ads.example");
+        assert_eq!(nested.parent_frame_id, frame.frame_id);
+        assert_eq!(nested.frame_ancestors[1]["frameId"], 0);
+        // Opaque initiators (sandboxed frames) count as the top document.
+        assert_eq!(frame_context("https://x.example/", "image", top, "null").frame_id, 0);
+    }
+
     use super::*;
     use std::io::{Read, Write};
 
