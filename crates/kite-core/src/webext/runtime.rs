@@ -371,6 +371,10 @@ impl Runtime {
         if !self.registry.get(&ext_id).is_some_and(|e| e.info.enabled) {
             return vec![Effect::Reply { view: origin.view.clone(), ctx: ctx.into(), call_id, result: Err("extension is disabled".into()) }];
         }
+        if log::log_enabled!(log::Level::Trace) {
+            let a = args.to_string();
+            log::trace!("call {method} from {ctx} ({}): {}", origin.view, a.chars().take(300).collect::<String>());
+        }
         let args: Vec<Value> = match args {
             Value::Array(a) => a,
             Value::Null => vec![],
@@ -1584,6 +1588,12 @@ impl Runtime {
                 } else {
                     details["code"].as_str().unwrap_or_default().to_owned()
                 };
+                // uBO's scriptlets must run in the page's world (see compat).
+                if name == "executeScript" {
+                    if let Some(inj) = super::compat::split_main_world_injector(&src) {
+                        return self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": 0, "code": inj.main, "wrapResult": true, "allFrames": details["allFrames"]}));
+                    }
+                }
                 let code = match name {
                     "executeScript" => self.world_code(e, &src),
                     _ => Self::css_code(&src, &src, name == "removeCSS"),
@@ -1634,7 +1644,24 @@ impl Runtime {
                     }
                     // contentScripts.register uses {js:[{file|code}]}
                     ids.push(s["id"].clone());
-                    entry.retain(|x| x["id"] != s["id"]);
+                    entry.retain(|x| x["id"] != s["id"] && x["kiteParent"] != s["id"]);
+                    // uBO's scriptlets go to a companion main-world script (see compat).
+                    let mut main = vec![];
+                    for item in s["js"].as_array_mut().into_iter().flatten() {
+                        if let Some(inj) = item["code"].as_str().and_then(super::compat::split_main_world_injector) {
+                            item["code"] = inj.isolated.into();
+                            main.push(json!({"code": inj.main}));
+                        }
+                    }
+                    if !main.is_empty() {
+                        let mut m = s.clone();
+                        m["id"] = format!("{}:main", s["id"].as_str().unwrap_or_default()).into();
+                        m["kiteParent"] = s["id"].clone();
+                        m["world"] = "MAIN".into();
+                        m["js"] = main.into();
+                        m.as_object_mut().map(|o| o.remove("css"));
+                        entry.push(m);
+                    }
                     entry.push(s);
                 }
                 Handled::With(Ok(if ns == "contentScripts" { json!({"id": ids[0]}) } else { Value::Null }), vec![Effect::Changed("scripts".into())])
@@ -1644,13 +1671,13 @@ impl Runtime {
                 let ids: Option<Vec<Value>> = if ns == "contentScripts" { Some(vec![arg(args, 0)]) } else { f["ids"].as_array().cloned() };
                 if let Some(list) = self.dynamic_scripts.get_mut(ext_id) {
                     match ids {
-                        Some(ids) => list.retain(|s| !ids.contains(&s["id"])),
+                        Some(ids) => list.retain(|s| !ids.contains(&s["id"]) && !ids.contains(&s["kiteParent"])),
                         None => list.clear(),
                     }
                 }
                 Handled::With(Ok(Value::Null), vec![Effect::Changed("scripts".into())])
             }
-            ("scripting", "getRegisteredContentScripts") => now!(Ok(Value::Array(self.dynamic_scripts(ext_id)))),
+            ("scripting", "getRegisteredContentScripts") => now!(Ok(Value::Array(self.dynamic_scripts(ext_id).into_iter().filter(|s| s["kiteParent"].is_null()).collect()))),
             ("scripting", "updateContentScripts") => {
                 let list = arg(args, 0).as_array().cloned().unwrap_or_default();
                 if let Some(cur) = self.dynamic_scripts.get_mut(ext_id) {

@@ -17,10 +17,12 @@
 //!   UI-dependent calls (opening tabs, running scripts, popups) are forwarded
 //!   to the GUI layer as [`runtime::Effect::Ui`].
 //! * `blocking` — blocking webRequest listeners (off-UI-thread WebSocket hub).
+//! * `compat` — shims for extension code relying on Firefox internals.
 //! * `dnr` — declarativeNetRequest rule matching for the network interceptor.
 
 pub mod amo;
 pub mod blocking;
+pub mod compat;
 pub mod dnr;
 pub mod i18n;
 pub mod manifest;
