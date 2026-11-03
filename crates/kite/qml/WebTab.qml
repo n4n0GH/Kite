@@ -286,6 +286,10 @@ Item {
                 }
 
                 onCertificateError: error => {
+                    // Like Firefox and Chrome, only the page itself gets the
+                    // interstitial; subresources with bad certificates (e.g. a
+                    // favicon from a self-signed router) just fail to load.
+                    if (!error.isMainFrame) { error.rejectCertificate(); return }
                     error.defer()
                     wt.certError = error
                 }

@@ -16,11 +16,18 @@ pub fn render() -> String {
             let host = kite_core::util::host_of(&s.url);
             let title = if s.title.is_empty() { host.clone() } else { s.title.clone() };
             let letter = host.trim_start_matches("www.").chars().next().unwrap_or('?').to_uppercase().to_string();
+            // The icon comes from the site's own origin (scheme and port as
+            // visited), not always https://, which fails for http-only or
+            // self-signed sites; on failure the letter shows instead.
+            let icon = url::Url::parse(&s.url)
+                .ok()
+                .filter(|u| matches!(u.scheme(), "http" | "https"))
+                .map(|u| format!(r#"<img src="{}/favicon.ico" onerror="this.remove()">"#, esc(&u.origin().ascii_serialization())))
+                .unwrap_or_default();
             format!(
-                r#"<a class="tile" href="{url}" title="{t}"><span class="ic"><img src="https://{host}/favicon.ico" onerror="this.remove()"><b>{letter}</b></span><span class="t">{t}</span><span class="h">{h}</span></a>"#,
+                r#"<a class="tile" href="{url}" title="{t}"><span class="ic">{icon}<b>{letter}</b></span><span class="t">{t}</span><span class="h">{h}</span></a>"#,
                 url = esc(&s.url),
                 t = esc(&title),
-                host = esc(&host),
                 h = esc(&host),
                 letter = esc(&letter)
             )
