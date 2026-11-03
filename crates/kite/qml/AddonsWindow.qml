@@ -25,8 +25,22 @@ Kirigami.ApplicationWindow {
             Kirigami.Action { text: "Find Add-ons"; icon.name: "get-hot-new-stuff"; checked: w.page === "browse"; onTriggered: w.page = "browse" }
         ]
     }
-    pageStack.initialPage: page === "browse" ? browsePage : installedPage
-    onPageChanged: { pageStack.clear(); pageStack.push(page === "browse" ? browsePage : installedPage) }
+    // Show `page`. The page is created with the page stack as its visual
+    // parent: created parentless (an initialPage binding or pushing the
+    // Component) it triggers "Created graphical object was not placed in the
+    // graphics scene", and the binding created an extra page on each change.
+    property bool _completed: false
+    property Item _shown: null
+    function showPage() {
+        const old = _shown
+        pageStack.clear()
+        // Pages we create ourselves are ours to destroy.
+        if (old) old.destroy()
+        _shown = (page === "browse" ? browsePage : installedPage).createObject(pageStack)
+        pageStack.push(_shown)
+    }
+    Component.onCompleted: { _completed = true; showPage() }
+    onPageChanged: if (_completed) showPage()
 
     function formatUsers(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "K" : String(n) }
 
