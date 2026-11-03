@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import QtWebEngine
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 
@@ -307,7 +308,38 @@ QQC2.TextField {
         y: field.height
         width: Kirigami.Units.gridUnit * 20
         property var site: ({})
-        onOpened: site = JSON.parse(Browser.siteSettings(Browser.hostOf(field.tab.url)))
+        // Filled before the popup shows (onOpened runs after it has appeared).
+        onAboutToShow: { site = JSON.parse(Browser.siteSettings(Browser.hostOf(field.tab.url))); loadPermissions() }
+
+        // Site permissions: the kinds QtWebEngine stores per origin, and
+        // Kite's own session decision for keeping the screen on (Wake Lock).
+        // Camera, microphone and screen sharing are asked for every time.
+        property var permissions: []
+        function loadPermissions() {
+            const t = field.tab
+            const m = t && field.extName === "" ? t.url.match(/^https?:\/\/[^/?#]+/i) : null
+            if (!m) { permissions = []; return }
+            const P = WebEnginePermission.PermissionType
+            const kinds = [
+                {type: P.Geolocation, name: "Location", icon: "mark-location"},
+                {type: P.Notifications, name: "Notifications", icon: "notifications"},
+                {type: P.ClipboardReadWrite, name: "Clipboard", icon: "edit-paste"},
+                {type: P.LocalFontsAccess, name: "Local fonts", icon: "preferences-desktop-font"},
+            ]
+            const list = kinds.map(k => ({name: k.name, icon: k.icon, perm: t.view.profile.queryPermission(m[0], k.type)}))
+            list.push({name: "Keep screen on", icon: "video-display", wakeLock: true, key: (field.win.privateMode ? "private:" : "") + Browser.hostOf(t.url)})
+            permissions = list
+        }
+        // 0 = ask, 1 = allow, 2 = block
+        function stateOf(p) {
+            if (p.wakeLock) { const d = field.win.app.wakeLockSites[p.key]; return d === undefined ? 0 : d ? 1 : 2 }
+            const S = WebEnginePermission.State
+            return p.perm.state === S.Granted ? 1 : p.perm.state === S.Denied ? 2 : 0
+        }
+        function setState(p, i) {
+            if (p.wakeLock) { if (i === 0) field.win.app.forgetWakeLock(p.key); else field.win.app.rememberWakeLock(p.key, i === 1); return }
+            if (i === 1) p.perm.grant(); else if (i === 2) p.perm.deny(); else p.perm.reset()
+        }
         contentItem: ColumnLayout {
             Kirigami.Heading { level: 4; text: field.extName !== "" ? field.extName : Browser.hostOf(field.tab ? field.tab.url : ""); elide: Text.ElideRight; Layout.fillWidth: true }
             QQC2.Label {
@@ -321,8 +353,26 @@ QQC2.TextField {
                 checked: !field.shieldAllowed
                 onToggled: { Browser.adblockAllow(Browser.hostOf(field.tab.url), !checked); field.shieldAllowed = !checked; field.tab.view.reload() }
             }
+            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.permissions.length > 0 }
+            Kirigami.Heading { level: 5; text: "Permissions"; visible: siteInfo.permissions.length > 0 }
+            Repeater {
+                model: siteInfo.permissions
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+                    Kirigami.Icon { source: modelData.icon; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+                    QQC2.Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                    QQC2.ComboBox {
+                        model: ["Ask", "Allow", "Block"]
+                        currentIndex: siteInfo.stateOf(modelData)
+                        onActivated: i => siteInfo.setState(modelData, i)
+                    }
+                }
+            }
+            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.permissions.length > 0 }
             QQC2.Button { text: "Clear zoom setting"; visible: siteInfo.site.zoom > 0; onClicked: { Browser.setSiteSetting(Browser.hostOf(field.tab.url), "zoom", -1); field.tab.view.zoomFactor = 1.0; siteInfo.close() } }
-            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { Browser.clearSiteSettings(Browser.hostOf(field.tab.url)); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
+            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { Browser.clearSiteSettings(Browser.hostOf(field.tab.url)); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
         }
     }
 }

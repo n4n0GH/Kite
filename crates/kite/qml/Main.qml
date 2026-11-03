@@ -68,6 +68,7 @@ QtObject {
     // Screen Wake Lock decisions per site for this session (WebTab).
     property var wakeLockSites: ({})
     function rememberWakeLock(key, allowed) { const o = Object.assign({}, wakeLockSites); o[key] = allowed; wakeLockSites = o }
+    function forgetWakeLock(key) { const o = Object.assign({}, wakeLockSites); delete o[key]; wakeLockSites = o }
 
     // Qt's own user agent, restored when the setting is cleared.
     property string defaultUserAgent: ""
