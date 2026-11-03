@@ -79,7 +79,8 @@
     else console.error('[Kite] extension API transport unavailable');
   })(0);
   addEventListener('pagehide', () => {
-    if (inFrame) navigator.sendBeacon && navigator.sendBeacon('/__kite__/rpc', JSON.stringify({ token: cfg.token, ctx, method: '_.unregister', args: [], callId: 0 }));
+    // sendBeacon only supports http(s); a keepalive fetch outlives the page too.
+    if (inFrame) rawFetch('/__kite__/rpc', { method: 'POST', cache: 'no-store', keepalive: true, body: JSON.stringify({ token: cfg.token, ctx, method: '_.unregister', args: [], callId: 0 }) }).catch(() => {});
     else if (kite) kite.call(cfg.token, ctx, '_.unregister', '[]', 0);
   });
   // Extension pages in Kite close themselves via window.close(): map to tabs.remove for tab pages.
