@@ -42,21 +42,42 @@ QtObject {
     }
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
-    // Settings web views follow live (others apply to new tabs).
-    property bool smoothScrolling: setting("web.smoothScrolling")
+
+    // Settings apply live: web views and windows bind to `liveSettings`
+    // (e.g. liveSettings["web.javascript"]) and profile settings are
+    // re-applied, so a change in Preferences reaches open tabs and windows
+    // right away.
+    readonly property var liveWebKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
+        "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
+        "appearance.showBookmarksToolbar", "appearance.showHomeButton", "appearance.showStatusBar", "appearance.tabPosition"]
+    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
+    property var liveSettings: liveWebKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
         target: Browser
         function onSettingChanged(key, json) {
-            if (key === "web.smoothScrolling") app.smoothScrolling = JSON.parse(json)
+            if (app.liveWebKeys.includes(key)) {
+                const o = Object.assign({}, app.liveSettings)
+                o[key] = JSON.parse(json)
+                app.liveSettings = o
+            }
+            if (app.profileKeys.includes(key)) for (const p of [app.profile, app.privateProfile]) app.applyProfileSettings(p)
+            if (key === "web.doNotTrack") app.installUserScripts()
         }
     }
 
-    function configureProfile(p) {
+    // Qt's own user agent, restored when the setting is cleared.
+    property string defaultUserAgent: ""
+    function applyProfileSettings(p) {
         const ua = setting("web.userAgent")
-        if (ua) p.httpUserAgent = ua
+        p.httpUserAgent = ua ? ua : defaultUserAgent
         p.downloadPath = setting("downloads.directory")
         p.spellCheckEnabled = setting("web.spellcheck")
         p.spellCheckLanguages = setting("web.spellcheckLanguages")
+    }
+
+    function configureProfile(p) {
+        if (defaultUserAgent === "") defaultUserAgent = p.httpUserAgent
+        applyProfileSettings(p)
         p.downloadRequested.connect(onDownloadRequested)
         p.presentNotification.connect(onWebNotification)
     }
@@ -182,6 +203,17 @@ QtObject {
                 ws.runsOnSubFrames = s.runsOnSubFrames
                 ws.injectionPoint = s.injectionPoint === 0 ? WebEngineScript.DocumentCreation
                                   : s.injectionPoint === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
+                p.userScripts.insert(ws)
+            }
+            if (setting("web.doNotTrack")) {
+                // The DNT header is added by the request interceptor; pages
+                // also see the preference in navigator.doNotTrack.
+                const ws = WebEngine.script()
+                ws.name = "kite:doNotTrack"
+                ws.sourceCode = "Object.defineProperty(Navigator.prototype, 'doNotTrack', { get() { return '1'; }, configurable: true, enumerable: true });"
+                ws.worldId = WebEngineScript.MainWorld
+                ws.runsOnSubFrames = true
+                ws.injectionPoint = WebEngineScript.DocumentCreation
                 p.userScripts.insert(ws)
             }
         }

@@ -298,6 +298,17 @@ fn notify_bookmarks(fx: Value) {
     crate::extensions::apply_effects_async(effects);
 }
 
+/// Settings the Rust side acts on itself (QML follows settingChanged).
+fn apply_setting(key: &str, v: &serde_json::Value) {
+    let a = app();
+    match key {
+        "adblock.enabled" => a.adblock.set_enabled(v.as_bool().unwrap_or(true)),
+        "adblock.allowlist" => a.adblock.set_allowlist(serde_json::from_value(v.clone()).unwrap_or_default()),
+        "web.doNotTrack" => a.do_not_track.store(v.as_bool().unwrap_or(false), std::sync::atomic::Ordering::Relaxed),
+        _ => {}
+    }
+}
+
 impl qobject::Browser {
     // ---- settings ---------------------------------------------------------
     fn setting(&self, key: &QString) -> QString {
@@ -308,11 +319,7 @@ impl qobject::Browser {
         let v = parse(json);
         let a = app();
         let _ = a.shared.settings().set(&key, v.clone());
-        match key.as_str() {
-            "adblock.enabled" => a.adblock.set_enabled(v.as_bool().unwrap_or(true)),
-            "adblock.allowlist" => a.adblock.set_allowlist(serde_json::from_value(v.clone()).unwrap_or_default()),
-            _ => {}
-        }
+        apply_setting(&key, &v);
         self.setting_changed(q(&key), js(&v));
     }
     fn reset_setting(self: Pin<&mut Self>, key: &QString) {
@@ -322,6 +329,7 @@ impl qobject::Browser {
             let _ = s.reset(&key);
             s.get(&key)
         };
+        apply_setting(&key, &v);
         self.setting_changed(q(&key), js(&v));
     }
     fn web_engine_path(&self) -> QString {

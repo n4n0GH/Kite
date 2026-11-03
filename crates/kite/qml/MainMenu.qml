@@ -28,7 +28,7 @@ QQC2.Menu {
         QQC2.MenuItem { text: "Bookmark All Tabs…"; icon.name: "bookmarks"; onTriggered: win.bookmarkAllTabs() }
         QQC2.MenuItem { text: "Manage Bookmarks"; icon.name: "bookmarks-organize"; onTriggered: app.showLibrary("bookmarks") }
         QQC2.MenuItem { text: "Bookmarks Sidebar"; icon.name: "view-sidetree"; onTriggered: win.showSidebar("bookmarks") }
-        QQC2.MenuItem { text: "Show Bookmarks Toolbar"; checkable: true; checked: win.showBookmarksBar; onTriggered: { win.showBookmarksBar = checked; Browser.setSetting("appearance.showBookmarksToolbar", JSON.stringify(checked)) } }
+        QQC2.MenuItem { text: "Show Bookmarks Toolbar"; checkable: true; checked: win.showBookmarksBar; onTriggered: Browser.setSetting("appearance.showBookmarksToolbar", JSON.stringify(checked)) }
         QQC2.MenuSeparator {}
         BookmarkFolderMenu { title: "Bookmarks Menu"; folderId: JSON.parse(Browser.bookmarkRoots()).menu; bar: win.bookmarksOpener }
         BookmarkFolderMenu { title: "Unsorted Bookmarks"; folderId: JSON.parse(Browser.bookmarkRoots()).unsorted; bar: win.bookmarksOpener }

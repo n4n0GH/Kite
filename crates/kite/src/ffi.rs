@@ -370,6 +370,12 @@ pub unsafe extern "C" fn kite_cookie_event(json: *const c_char, removed: i32, in
     crate::extensions::apply_effects_async(fx);
 }
 
+/// Send the Do Not Track header ("web.doNotTrack").
+#[no_mangle]
+pub extern "C" fn kite_do_not_track() -> bool {
+    app().do_not_track.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Should this user agent override apply (AMO sees Kite as Firefox so it
 /// offers "Add to Firefox" buttons that lead to .xpi files).
 #[no_mangle]

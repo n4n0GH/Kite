@@ -11,6 +11,8 @@ pub struct App {
     pub runtime: Mutex<Runtime>,
     pub passwords: Mutex<kite_core::passwords::PasswordStore>,
     pub adblock: Arc<AdBlock>,
+    /// "web.doNotTrack", read by the network interceptor on every request.
+    pub do_not_track: std::sync::atomic::AtomicBool,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
     pub initial_urls: Vec<String>,
@@ -49,7 +51,8 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         adblock.set_allowlist(serde_json::from_value(s.get("adblock.allowlist")).unwrap_or_default());
     }
     adblock.load_cached();
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    let do_not_track = shared.settings().get_bool("web.doNotTrack").into();
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, adblock, do_not_track, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }

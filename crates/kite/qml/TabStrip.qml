@@ -1,0 +1,117 @@
+import QtQuick
+import QtQuick.Controls as QQC2
+import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
+
+// The tab strip, placed where "appearance.tabPosition" says: above or below
+// the toolbars or below the page (horizontal), or as a list on the left
+// (vertical). See BrowserWindow.qml.
+Rectangle {
+    id: stripRoot
+    property var browser
+    // "top" | "belowToolbar" | "bottom" | "vertical"
+    property string position: "top"
+    readonly property bool vertical: position === "vertical"
+    // Side the current tab merges into: the page below it, or above it for
+    // a strip under the page.
+    readonly property string placement: vertical ? "vertical" : position === "bottom" ? "bottom" : "top"
+
+    implicitHeight: vertical ? 0 : Kirigami.Units.gridUnit * 2.2
+    implicitWidth: vertical ? Kirigami.Units.gridUnit * 14 : 0
+    color: browser.privateMode ? Qt.darker(Kirigami.Theme.backgroundColor, 1.35) : Qt.darker(Kirigami.Theme.backgroundColor, 1.08)
+
+    GridLayout {
+        anchors.fill: parent
+        anchors.leftMargin: stripRoot.vertical ? 0 : Kirigami.Units.smallSpacing
+        anchors.topMargin: stripRoot.vertical ? Kirigami.Units.smallSpacing : 0
+        flow: stripRoot.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+        rows: stripRoot.vertical ? -1 : 1
+        columns: stripRoot.vertical ? 1 : -1
+        rowSpacing: 0
+        columnSpacing: 0
+
+        Kirigami.Icon {
+            visible: stripRoot.browser.privateMode
+            source: "view-private"
+            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            Layout.alignment: Qt.AlignCenter
+            Layout.margins: Kirigami.Units.smallSpacing
+        }
+
+        ListView {
+            id: strip
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: stripRoot.vertical ? ListView.Vertical : ListView.Horizontal
+            model: stripRoot.browser.tabs
+            // Dragging is for reordering tabs; the vertical list scrolls with
+            // the wheel and its scroll bar.
+            interactive: false
+            clip: true
+            currentIndex: stripRoot.browser.currentIndex
+            highlightFollowsCurrentItem: false
+            boundsBehavior: Flickable.StopAtBounds
+            readonly property real normalWidth: {
+                const m = stripRoot.browser.tabs
+                let pinned = 0
+                for (let i = 0; i < m.count; ++i) if (m.get(i).pinned) pinned++
+                // Leave room for the new-tab button at the end.
+                const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - (footerItem ? footerItem.width : 0)
+                return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, m.count - pinned)))
+            }
+            WheelHandler {
+                onWheel: e => {
+                    if (!stripRoot.vertical) { stripRoot.browser.nextTab(e.angleDelta.y > 0 ? -1 : 1); return }
+                    strip.contentY = Math.max(strip.originY, Math.min(strip.contentY - e.angleDelta.y / 2, strip.originY + strip.contentHeight - strip.height))
+                }
+            }
+            QQC2.ScrollBar.vertical: QQC2.ScrollBar { active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
+            moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
+            // Keep the current tab in view in the vertical list.
+            onCurrentIndexChanged: if (stripRoot.vertical) positionViewAtIndex(currentIndex, ListView.Contain)
+            delegate: TabButton {
+                browser: stripRoot.browser
+                tabList: strip
+                placement: stripRoot.placement
+            }
+            footer: QQC2.ToolButton {
+                icon.name: "list-add"
+                text: "New Tab"
+                display: stripRoot.vertical ? QQC2.AbstractButton.TextBesideIcon : QQC2.AbstractButton.IconOnly
+                width: stripRoot.vertical ? strip.width : implicitWidth
+                height: stripRoot.vertical ? Kirigami.Units.gridUnit * 2 : strip.height
+                onClicked: stripRoot.browser.openTab(stripRoot.browser.app.newTabUrl(), {background: false}).focusLocationBar()
+                QQC2.ToolTip.text: "New Tab (Ctrl+T)"
+                QQC2.ToolTip.visible: hovered && !stripRoot.vertical
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+            }
+        }
+
+        QQC2.ToolButton {
+            icon.name: "tab-duplicate"
+            display: QQC2.AbstractButton.IconOnly
+            text: "List all tabs"
+            Layout.alignment: Qt.AlignCenter
+            onClicked: tabListMenu.popup()
+            QQC2.Menu {
+                id: tabListMenu
+                Instantiator {
+                    model: stripRoot.browser.tabs
+                    delegate: QQC2.MenuItem {
+                        required property int index
+                        required property string title
+                        text: title
+                        checkable: true
+                        checked: index === stripRoot.browser.currentIndex
+                        onTriggered: stripRoot.browser.setCurrentIndex(index)
+                    }
+                    onObjectAdded: (i, o) => tabListMenu.insertItem(i, o)
+                    onObjectRemoved: (i, o) => tabListMenu.removeItem(o)
+                }
+                QQC2.MenuSeparator {}
+                QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: stripRoot.browser.reopenClosedTab(0) }
+            }
+        }
+    }
+}

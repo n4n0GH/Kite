@@ -44,6 +44,7 @@ void kite_cookie_event(const char *json, int removed, int initial);
 int kite_rpc(const char *url, const char *initiator, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
 void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
+bool kite_do_not_track();
 }
 
 static QByteArray takeBuf(KiteBuf b)
@@ -163,6 +164,7 @@ public:
         const QByteArray url = info.requestUrl().toString(QUrl::FullyEncoded).toUtf8();
         const QByteArray fp = info.firstPartyUrl().toString(QUrl::FullyEncoded).toUtf8();
         const QByteArray ini = info.initiator().toString().toUtf8();
+        if (kite_do_not_track()) info.setHttpHeader("DNT", "1");
         // Make addons.mozilla.org treat Kite as Firefox.
         {
             QByteArray ua = takeBuf(kite_user_agent_for(url.constData()));

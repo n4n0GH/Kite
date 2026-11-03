@@ -198,20 +198,20 @@ Item {
                 lifecycleState: WebEngineView.LifecycleState.Active
                 backgroundColor: Kirigami.Theme.backgroundColor
 
-                settings.javascriptEnabled: wt.app.setting("web.javascript")
-                settings.autoLoadImages: wt.app.setting("web.autoloadImages")
-                settings.localStorageEnabled: wt.app.setting("web.localStorage")
-                settings.pluginsEnabled: wt.app.setting("web.pluginsEnabled")
-                settings.spatialNavigationEnabled: wt.app.setting("web.spatialNavigation")
+                settings.javascriptEnabled: wt.app.liveSettings["web.javascript"]
+                settings.autoLoadImages: wt.app.liveSettings["web.autoloadImages"]
+                settings.localStorageEnabled: wt.app.liveSettings["web.localStorage"]
+                settings.pluginsEnabled: wt.app.liveSettings["web.pluginsEnabled"]
+                settings.spatialNavigationEnabled: wt.app.liveSettings["web.spatialNavigation"]
                 // Animated (smooth) scrolling with the mouse wheel and keys.
-                settings.scrollAnimatorEnabled: wt.app.smoothScrolling
-                settings.dnsPrefetchEnabled: wt.app.setting("web.dnsPrefetch")
-                settings.printElementBackgrounds: wt.app.setting("web.printBackgrounds")
+                settings.scrollAnimatorEnabled: wt.app.liveSettings["web.smoothScrolling"]
+                settings.dnsPrefetchEnabled: wt.app.liveSettings["web.dnsPrefetch"]
+                settings.printElementBackgrounds: wt.app.liveSettings["web.printBackgrounds"]
                 settings.fullScreenSupportEnabled: true
                 settings.focusOnNavigationEnabled: true
                 settings.screenCaptureEnabled: true
                 settings.javascriptCanOpenWindows: true
-                settings.forceDarkMode: wt.app.setting("appearance.forceDarkMode")
+                settings.forceDarkMode: wt.app.liveSettings["appearance.forceDarkMode"]
                 settings.pdfViewerEnabled: true
                 settings.localContentCanAccessRemoteUrls: wt.isExtensionPage
 

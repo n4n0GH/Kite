@@ -91,7 +91,14 @@ Kirigami.ApplicationWindow {
     Component {
         id: appearance
         Kirigami.FormLayout {
-            QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: { w.set("appearance.showBookmarksToolbar", checked); for (const x of w.app.windows) x.showBookmarksBar = checked } }
+            QQC2.ComboBox {
+                Kirigami.FormData.label: "Tabs:"
+                model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the side"}]
+                textRole: "t"
+                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("appearance.tabPosition")))
+                onActivated: i => w.set("appearance.tabPosition", model[i].k)
+            }
+            QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: w.set("appearance.showBookmarksToolbar", checked) }
             QQC2.CheckBox { text: "Show home button"; checked: w.get("appearance.showHomeButton"); onToggled: w.set("appearance.showHomeButton", checked) }
             QQC2.CheckBox { text: "Show link targets when hovering links"; checked: w.get("appearance.showStatusBar"); onToggled: w.set("appearance.showStatusBar", checked) }
             QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }

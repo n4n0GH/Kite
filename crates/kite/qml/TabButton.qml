@@ -3,7 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
-// One tab in the tab tabList. Supports drag-to-reorder, middle-click close,
+// One tab in the tab strip (horizontal or vertical, see TabStrip.qml). Supports drag-to-reorder, middle-click close,
 // pinning, audio indicator and a context menu (Falkon's TabContextMenu).
 Item {
     id: root
@@ -17,18 +17,27 @@ Item {
     required property bool muted
     property var browser
     property var tabList
+    // Where the strip is: "top" / "bottom" (horizontal, the current tab
+    // merges into the toolbar or page on that side) or "vertical".
+    property string placement: "top"
+    readonly property bool vertical: placement === "vertical"
     readonly property bool current: index === browser.currentIndex
+    readonly property real gap: Kirigami.Units.smallSpacing
 
-    width: pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
-    height: tabList.height
+    width: vertical ? tabList.width : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
+    height: vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
     z: dragHandler.active ? 10 : 0
+
+    // The tab's face, inset from the strip edge it doesn't touch.
+    readonly property rect face: vertical ? Qt.rect(gap, 1, width - 2 * gap, height - 2)
+        : placement === "bottom" ? Qt.rect(0, 0, width, height - gap)
+        : Qt.rect(0, gap, width, height - gap)
 
     // Drop slot: while a tab is dragged, its place in the strip (which moves
     // as the other tabs slide aside) shows where it will land.
     Rectangle {
-        anchors.fill: parent
-        anchors.topMargin: Kirigami.Units.smallSpacing
-        anchors.margins: 1
+        x: root.face.x + 1; y: root.face.y + 1
+        width: root.face.width - 2; height: root.face.height - 2
         visible: dragHandler.active
         radius: Kirigami.Units.cornerRadius
         color: Qt.alpha(Kirigami.Theme.highlightColor, 0.12)
@@ -37,17 +46,17 @@ Item {
 
     Kirigami.ShadowedRectangle {
         id: bg
-        // Only vertical anchors: horizontal ones would override x.
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.topMargin: Kirigami.Units.smallSpacing
-        width: parent.width
         // While dragging, the tab is lifted and follows the pointer even as
         // the strip moves it to a new index underneath; on release it
         // settles into its slot.
         readonly property bool lifted: dragHandler.active
-        x: lifted ? dragHandler.startX + dragHandler.activeTranslation.x - root.x : 0
+        readonly property real dragOffset: lifted ? dragHandler.startPos + dragHandler.along - (root.vertical ? root.y : root.x) : 0
+        x: root.face.x + (root.vertical ? 0 : dragOffset)
+        y: root.face.y + (root.vertical ? dragOffset : 0)
+        width: root.face.width
+        height: root.face.height
         Behavior on x { enabled: !bg.lifted; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+        Behavior on y { enabled: !bg.lifted; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
         scale: lifted ? 1.04 : 1
         Behavior on scale { NumberAnimation { duration: Kirigami.Units.shortDuration } }
         opacity: lifted ? 0.9 : 1
@@ -60,8 +69,25 @@ Item {
              : hover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
         border.width: 1
         border.color: lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
-        Rectangle { visible: root.current; anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: parent.radius + 1; color: parent.color }
-        Rectangle { visible: root.current; anchors { left: parent.left; right: parent.right; top: parent.top } height: 2; radius: 1; color: Kirigami.Theme.highlightColor }
+        // The current tab merges into the toolbar/page next to the strip
+        // (square corners on that side) and is marked on the opposite edge.
+        Rectangle {
+            visible: root.current && !root.vertical && !bg.lifted
+            anchors { left: parent.left; right: parent.right }
+            anchors.top: root.placement === "bottom" ? parent.top : undefined
+            anchors.bottom: root.placement === "bottom" ? undefined : parent.bottom
+            height: parent.radius + 1
+            color: parent.color
+        }
+        Rectangle {
+            visible: root.current
+            x: root.vertical ? 0 : 0
+            y: root.vertical ? 0 : root.placement === "bottom" ? parent.height - 2 : 0
+            width: root.vertical ? 3 : parent.width
+            height: root.vertical ? parent.height : 2
+            radius: 1
+            color: Kirigami.Theme.highlightColor
+        }
 
         RowLayout {
             anchors.fill: parent
@@ -126,20 +152,22 @@ Item {
     DragHandler {
         id: dragHandler
         target: null
-        xAxis.enabled: true
-        yAxis.enabled: false
+        xAxis.enabled: !root.vertical
+        yAxis.enabled: root.vertical
         cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
-        property real startX: 0
+        // Position along the strip at drag start, and distance dragged.
+        property real startPos: 0
+        readonly property real along: root.vertical ? activeTranslation.y : activeTranslation.x
         onActiveChanged: {
             if (active) {
-                startX = root.x
+                startPos = root.vertical ? root.y : root.x
                 root.browser.setCurrentIndex(root.index)
             }
         }
-        onActiveTranslationChanged: {
+        onAlongChanged: {
             if (!active) return
-            const centre = startX + activeTranslation.x + root.width / 2
-            let to = root.tabList.indexAt(centre, root.height / 2)
+            const centre = startPos + along + (root.vertical ? root.height : root.width) / 2
+            let to = root.vertical ? root.tabList.indexAt(root.width / 2, centre) : root.tabList.indexAt(centre, root.height / 2)
             if (to < 0) to = centre < 0 ? 0 : root.browser.count - 1
             to = root.browser.clampToSection(root.index, to)
             if (to !== root.index) root.browser.moveTab(root.index, to)

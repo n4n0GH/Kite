@@ -24,7 +24,7 @@ QQC2.ApplicationWindow {
     property var lastActiveTabId: -1
     property string sidebar: ""            // "", "bookmarks", "history", "ext:<id>"
     readonly property string sidebarExtension: sidebar.startsWith("ext:") ? sidebar.substring(4) : ""
-    property bool showBookmarksBar: app.setting("appearance.showBookmarksToolbar")
+    readonly property bool showBookmarksBar: app.liveSettings["appearance.showBookmarksToolbar"]
     property bool contentFullScreen: false
     property var toolbarActions: []
     property int downloadsActive: 0
@@ -48,6 +48,9 @@ QQC2.ApplicationWindow {
 
     // ---- tab model -----------------------------------------------------------
     ListModel { id: tabModel }
+    readonly property ListModel tabs: tabModel
+    // "top" | "belowToolbar" | "bottom" | "vertical" (TabStrip.qml)
+    readonly property string tabPosition: app.liveSettings["appearance.tabPosition"] || "top"
 
     function registerTab(t) { tabItems[t.tabId] = t }
     function unregisterTab(t) { delete tabItems[t.tabId] }
@@ -285,79 +288,11 @@ QQC2.ApplicationWindow {
         spacing: 0
         visible: !bw.contentFullScreen
 
-        // Tab strip
-        Rectangle {
+        Loader {
             Layout.fillWidth: true
-            implicitHeight: Kirigami.Units.gridUnit * 2.2
-            color: bw.privateMode ? Qt.darker(Kirigami.Theme.backgroundColor, 1.35) : Qt.darker(Kirigami.Theme.backgroundColor, 1.08)
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Kirigami.Units.smallSpacing
-                spacing: 0
-                Kirigami.Icon {
-                    visible: bw.privateMode
-                    source: "view-private"
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                    Layout.rightMargin: Kirigami.Units.smallSpacing
-                }
-                ListView {
-                    id: strip
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    orientation: ListView.Horizontal
-                    model: tabModel
-                    interactive: false
-                    clip: true
-                    currentIndex: bw.currentIndex
-                    highlightFollowsCurrentItem: false
-                    boundsBehavior: Flickable.StopAtBounds
-                    readonly property real normalWidth: {
-                        let pinned = 0
-                        for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).pinned) pinned++
-                        const avail = width - pinned * Kirigami.Units.gridUnit * 2.4
-                        return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, tabModel.count - pinned)))
-                    }
-                    WheelHandler { onWheel: e => bw.nextTab(e.angleDelta.y > 0 ? -1 : 1) }
-                    moveDisplaced: Transition { NumberAnimation { properties: "x"; duration: Kirigami.Units.shortDuration } }
-                    delegate: TabButton {
-                        browser: bw
-                        tabList: strip
-                    }
-                    footer: QQC2.ToolButton {
-                        icon.name: "list-add"
-                        height: strip.height
-                        onClicked: bw.openTab(app.newTabUrl(), {background: false}).focusLocationBar()
-                        QQC2.ToolTip.text: "New Tab (Ctrl+T)"
-                        QQC2.ToolTip.visible: hovered
-                        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    }
-                }
-                QQC2.ToolButton {
-                    icon.name: "tab-duplicate"
-                    display: QQC2.AbstractButton.IconOnly
-                    text: "List all tabs"
-                    onClicked: tabListMenu.popup()
-                    QQC2.Menu {
-                        id: tabListMenu
-                        Instantiator {
-                            model: tabModel
-                            delegate: QQC2.MenuItem {
-                                required property int index
-                                required property string title
-                                text: title
-                                checkable: true
-                                checked: index === bw.currentIndex
-                                onTriggered: bw.setCurrentIndex(index)
-                            }
-                            onObjectAdded: (i, o) => tabListMenu.insertItem(i, o)
-                            onObjectRemoved: (i, o) => tabListMenu.removeItem(o)
-                        }
-                        QQC2.MenuSeparator {}
-                        QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: bw.reopenClosedTab(0) }
-                    }
-                }
-            }
+            active: bw.tabPosition === "top"
+            visible: active
+            sourceComponent: TabStrip { browser: bw; position: "top" }
         }
 
         // Navigation toolbar
@@ -388,7 +323,7 @@ QQC2.ApplicationWindow {
                 }
                 QQC2.ToolButton {
                     icon.name: "go-home"
-                    visible: app.setting("appearance.showHomeButton")
+                    visible: app.liveSettings["appearance.showHomeButton"]
                     onClicked: bw.currentTab.load(app.setting("general.homepage"))
                     QQC2.ToolTip.text: "Home"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 }
@@ -429,11 +364,32 @@ QQC2.ApplicationWindow {
             visible: bw.showBookmarksBar
             win: bw
         }
+
+        Loader {
+            Layout.fillWidth: true
+            active: bw.tabPosition === "belowToolbar"
+            visible: active
+            sourceComponent: TabStrip { browser: bw; position: "belowToolbar" }
+        }
+    }
+
+    footer: Loader {
+        active: bw.tabPosition === "bottom" && !bw.contentFullScreen
+        visible: active
+        sourceComponent: TabStrip { browser: bw; position: "bottom" }
     }
 
     QQC2.SplitView {
         anchors.fill: parent
         orientation: Qt.Horizontal
+
+        Loader {
+            active: bw.tabPosition === "vertical" && !bw.contentFullScreen
+            visible: active
+            QQC2.SplitView.preferredWidth: Kirigami.Units.gridUnit * 14
+            QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 8
+            sourceComponent: TabStrip { browser: bw; position: "vertical" }
+        }
 
         Sidebar {
             id: sidebarPanel
@@ -470,7 +426,7 @@ QQC2.ApplicationWindow {
             Rectangle {
                 id: statusBubble
                 property string text: bw.currentTab ? bw.currentTab.hoveredLink : ""
-                visible: text !== "" && app.setting("appearance.showStatusBar")
+                visible: text !== "" && app.liveSettings["appearance.showStatusBar"]
                 anchors { left: parent.left; bottom: findBar.visible ? findBar.top : parent.bottom }
                 width: Math.min(statusText.implicitWidth + Kirigami.Units.largeSpacing, parent.width * 0.6)
                 height: statusText.implicitHeight + Kirigami.Units.smallSpacing * 2

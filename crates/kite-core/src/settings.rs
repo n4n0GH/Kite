@@ -25,7 +25,7 @@ pub fn defaults() -> Map<String, Value> {
         "appearance.showBookmarksToolbar": true,
         "appearance.showStatusBar": true,
         "appearance.showHomeButton": true,
-        "appearance.showTabsOnTop": true,
+        "appearance.tabPosition": "top",       // "top" | "belowToolbar" | "bottom" | "vertical"
         "appearance.defaultZoom": 100,
         "appearance.forceDarkMode": false,
         // Tabs
