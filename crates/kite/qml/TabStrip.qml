@@ -22,8 +22,6 @@ Rectangle {
 
     GridLayout {
         anchors.fill: parent
-        anchors.leftMargin: stripRoot.vertical ? 0 : Kirigami.Units.smallSpacing
-        anchors.topMargin: stripRoot.vertical ? Kirigami.Units.smallSpacing : 0
         flow: stripRoot.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
         rows: stripRoot.vertical ? -1 : 1
         columns: stripRoot.vertical ? 1 : -1

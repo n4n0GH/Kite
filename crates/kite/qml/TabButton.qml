@@ -22,16 +22,13 @@ Item {
     property string placement: "top"
     readonly property bool vertical: placement === "vertical"
     readonly property bool current: index === browser.currentIndex
-    readonly property real gap: Kirigami.Units.smallSpacing
 
     width: vertical ? tabList.width : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
     height: vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
     z: dragHandler.active ? 10 : 0
 
-    // The tab's face, inset from the strip edge it doesn't touch.
-    readonly property rect face: vertical ? Qt.rect(gap, 1, width - 2 * gap, height - 2)
-        : placement === "bottom" ? Qt.rect(0, 0, width, height - gap)
-        : Qt.rect(0, gap, width, height - gap)
+    // The tab's face fills its slot (the strip has no inner padding).
+    readonly property rect face: Qt.rect(0, 0, width, height)
 
     // Drop slot: while a tab is dragged, its place in the strip (which moves
     // as the other tabs slide aside) shows where it will land.
@@ -65,18 +62,25 @@ Item {
         shadow.color: Qt.rgba(0, 0, 0, 0.35)
         Behavior on shadow.size { NumberAnimation { duration: Kirigami.Units.shortDuration } }
         radius: Kirigami.Units.cornerRadius
+        // The current tab merges into the toolbar/page next to the strip:
+        // square corners on that side, so its side borders reach the edge.
+        readonly property bool merged: root.current && !root.vertical && !lifted
+        corners.topLeftRadius: merged && root.placement === "bottom" ? 0 : -1
+        corners.topRightRadius: merged && root.placement === "bottom" ? 0 : -1
+        corners.bottomLeftRadius: merged && root.placement !== "bottom" ? 0 : -1
+        corners.bottomRightRadius: merged && root.placement !== "bottom" ? 0 : -1
         color: lifted || root.current ? Kirigami.Theme.backgroundColor
              : hover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
         border.width: 1
         border.color: lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
-        // The current tab merges into the toolbar/page next to the strip
-        // (square corners on that side) and is marked on the opposite edge.
+        // ...and has no border line on that edge (only between its side
+        // borders); it is marked on the opposite edge.
         Rectangle {
-            visible: root.current && !root.vertical && !bg.lifted
-            anchors { left: parent.left; right: parent.right }
+            visible: bg.merged
+            anchors { left: parent.left; right: parent.right; leftMargin: parent.border.width; rightMargin: parent.border.width }
             anchors.top: root.placement === "bottom" ? parent.top : undefined
             anchors.bottom: root.placement === "bottom" ? undefined : parent.bottom
-            height: parent.radius + 1
+            height: parent.border.width
             color: parent.color
         }
         Rectangle {
