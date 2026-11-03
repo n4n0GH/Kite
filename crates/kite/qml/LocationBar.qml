@@ -174,7 +174,8 @@ QQC2.TextField {
         QQC2.ToolButton {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
-            visible: field.tab && field.tab.url.startsWith("http")
+            // Content-blocking extensions (uBlock Origin, ...) have their own button.
+            visible: field.tab && field.tab.url.startsWith("http") && Browser.contentBlocker() === ""
             icon.name: field.shieldAllowed ? "security-low" : "security-high"
             icon.color: field.shieldAllowed ? Kirigami.Theme.disabledTextColor : Kirigami.Theme.positiveTextColor
             onClicked: shieldMenu.popup()
@@ -311,6 +312,7 @@ QQC2.TextField {
             }
             Kirigami.Separator { Layout.fillWidth: true }
             QQC2.CheckBox {
+                visible: Browser.contentBlocker() === ""
                 text: "Block ads and trackers on this site"
                 checked: !field.shieldAllowed
                 onToggled: { Browser.adblockAllow(Browser.hostOf(field.tab.url), !checked); field.shieldAllowed = !checked; field.tab.view.reload() }

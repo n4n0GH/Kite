@@ -1184,6 +1184,25 @@ impl Runtime {
         })
     }
 
+    /// Name of an enabled extension that blocks content itself (uBlock
+    /// Origin, AdGuard, uBO Lite, ...), if any. Kite's built-in blocker
+    /// stands down while one is active, so pages aren't filtered twice.
+    ///
+    /// A content blocker either has a blocking `onBeforeRequest` listener
+    /// for all web URLs, or a large declarativeNetRequest ruleset.
+    pub fn content_blocker(&self) -> Option<&str> {
+        const PROBES: [&str; 2] = ["https://kite.invalid/ad.js", "http://kite.invalid/ad.js"];
+        const MIN_DNR_RULES: usize = 1000;
+        self.registry.enabled().find_map(|e| {
+            let id = &e.info.id;
+            let listens = self.web_request.get(id).is_some_and(|v| {
+                v.iter().any(|l| l.blocking && l.event == "onBeforeRequest" && l.tab_id.is_none() && PROBES.iter().all(|u| l.urls.matches(u)))
+            });
+            let rules = self.dnr.get(id).map_or(0, |s| s.static_rules.len() + s.dynamic_rules.len());
+            (listens || rules >= MIN_DNR_RULES).then_some(e.manifest.name.as_str())
+        })
+    }
+
     pub fn has_web_request_listeners(&self) -> bool {
         !self.web_request.is_empty()
     }
@@ -2553,6 +2572,28 @@ mod tests {
                 _ => None,
             })
             .expect("a reply")
+    }
+
+    #[test]
+    fn detects_content_blocking_extensions() {
+        let (_d, mut rt, tok) = setup();
+        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let listen = |rt: &mut Runtime, filter: Value, extra: Value| rt.call(&bg, &tok, "bg", "webRequest._listen", json!(["onBeforeRequest", filter, extra]), 1);
+        assert_eq!(rt.content_blocker(), None);
+        // Observing, or blocking only some sites, isn't content blocking.
+        listen(&mut rt, json!({"urls": ["<all_urls>"]}), json!([]));
+        listen(&mut rt, json!({"urls": ["*://*.example.com/*"]}), json!(["blocking"]));
+        assert_eq!(rt.content_blocker(), None);
+        // uBlock Origin's listener.
+        listen(&mut rt, json!({"urls": ["http://*/*", "https://*/*"]}), json!(["blocking"]));
+        assert_eq!(rt.content_blocker(), Some("T"));
+        rt.call(&bg, &tok, "bg", "webRequest._unlisten", json!(["onBeforeRequest", true]), 2);
+        rt.call(&bg, &tok, "bg", "webRequest._unlisten", json!(["onBeforeRequest", true]), 3);
+        assert_eq!(rt.content_blocker(), None);
+        // A large declarativeNetRequest ruleset (uBO Lite and other MV3 blockers).
+        let rules: Vec<Value> = (1..=1000).map(|i| json!({"id": i, "action": {"type": "block"}, "condition": {"urlFilter": format!("ads{i}.")}})).collect();
+        rt.dnr.get_mut("t@x").unwrap().dynamic_rules = dnr::parse_rules(&json!(rules)).0;
+        assert_eq!(rt.content_blocker(), Some("T"));
     }
 
     #[test]

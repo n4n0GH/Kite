@@ -375,6 +375,13 @@ Kirigami.ApplicationWindow {
             property var subs: w.get("adblock.subscriptions")
             property string status: ""
             Connections { target: Browser; function onAdblockStatus(m) { ab.status = m } }
+            readonly property string extBlocker: Browser.contentBlocker()
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: ab.extBlocker !== ""
+                type: Kirigami.MessageType.Information
+                text: ab.extBlocker + " is blocking content, so Kite's built-in blocker is paused. These settings apply again when it is disabled or removed."
+            }
             QQC2.CheckBox { text: "Block ads and trackers"; checked: w.get("adblock.enabled"); onToggled: w.set("adblock.enabled", checked) }
             Kirigami.Heading { level: 3; text: "Filter Subscriptions" }
             Repeater {

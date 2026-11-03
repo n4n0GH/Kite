@@ -220,6 +220,7 @@ pub unsafe extern "C" fn kite_intercept(
 ) -> KiteBuf {
     let (url, first_party, initiator, rtype, method) = (s(url), s(first_party), s(initiator), s(rtype), s(method));
     let a = app();
+    let started = std::time::Instant::now();
     let out = (|| {
         if !(url.starts_with("http") || url.starts_with("ws")) {
             return String::new();
@@ -275,6 +276,10 @@ pub unsafe extern "C" fn kite_intercept(
             kite_core::webext::dnr::Outcome::Headers(h) => return format!("headers:{}", serde_json::to_string(&h).unwrap_or_default()),
             kite_core::webext::dnr::Outcome::None => {}
         }
+        // An extension like uBlock Origin does the content blocking.
+        if rt.content_blocker().is_some() {
+            return String::new();
+        }
         drop(rt);
         match a.adblock.check(url, first_party, rtype) {
             kite_core::adblock::Verdict::Block => "block".into(),
@@ -286,6 +291,8 @@ pub unsafe extern "C" fn kite_intercept(
             kite_core::adblock::Verdict::Allow => String::new(),
         }
     })();
+    // This runs on the UI thread: anything slow here stutters the UI and video.
+    log::trace!("intercepted {rtype} in {:?}: {}", started.elapsed(), &url[..url.floor_char_boundary(120)]);
     KiteBuf::from_vec(out.into_bytes())
 }
 

@@ -217,6 +217,10 @@ pub mod qobject {
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
         #[qinvokable]
         fn cosmetic(self: &Browser, url: &QString) -> QString;
+        /// Name of the extension doing content blocking instead of Kite, or "".
+        #[qinvokable]
+        #[cxx_name = "contentBlocker"]
+        fn content_blocker(self: &Browser) -> QString;
         #[qsignal]
         #[cxx_name = "adblockStatus"]
         fn adblock_status(self: Pin<&mut Browser>, message: QString);
@@ -749,12 +753,20 @@ impl qobject::Browser {
         let _ = a.shared.settings().set("adblock.allowlist", json!(list));
         a.adblock.set_allowlist(list);
     }
+    fn content_blocker(&self) -> QString {
+        q(app().runtime().content_blocker().unwrap_or_default())
+    }
+
     fn adblock_allowed(&self, host: &QString) -> bool {
         let host = host.to_string();
         let list: Vec<String> = serde_json::from_value(app().shared.settings().get("adblock.allowlist")).unwrap_or_default();
         list.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
     }
     fn cosmetic(&self, url: &QString) -> QString {
+        // Cosmetic filters and scriptlets are the extension's job too.
+        if app().runtime().content_blocker().is_some() {
+            return js(&json!({}));
+        }
         let (css, script) = app().adblock.cosmetic(&url.to_string());
         js(&json!({"css": css, "script": script}))
     }
