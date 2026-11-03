@@ -195,42 +195,44 @@ QtObject {
     property Timer sessionTimer: Timer { interval: 15000; repeat: true; running: true; onTriggered: app.saveSession() }
 
     // ---- extensions -------------------------------------------------------------
+    // Page scripts: extension content scripts and the extension bridge
+    // (Extensions.userScripts) plus Kite's own. Only what changed is updated:
+    // removing everything and inserting it again (on every extension script
+    // change, e.g. uBlock Origin registering scriptlets while a page loads)
+    // left a moment in which a page being created got no scripts at all.
     function installUserScripts() {
         for (const p of [profile, privateProfile]) {
             // Like Firefox, extensions don't run in private windows by default.
-            const scripts = JSON.parse(Extensions.userScripts(p === profile))
-            p.userScripts.clear()
-            for (const s of scripts) {
-                const ws = WebEngine.script()
-                ws.name = s.name
-                ws.sourceCode = s.sourceCode
-                ws.worldId = s.worldId
-                ws.runsOnSubFrames = s.runsOnSubFrames
-                ws.injectionPoint = s.injectionPoint === 0 ? WebEngineScript.DocumentCreation
-                                  : s.injectionPoint === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
-                p.userScripts.insert(ws)
-            }
-            {
-                // navigator.wakeLock (QtWebEngine refuses wake locks itself).
-                const ws = WebEngine.script()
-                ws.name = "kite:wakeLock"
-                ws.sourceCode = Browser.wakeLockScript()
-                ws.worldId = WebEngineScript.MainWorld
-                ws.runsOnSubFrames = false
-                ws.injectionPoint = WebEngineScript.DocumentCreation
-                p.userScripts.insert(ws)
-            }
-            if (setting("web.doNotTrack")) {
-                // The DNT header is added by the request interceptor; pages
-                // also see the preference in navigator.doNotTrack.
-                const ws = WebEngine.script()
-                ws.name = "kite:doNotTrack"
-                ws.sourceCode = "Object.defineProperty(Navigator.prototype, 'doNotTrack', { get() { return '1'; }, configurable: true, enumerable: true });"
-                ws.worldId = WebEngineScript.MainWorld
-                ws.runsOnSubFrames = true
-                ws.injectionPoint = WebEngineScript.DocumentCreation
-                p.userScripts.insert(ws)
-            }
+            const wanted = JSON.parse(Extensions.userScripts(p === profile))
+            // navigator.wakeLock (QtWebEngine refuses wake locks itself).
+            wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
+            // The DNT header is added by the request interceptor; pages also
+            // see the preference in navigator.doNotTrack.
+            if (setting("web.doNotTrack"))
+                wanted.push({name: "kite:doNotTrack", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
+                             sourceCode: "Object.defineProperty(Navigator.prototype, 'doNotTrack', { get() { return '1'; }, configurable: true, enumerable: true });"})
+            updateScripts(p.userScripts, wanted)
+        }
+    }
+    function updateScripts(collection, wanted) {
+        const point = i => i === 0 ? WebEngineScript.DocumentCreation : i === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
+        const names = new Set(wanted.map(s => s.name))
+        for (const old of collection.collection) {
+            if (!names.has(old.name)) collection.remove(old)
+        }
+        for (const s of wanted) {
+            const have = collection.find(s.name)
+            const unchanged = have.length === 1 && have[0].sourceCode === s.sourceCode && have[0].worldId === s.worldId
+                && have[0].runsOnSubFrames === s.runsOnSubFrames && have[0].injectionPoint === point(s.injectionPoint)
+            if (unchanged) continue
+            for (const old of have) collection.remove(old)
+            const ws = WebEngine.script()
+            ws.name = s.name
+            ws.sourceCode = s.sourceCode
+            ws.worldId = s.worldId
+            ws.runsOnSubFrames = s.runsOnSubFrames
+            ws.injectionPoint = point(s.injectionPoint)
+            collection.insert(ws)
         }
     }
 
