@@ -142,7 +142,13 @@ QQC2.ApplicationWindow {
     function findResult(count, active) { findBar.matches = count; findBar.activeMatch = active }
 
     // Pinned tabs stay in front of unpinned ones.
-    function tabModel_pinnedOk(from, to) { return tabModel.get(from).pinned === tabModel.get(to).pinned }
+    // Nearest index to `to` that the tab at `from` may move to: pinned tabs
+    // stay before unpinned ones.
+    function clampToSection(from, to) {
+        let pinned = 0
+        for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).pinned) pinned++
+        return tabModel.get(from).pinned ? Math.min(to, pinned - 1) : Math.max(to, pinned)
+    }
 
     function nextTab(step) { if (tabModel.count) setCurrentIndex((currentIndex + step + tabModel.count) % tabModel.count) }
 

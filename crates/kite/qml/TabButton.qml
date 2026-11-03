@@ -23,15 +23,43 @@ Item {
     height: tabList.height
     z: dragHandler.active ? 10 : 0
 
+    // Drop slot: while a tab is dragged, its place in the strip (which moves
+    // as the other tabs slide aside) shows where it will land.
     Rectangle {
-        id: bg
         anchors.fill: parent
         anchors.topMargin: Kirigami.Units.smallSpacing
-        x: dragHandler.active ? dragHandler.translation.x : 0
+        anchors.margins: 1
+        visible: dragHandler.active
         radius: Kirigami.Units.cornerRadius
-        color: root.current ? Kirigami.Theme.backgroundColor
+        color: Qt.alpha(Kirigami.Theme.highlightColor, 0.12)
+        border.color: Qt.alpha(Kirigami.Theme.highlightColor, 0.5)
+    }
+
+    Kirigami.ShadowedRectangle {
+        id: bg
+        // Only vertical anchors: horizontal ones would override x.
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.topMargin: Kirigami.Units.smallSpacing
+        width: parent.width
+        // While dragging, the tab is lifted and follows the pointer even as
+        // the strip moves it to a new index underneath; on release it
+        // settles into its slot.
+        readonly property bool lifted: dragHandler.active
+        x: lifted ? dragHandler.startX + dragHandler.activeTranslation.x - root.x : 0
+        Behavior on x { enabled: !bg.lifted; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+        scale: lifted ? 1.04 : 1
+        Behavior on scale { NumberAnimation { duration: Kirigami.Units.shortDuration } }
+        opacity: lifted ? 0.9 : 1
+        shadow.size: lifted ? Kirigami.Units.gridUnit * 0.6 : 0
+        shadow.yOffset: lifted ? 2 : 0
+        shadow.color: Qt.rgba(0, 0, 0, 0.35)
+        Behavior on shadow.size { NumberAnimation { duration: Kirigami.Units.shortDuration } }
+        radius: Kirigami.Units.cornerRadius
+        color: lifted || root.current ? Kirigami.Theme.backgroundColor
              : hover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
-        border.color: root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
+        border.width: 1
+        border.color: lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
         Rectangle { visible: root.current; anchors { left: parent.left; right: parent.right; bottom: parent.bottom } height: parent.radius + 1; color: parent.color }
         Rectangle { visible: root.current; anchors { left: parent.left; right: parent.right; top: parent.top } height: 2; radius: 1; color: Kirigami.Theme.highlightColor }
 
@@ -92,19 +120,29 @@ Item {
     TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: root.browser.closeTab(root.index) }
     TapHandler { acceptedButtons: Qt.RightButton; onTapped: menu.popup() }
 
+    // Drag to reorder: the tab swaps places with its neighbours as its
+    // centre passes over them (pinned and unpinned tabs stay in their own
+    // sections).
     DragHandler {
         id: dragHandler
         target: null
         xAxis.enabled: true
         yAxis.enabled: false
+        cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
+        property real startX: 0
         onActiveChanged: {
-            if (!active) {
-                const target = Math.max(0, Math.min(root.browser.count - 1, Math.round((root.x + translation.x) / root.width)))
-                if (target !== root.index && root.browser.tabModel_pinnedOk(root.index, target)) root.browser.moveTab(root.index, target)
-                root.browser.setCurrentIndex(target === root.index ? root.index : target)
-            } else {
+            if (active) {
+                startX = root.x
                 root.browser.setCurrentIndex(root.index)
             }
+        }
+        onActiveTranslationChanged: {
+            if (!active) return
+            const centre = startX + activeTranslation.x + root.width / 2
+            let to = root.tabList.indexAt(centre, root.height / 2)
+            if (to < 0) to = centre < 0 ? 0 : root.browser.count - 1
+            to = root.browser.clampToSection(root.index, to)
+            if (to !== root.index) root.browser.moveTab(root.index, to)
         }
     }
 
