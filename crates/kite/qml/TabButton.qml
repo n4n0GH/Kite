@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.kite
 
 // One tab in the tab strip (horizontal or vertical, see TabStrip.qml). Supports drag-to-reorder, middle-click close,
 // pinning, audio indicator and a context menu (Falkon's TabContextMenu).
@@ -148,7 +149,8 @@ Item {
         onDoubleTapped: {}
     }
     TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: root.browser.closeTab(root.index) }
-    TapHandler { acceptedButtons: Qt.RightButton; onTapped: menu.popup() }
+    // Exclusive, so the tab bar's own menu doesn't open as well.
+    TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: menu.popup() }
 
     // Drag to reorder: the tab swaps places with its neighbours as its
     // centre passes over them (pinned and unpinned tabs stay in their own
@@ -195,5 +197,7 @@ Item {
         QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: root.browser.reopenClosedTab(0) }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Close Tab"; icon.name: "tab-close"; onTriggered: root.browser.closeTab(root.index) }
+        QQC2.MenuSeparator {}
+        TabBarMenu { browser: root.browser }
     }
 }

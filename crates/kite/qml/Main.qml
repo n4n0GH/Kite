@@ -47,15 +47,15 @@ QtObject {
     // (e.g. liveSettings["web.javascript"]) and profile settings are
     // re-applied, so a change in Preferences reaches open tabs and windows
     // right away.
-    readonly property var liveWebKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
+    readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showHomeButton", "appearance.showStatusBar", "appearance.tabPosition"]
+        "appearance.showBookmarksToolbar", "appearance.showHomeButton", "appearance.showStatusBar", "tabs.position", "tabs.hideWhenSingle"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
-    property var liveSettings: liveWebKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
+    property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
         target: Browser
         function onSettingChanged(key, json) {
-            if (app.liveWebKeys.includes(key)) {
+            if (app.liveKeys.includes(key)) {
                 const o = Object.assign({}, app.liveSettings)
                 o[key] = JSON.parse(json)
                 app.liveSettings = o

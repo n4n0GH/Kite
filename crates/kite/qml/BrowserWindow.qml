@@ -50,7 +50,10 @@ QQC2.ApplicationWindow {
     ListModel { id: tabModel }
     readonly property ListModel tabs: tabModel
     // "top" | "belowToolbar" | "bottom" | "vertical" (TabStrip.qml)
-    readonly property string tabPosition: app.liveSettings["appearance.tabPosition"] || "top"
+    readonly property string tabPosition: app.liveSettings["tabs.position"] || "top"
+    // The tab bar can hide while the window has a single tab.
+    readonly property bool tabBarShown: !(app.liveSettings["tabs.hideWhenSingle"] && tabModel.count <= 1)
+    function setTabPosition(p) { Browser.setSetting("tabs.position", JSON.stringify(p)) }
 
     function registerTab(t) { tabItems[t.tabId] = t }
     function unregisterTab(t) { delete tabItems[t.tabId] }
@@ -290,7 +293,7 @@ QQC2.ApplicationWindow {
 
         Loader {
             Layout.fillWidth: true
-            active: bw.tabPosition === "top"
+            active: bw.tabPosition === "top" && bw.tabBarShown
             visible: active
             sourceComponent: TabStrip { browser: bw; position: "top" }
         }
@@ -367,14 +370,14 @@ QQC2.ApplicationWindow {
 
         Loader {
             Layout.fillWidth: true
-            active: bw.tabPosition === "belowToolbar"
+            active: bw.tabPosition === "belowToolbar" && bw.tabBarShown
             visible: active
             sourceComponent: TabStrip { browser: bw; position: "belowToolbar" }
         }
     }
 
     footer: Loader {
-        active: bw.tabPosition === "bottom" && !bw.contentFullScreen
+        active: bw.tabPosition === "bottom" && bw.tabBarShown && !bw.contentFullScreen
         visible: active
         sourceComponent: TabStrip { browser: bw; position: "bottom" }
     }
@@ -384,7 +387,7 @@ QQC2.ApplicationWindow {
         orientation: Qt.Horizontal
 
         Loader {
-            active: bw.tabPosition === "vertical" && !bw.contentFullScreen
+            active: bw.tabPosition === "vertical" && bw.tabBarShown && !bw.contentFullScreen
             visible: active
             QQC2.SplitView.preferredWidth: Kirigami.Units.gridUnit * 14
             QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 8

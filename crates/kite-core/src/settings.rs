@@ -25,10 +25,11 @@ pub fn defaults() -> Map<String, Value> {
         "appearance.showBookmarksToolbar": true,
         "appearance.showStatusBar": true,
         "appearance.showHomeButton": true,
-        "appearance.tabPosition": "top",       // "top" | "belowToolbar" | "bottom" | "vertical"
         "appearance.defaultZoom": 100,
         "appearance.forceDarkMode": false,
         // Tabs
+        "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical"
+        "tabs.hideWhenSingle": false,
         "tabs.openNewTabsInBackground": true,
         "tabs.openPopupsInTabs": false,
         "tabs.newTabAfterActive": true,
@@ -79,13 +80,17 @@ pub fn defaults() -> Map<String, Value> {
     v.as_object().cloned().unwrap()
 }
 
+/// Settings that moved to a new key: (old, new). Stored values are carried
+/// over on load (and written under the new key on the next save).
+const RENAMED: &[(&str, &str)] = &[("appearance.tabPosition", "tabs.position")];
+
 impl Settings {
     pub fn load(path: PathBuf) -> Self {
         let mut values = defaults();
         if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(Value::Object(stored)) = serde_json::from_str::<Value>(&text) {
                 for (k, v) in stored {
-                    values.insert(k, v);
+                    values.insert(RENAMED.iter().find(|(old, _)| *old == k).map_or(k, |(_, new)| (*new).to_owned()), v);
                 }
             }
         }
@@ -138,6 +143,18 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn renamed_settings_carry_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        std::fs::write(&p, r#"{"appearance.tabPosition": "vertical"}"#).unwrap();
+        let mut s = Settings::load(p.clone());
+        assert_eq!(s.get_str("tabs.position"), "vertical");
+        s.set("tabs.hideWhenSingle", true.into()).unwrap();
+        let saved = std::fs::read_to_string(&p).unwrap();
+        assert!(saved.contains("tabs.position") && !saved.contains("appearance.tabPosition"));
+    }
+
     #[test]
     fn roundtrip_only_changed() {
         let dir = tempfile::tempdir().unwrap();

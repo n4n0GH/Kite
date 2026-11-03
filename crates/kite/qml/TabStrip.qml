@@ -3,7 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
-// The tab strip, placed where "appearance.tabPosition" says: above or below
+// The tab strip, placed where "tabs.position" says: above or below
 // the toolbars or below the page (horizontal), or as a list on the left
 // (vertical). See BrowserWindow.qml.
 Rectangle {
@@ -19,6 +19,13 @@ Rectangle {
     implicitHeight: vertical ? 0 : Kirigami.Units.gridUnit * 2.2
     implicitWidth: vertical ? Kirigami.Units.gridUnit * 14 : 0
     color: browser.privateMode ? Qt.darker(Kirigami.Theme.backgroundColor, 1.35) : Qt.darker(Kirigami.Theme.backgroundColor, 1.08)
+
+    // Right-click on the bar (outside a tab): tab bar options.
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: barMenu.popup()
+    }
+    TabBarMenu { id: barMenu; browser: stripRoot.browser; withTabActions: true }
 
     GridLayout {
         anchors.fill: parent
