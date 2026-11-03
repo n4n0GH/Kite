@@ -8,6 +8,10 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickImageProvider>
+#include <QQuickWindow>
+#include <QQuickItem>
+#include <QKeyEvent>
+#include <QMouseEvent>
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -19,6 +23,72 @@ extern "C" void kite_log(int level, const char *category, const char *message);
 extern "C" void kite_favicon_ready(const char *pageUrl, const unsigned char *png, size_t len);
 
 static QQmlApplicationEngine *g_engine = nullptr;
+
+// Input the QML side can't see because web pages consume it first:
+// * tapping Alt alone shows the menu bar briefly (like Firefox and Falkon):
+//   BrowserWindow.altTapped();
+// * presses while that menu bar is shown: BrowserWindow.windowPressed(x, y),
+//   so a click elsewhere hides it again;
+// * a window losing focus closes its open menus (e.g. right-clicking the
+//   title bar opens the window manager's menu, a click Qt Quick never sees).
+class KiteInputFilter : public QObject {
+public:
+    using QObject::QObject;
+protected:
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        // Every event reaches the window first; ignore its re-deliveries.
+        auto *win = qobject_cast<QQuickWindow *>(obj);
+        if (!win) return false;
+        switch (e->type()) {
+        case QEvent::KeyPress: {
+            auto *k = static_cast<QKeyEvent *>(e);
+            m_altAlone = k->key() == Qt::Key_Alt && !k->isAutoRepeat() && (k->modifiers() & ~Qt::AltModifier) == Qt::NoModifier;
+            break;
+        }
+        case QEvent::KeyRelease: {
+            auto *k = static_cast<QKeyEvent *>(e);
+            // Only browser windows have a menu bar (not Preferences, …).
+            if (k->key() == Qt::Key_Alt && !k->isAutoRepeat() && m_altAlone && win->metaObject()->indexOfMethod("altTapped()") >= 0)
+                QMetaObject::invokeMethod(win, "altTapped", Qt::QueuedConnection);
+            m_altAlone = false;
+            break;
+        }
+        case QEvent::MouseButtonPress: {
+            m_altAlone = false;
+            if (win->property("menuBarPeek").toBool()) {
+                const QPointF p = static_cast<QMouseEvent *>(e)->scenePosition();
+                QMetaObject::invokeMethod(win, "windowPressed", Q_ARG(QVariant, p.x()), Q_ARG(QVariant, p.y()));
+            }
+            break;
+        }
+        case QEvent::Wheel:
+            m_altAlone = false;
+            break;
+        case QEvent::WindowDeactivate:
+            closeMenus(win);
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+private:
+    // Menus are shown in the window's popup overlay; their items' QObject
+    // parent is the QQuickMenu. (Dialogs stay open.)
+    static void closeMenus(QQuickWindow *win)
+    {
+        for (QQuickItem *layer : win->contentItem()->childItems()) {
+            if (!layer->inherits("QQuickOverlay")) continue;
+            for (QQuickItem *item : layer->childItems()) {
+                QObject *popup = item->parent();
+                if (popup && popup->inherits("QQuickMenu") && popup->property("opened").toBool())
+                    QMetaObject::invokeMethod(popup, "close");
+            }
+        }
+    }
+    bool m_altAlone = false;
+};
 
 // Store a page's favicon in Kite's icon cache (for the speed dial). The
 // image comes from QtWebEngine's own "favicon" image provider, which
@@ -94,6 +164,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
 
     QQmlApplicationEngine engine;
     g_engine = &engine;
+    app.installEventFilter(new KiteInputFilter(&app));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.

@@ -85,6 +85,9 @@ QQC2.Menu {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Bookmarks Sidebar"; checkable: true; checked: win.sidebar === "bookmarks"; onTriggered: win.showSidebar("bookmarks") }
         QQC2.MenuItem { text: "History Sidebar"; checkable: true; checked: win.sidebar === "history"; onTriggered: win.showSidebar("history") }
+        QQC2.MenuSeparator {}
+        QQC2.MenuItem { text: "Menu Bar"; checkable: true; checked: !!app.liveSettings["appearance.showMenuBar"]; onTriggered: Browser.setSetting("appearance.showMenuBar", JSON.stringify(checked)) }
+        QQC2.MenuItem { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; onTriggered: win.customizeToolbar() }
     }
     QQC2.MenuItem { text: "Find in Page…"; icon.name: "edit-find"; onTriggered: win.openFindBar() }
     QQC2.MenuItem { text: "Settings"; icon.name: "settings-configure"; onTriggered: app.showPreferences() }

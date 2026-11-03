@@ -92,7 +92,18 @@ Kirigami.ApplicationWindow {
         id: appearance
         Kirigami.FormLayout {
             QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: w.set("appearance.showBookmarksToolbar", checked) }
-            QQC2.CheckBox { text: "Show home button"; checked: w.get("appearance.showHomeButton"); onToggled: w.set("appearance.showHomeButton", checked) }
+            QQC2.CheckBox {
+                text: "Show home button"
+                readonly property var items: w.app.liveSettings["toolbar.items"] || []
+                checked: items.includes("home")
+                onToggled: {
+                    const list = items.filter(i => i !== "home")
+                    if (checked) list.splice(Math.max(0, list.indexOf("urlbar")), 0, "home")
+                    w.set("toolbar.items", list)
+                }
+            }
+            QQC2.CheckBox { text: "Show menu bar (or tap Alt to show it briefly)"; checked: w.get("appearance.showMenuBar"); onToggled: w.set("appearance.showMenuBar", checked) }
+            QQC2.Button { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; enabled: !!w.app.activeWindow; onClicked: w.app.activeWindow.customizeToolbar() }
             QQC2.CheckBox { text: "Show link targets when hovering links"; checked: w.get("appearance.showStatusBar"); onToggled: w.set("appearance.showStatusBar", checked) }
             QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }
             QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Force dark mode on websites"; checked: w.get("appearance.forceDarkMode"); onToggled: w.set("appearance.forceDarkMode", checked) }

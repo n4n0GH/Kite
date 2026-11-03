@@ -49,6 +49,28 @@ QQC2.ApplicationWindow {
     // ---- tab model -----------------------------------------------------------
     ListModel { id: tabModel }
     readonly property ListModel tabs: tabModel
+
+    // Toolbar items that register themselves (NavigationToolbar); null if
+    // removed from the toolbar.
+    property var locationBar: null
+    property var extButtons: null
+    property var downloadsButton: null
+    readonly property ToolbarItems toolbarCatalog: ToolbarItems {}
+    function showHistoryMenu(back, item) { historyMenu.showFor(back, item) }
+    function openMainMenu(item) { mainMenu.popup(item, 0, item.height) }
+    function customizeToolbar() { customizeDialog.open() }
+    function showAbout() { mainMenu.aboutDialog.open() }
+
+    // Menu bar shown briefly after tapping Alt while it's otherwise hidden.
+    // The C++ input filter (bootstrap.cpp) calls altTapped(), and
+    // windowPressed() for presses while it is shown: web pages consume
+    // presses before QML handlers see them.
+    property bool menuBarPeek: false
+    function altTapped() { if (!app.liveSettings["appearance.showMenuBar"]) menuBarPeek = !menuBarPeek }
+    function windowPressed(x, y) {
+        const p = browserMenuBar.mapFromItem(null, x, y)
+        if (!browserMenuBar.contains(p)) menuBarPeek = false
+    }
     // "top" | "belowToolbar" | "bottom" | "vertical" (TabStrip.qml)
     readonly property string tabPosition: app.liveSettings["tabs.position"] || "top"
     // The tab bar can hide while the window has a single tab.
@@ -144,7 +166,7 @@ QQC2.ApplicationWindow {
     }
 
     function tabModel_get(i) { return tabModel.get(i) }
-    function focusLocationBarNow() { locationBar.focusAndSelect() }
+    function focusLocationBarNow() { if (locationBar) locationBar.focusAndSelect() }
     function findResult(count, active) { findBar.matches = count; findBar.activeMatch = active }
 
     // Pinned tabs stay in front of unpinned ones.
@@ -182,7 +204,7 @@ QQC2.ApplicationWindow {
     }
 
     function toast(message, icon) { toastLabel.text = message; toastIcon.source = icon; toastBox.opacity = 1; toastTimer.restart() }
-    function downloadStarted() { downloadsActive++; downloadsBadge.restart() }
+    function downloadStarted() { downloadsActive++; if (downloadsButton) downloadsButton.pulse() }
 
     function showSidebar(which) { sidebar = (sidebar === which ? "" : which) }
 
@@ -198,7 +220,7 @@ QQC2.ApplicationWindow {
     function openFile() { openDialog.open() }
     function savePage() { saveDialog.open() }
     function openFindBar() { findBar.open() }
-    function toggleBookmarkFromMenu() { locationBar.toggleBookmark() }
+    function toggleBookmarkFromMenu() { if (locationBar) locationBar.toggleBookmark() }
     // used by bookmark menus in the main menu
     property QtObject bookmarksOpener: QtObject {
         property var win: bw
@@ -210,7 +232,8 @@ QQC2.ApplicationWindow {
     function openExtensionPopup(extId) {
         const a = toolbarActions.find(x => x.ext === extId && x.kind === "browserAction")
         if (!a) return
-        if (a.popup) extPopup.show(a, extButtons.buttonFor(extId))
+        // Under its button, or the address bar when extensions aren't on the toolbar.
+        if (a.popup) extPopup.show(a, (extButtons && extButtons.buttonFor(extId)) || locationBar)
         else Extensions.actionClicked(extId, a.kind, currentTab ? currentTab.tabId : -1)
     }
 
@@ -220,8 +243,8 @@ QQC2.ApplicationWindow {
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: bw.reopenClosedTab(0) }
     Shortcut { sequence: "Ctrl+N"; onActivated: app.newWindow() }
     Shortcut { sequence: "Ctrl+Shift+P"; onActivated: app.newWindow({privateMode: true}) }
-    Shortcut { sequences: ["Ctrl+L", "F6", "Alt+D"]; onActivated: locationBar.focusAndSelect() }
-    Shortcut { sequence: "Ctrl+K"; onActivated: { locationBar.focusAndSelect(); locationBar.text = "? " ; locationBar.cursorPosition = 2 } }
+    Shortcut { sequences: ["Ctrl+L", "F6", "Alt+D"]; onActivated: if (locationBar) locationBar.focusAndSelect() }
+    Shortcut { sequence: "Ctrl+K"; onActivated: if (locationBar) { locationBar.focusAndSelect(); locationBar.text = "? " ; locationBar.cursorPosition = 2 } }
     Shortcut { sequences: ["Ctrl+R", "F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reload() }
     Shortcut { sequences: ["Ctrl+Shift+R", "Ctrl+F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reloadAndBypassCache() }
     // Only while the find bar is open: otherwise Escape must reach the page
@@ -233,7 +256,7 @@ QQC2.ApplicationWindow {
     Shortcut { sequences: [StandardKey.Find]; onActivated: findBar.open() }
     Shortcut { sequences: [StandardKey.FindNext, "F3"]; onActivated: findBar.find(false) }
     Shortcut { sequences: [StandardKey.FindPrevious, "Shift+F3"]; onActivated: findBar.find(true) }
-    Shortcut { sequence: "Ctrl+D"; onActivated: locationBar.toggleBookmark() }
+    Shortcut { sequence: "Ctrl+D"; onActivated: if (locationBar) locationBar.toggleBookmark() }
     Shortcut { sequence: "Ctrl+Shift+D"; onActivated: bw.bookmarkAllTabs() }
     Shortcut { sequence: "Ctrl+H"; onActivated: bw.showSidebar("history") }
     Shortcut { sequence: "Ctrl+B"; onActivated: bw.showSidebar("bookmarks") }
@@ -291,6 +314,14 @@ QQC2.ApplicationWindow {
         spacing: 0
         visible: !bw.contentFullScreen
 
+        BrowserMenuBar {
+            id: browserMenuBar
+            Layout.fillWidth: true
+            win: bw
+            visible: bw.app.liveSettings["appearance.showMenuBar"] || bw.menuBarPeek
+            onMenuClosed: bw.menuBarPeek = false
+        }
+
         TabStripSlot {
             Layout.fillWidth: true
             browser: bw
@@ -299,74 +330,11 @@ QQC2.ApplicationWindow {
             shown: bw.tabBarShown
         }
 
-        // Navigation toolbar
-        QQC2.ToolBar {
+        // Navigation toolbar (customizable: "toolbar.items")
+        NavigationToolbar {
             Layout.fillWidth: true
-            position: QQC2.ToolBar.Header
-            RowLayout {
-                anchors.fill: parent
-                spacing: Kirigami.Units.smallSpacing
-                QQC2.ToolButton {
-                    icon.name: "go-previous"
-                    enabled: bw.currentTab && bw.currentTab.view.canGoBack
-                    onClicked: bw.currentTab.view.goBack()
-                    onPressAndHold: historyMenu.showFor(true, this)
-                    QQC2.ToolTip.text: "Back"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-                QQC2.ToolButton {
-                    icon.name: "go-next"
-                    enabled: bw.currentTab && bw.currentTab.view.canGoForward
-                    onClicked: bw.currentTab.view.goForward()
-                    onPressAndHold: historyMenu.showFor(false, this)
-                    QQC2.ToolTip.text: "Forward"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-                QQC2.ToolButton {
-                    icon.name: bw.currentTab && bw.currentTab.loading ? "process-stop" : "view-refresh"
-                    onClicked: bw.currentTab.loading ? bw.currentTab.view.stop() : bw.currentTab.view.reload()
-                    QQC2.ToolTip.text: bw.currentTab && bw.currentTab.loading ? "Stop" : "Reload"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-                QQC2.ToolButton {
-                    icon.name: "go-home"
-                    visible: app.liveSettings["appearance.showHomeButton"]
-                    onClicked: bw.currentTab.load(app.setting("general.homepage"))
-                    QQC2.ToolTip.text: "Home"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-                LocationBar {
-                    id: locationBar
-                    Layout.fillWidth: true
-                    win: bw
-                    tab: bw.currentTab
-                }
-                ExtensionButtons {
-                    id: extButtons
-                    win: bw
-                    actions: bw.toolbarActions.filter(a => a.kind === "browserAction")
-                }
-                QQC2.ToolButton {
-                    icon.name: "download"
-                    onClicked: { bw.downloadsActive = 0; app.showDownloads() }
-                    QQC2.ToolTip.text: "Downloads"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    Rectangle {
-                        visible: bw.downloadsActive > 0
-                        width: Kirigami.Units.smallSpacing * 2; height: width; radius: width / 2
-                        color: Kirigami.Theme.highlightColor
-                        anchors { right: parent.right; top: parent.top; margins: Kirigami.Units.smallSpacing }
-                        SequentialAnimation on scale { id: downloadsBadge; running: false; NumberAnimation { to: 2; duration: 150 } NumberAnimation { to: 1; duration: 150 } }
-                    }
-                }
-                QQC2.ToolButton {
-                    id: menuButton
-                    icon.name: "application-menu"
-                    onClicked: mainMenu.popup(menuButton, 0, menuButton.height)
-                    QQC2.ToolTip.text: "Open Menu"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                }
-            }
-        }
-
-        BookmarksBar {
-            Layout.fillWidth: true
-            visible: bw.showBookmarksBar
             win: bw
+            catalog: bw.toolbarCatalog
         }
 
         TabStripSlot {
@@ -514,6 +482,7 @@ QQC2.ApplicationWindow {
     }
 
     MainMenu { id: mainMenu; win: bw; app: bw.app }
+    CustomizeToolbarDialog { id: customizeDialog; win: bw; catalog: bw.toolbarCatalog }
 
     FileDialog {
         id: openDialog

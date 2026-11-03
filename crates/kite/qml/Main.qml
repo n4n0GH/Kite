@@ -49,7 +49,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showHomeButton", "appearance.showStatusBar", "tabs.position", "tabs.hideWhenSingle"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "tabs.position", "tabs.hideWhenSingle"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {

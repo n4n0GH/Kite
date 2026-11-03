@@ -24,7 +24,9 @@ pub fn defaults() -> Map<String, Value> {
         // Appearance
         "appearance.showBookmarksToolbar": true,
         "appearance.showStatusBar": true,
-        "appearance.showHomeButton": true,
+        "appearance.showMenuBar": false,
+        // Navigation toolbar contents, in order (Customize Toolbar…).
+        "toolbar.items": ["back", "forward", "reload", "home", "urlbar", "extensions", "downloads", "menu"],
         "appearance.defaultZoom": 100,
         "appearance.forceDarkMode": false,
         // Tabs
@@ -84,6 +86,18 @@ pub fn defaults() -> Map<String, Value> {
 /// over on load (and written under the new key on the next save).
 const RENAMED: &[(&str, &str)] = &[("appearance.tabPosition", "tabs.position")];
 
+/// Settings whose meaning moved elsewhere.
+fn migrate(values: &mut Map<String, Value>) {
+    // "Show home button" became the home item of the customizable toolbar.
+    if let Some(Value::Bool(show)) = values.remove("appearance.showHomeButton") {
+        if !show {
+            if let Some(Value::Array(items)) = values.get_mut("toolbar.items") {
+                items.retain(|i| i != "home");
+            }
+        }
+    }
+}
+
 impl Settings {
     pub fn load(path: PathBuf) -> Self {
         let mut values = defaults();
@@ -94,6 +108,7 @@ impl Settings {
                 }
             }
         }
+        migrate(&mut values);
         Self { path, values }
     }
 
@@ -143,6 +158,18 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hidden_home_button_moves_into_toolbar_items() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        std::fs::write(&p, r#"{"appearance.showHomeButton": false}"#).unwrap();
+        let s = Settings::load(p.clone());
+        assert!(!s.get("toolbar.items").as_array().unwrap().iter().any(|i| i == "home"));
+        assert_eq!(s.get("appearance.showHomeButton"), Value::Null);
+        std::fs::write(&p, r#"{"appearance.showHomeButton": true}"#).unwrap();
+        assert!(Settings::load(p).get("toolbar.items").as_array().unwrap().iter().any(|i| i == "home"));
+    }
+
     #[test]
     fn renamed_settings_carry_over() {
         let dir = tempfile::tempdir().unwrap();
