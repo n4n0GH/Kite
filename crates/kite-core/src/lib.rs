@@ -10,6 +10,7 @@ pub mod adblock;
 pub mod bookmarks;
 pub mod db;
 pub mod downloads;
+pub mod favicons;
 pub mod history;
 pub mod kwallet;
 pub mod passwords;

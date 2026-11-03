@@ -3,9 +3,11 @@
 // the KDE desktop style needs a QApplication. Everything else lives in Rust
 // (src/) and QML (qml/).
 #include <QApplication>
+#include <QBuffer>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickImageProvider>
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -14,6 +16,41 @@ namespace QtWebEngineQuick { void initialize(); }
 void kite_register_schemes();
 void kite_install_profile_hooks(QObject *profile, bool isPrimary);
 extern "C" void kite_log(int level, const char *category, const char *message);
+extern "C" void kite_favicon_ready(const char *pageUrl, const unsigned char *png, size_t len);
+
+static QQmlApplicationEngine *g_engine = nullptr;
+
+// Store a page's favicon in Kite's icon cache (for the speed dial). The
+// image comes from QtWebEngine's own "favicon" image provider, which
+// already holds the icon the page loaded, so the site isn't contacted again.
+extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl)
+{
+    static const QString prefix = QStringLiteral("image://favicon/");
+    const QString icon = QString::fromUtf8(iconUrl);
+    if (!g_engine || !icon.startsWith(prefix)) return;
+    auto *provider = dynamic_cast<QQuickAsyncImageProvider *>(g_engine->imageProvider(QStringLiteral("favicon")));
+    if (!provider) return;
+    QQuickImageResponse *response = provider->requestImageResponse(icon.mid(prefix.size()), QSize(64, 64));
+    if (!response) return;
+    const QByteArray page(pageUrl);
+    // The response may finish on another thread; handle it on the GUI thread.
+    QObject::connect(response, &QQuickImageResponse::finished, g_engine, [response, page] {
+        QImage image;
+        if (response->errorString().isEmpty()) {
+            if (QQuickTextureFactory *factory = response->textureFactory()) {
+                image = factory->image();
+                delete factory;
+            }
+        }
+        response->deleteLater();
+        if (image.isNull()) return;
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        image.save(&buffer, "PNG");
+        kite_favicon_ready(page.constData(), reinterpret_cast<const unsigned char *>(png.constData()), size_t(png.size()));
+    }, Qt::QueuedConnection);
+}
 
 // All Qt and QML output (including web page consoles, see Main.qml
 // logConsole) goes to Kite's logger, filtered with RUST_LOG. Qt's default
@@ -56,6 +93,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
     QApplication::setQuitOnLastWindowClosed(false);
 
     QQmlApplicationEngine engine;
+    g_engine = &engine;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.
@@ -66,5 +104,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
         QMetaObject::invokeMethod(obj, "start", Qt::QueuedConnection);
     });
     engine.loadFromModule("org.kde.kite", "Main");
-    return app.exec();
+    const int code = app.exec();
+    g_engine = nullptr;
+    return code;
 }

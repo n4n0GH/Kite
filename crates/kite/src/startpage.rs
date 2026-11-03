@@ -16,13 +16,10 @@ pub fn render() -> String {
             let host = kite_core::util::host_of(&s.url);
             let title = if s.title.is_empty() { host.clone() } else { s.title.clone() };
             let letter = host.trim_start_matches("www.").chars().next().unwrap_or('?').to_uppercase().to_string();
-            // The icon comes from the site's own origin (scheme and port as
-            // visited), not always https://, which fails for http-only or
-            // self-signed sites; on failure the letter shows instead.
-            let icon = url::Url::parse(&s.url)
-                .ok()
-                .filter(|u| matches!(u.scheme(), "http" | "https"))
-                .map(|u| format!(r#"<img src="{}/favicon.ico" onerror="this.remove()">"#, esc(&u.origin().ascii_serialization())))
+            // Icons come from Kite's local cache (saved while browsing), so the
+            // speed dial never contacts the sites; without one the letter shows.
+            let icon = kite_core::favicons::key(&s.url)
+                .map(|k| format!(r#"<img src="kite:favicon?url={}" onerror="this.remove()">"#, esc(&percent_encoding::utf8_percent_encode(&k, percent_encoding::NON_ALPHANUMERIC).to_string())))
                 .unwrap_or_default();
             format!(
                 r#"<a class="tile" href="{url}" title="{t}"><span class="ic">{icon}<b>{letter}</b></span><span class="t">{t}</span><span class="h">{h}</span></a>"#,

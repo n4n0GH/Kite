@@ -217,6 +217,10 @@ pub mod qobject {
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
         #[qinvokable]
         fn cosmetic(self: &Browser, url: &QString) -> QString;
+        /// Cache the favicon `icon_url` (image://favicon/...) shown for `page_url`.
+        #[qinvokable]
+        #[cxx_name = "saveFavicon"]
+        fn save_favicon(self: &Browser, page_url: &QString, icon_url: &QString);
         /// Name of the extension doing content blocking instead of Kite, or "".
         #[qinvokable]
         #[cxx_name = "contentBlocker"]
@@ -753,6 +757,10 @@ impl qobject::Browser {
         let _ = a.shared.settings().set("adblock.allowlist", json!(list));
         a.adblock.set_allowlist(list);
     }
+    fn save_favicon(&self, page_url: &QString, icon_url: &QString) {
+        crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string());
+    }
+
     fn content_blocker(&self) -> QString {
         q(app().runtime().content_blocker().unwrap_or_default())
     }

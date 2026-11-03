@@ -19,6 +19,7 @@ fn main() {
         .qt_module("Network")
         .qt_module("Widgets")
         .qt_module("WebEngineCore")
+        .qt_module("Quick")
         .cpp_file("cpp/bootstrap.cpp")
         .cpp_file("cpp/glue.cpp")
         .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs"])

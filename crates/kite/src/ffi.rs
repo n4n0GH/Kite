@@ -43,6 +43,25 @@ extern "C" {
     fn kite_cpp_delete_all_cookies();
     fn kite_cpp_clear_http_cache();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
+    fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char);
+}
+
+/// Cache the favicon a page is showing (`icon_url` = image://favicon/...).
+pub fn save_favicon(page_url: &str, icon_url: &str) {
+    let (Ok(p), Ok(i)) = (CString::new(page_url), CString::new(icon_url)) else { return };
+    unsafe { kite_cpp_save_favicon(p.as_ptr(), i.as_ptr()) }
+}
+
+/// A favicon from `save_favicon`, as PNG.
+#[no_mangle]
+pub unsafe extern "C" fn kite_favicon_ready(page_url: *const c_char, png: *const u8, len: usize) {
+    if png.is_null() || len == 0 {
+        return;
+    }
+    let png = std::slice::from_raw_parts(png, len);
+    if let Err(e) = kite_core::favicons::save(&app().shared.db(), s(page_url), png) {
+        log::warn!("saving favicon for {}: {e}", s(page_url));
+    }
 }
 
 pub fn set_cookie(json: &str) {
@@ -88,6 +107,17 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
                 let target = crate::browser::resolve_input(&q);
                 let html = format!("<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url={}\">", target.replace('"', "%22"));
                 (200, "text/html".into(), html.into_bytes())
+            }
+            // Cached site icons for the speed dial: kite:favicon?url=<page url>
+            "favicon" => {
+                let page = url::Url::parse(url)
+                    .ok()
+                    .and_then(|u| u.query_pairs().find(|(k, _)| k == "url").map(|(_, v)| v.into_owned()))
+                    .unwrap_or_default();
+                match kite_core::favicons::for_url(&app().shared.db(), &page) {
+                    Ok(Some(png)) => (200, "image/png".into(), png),
+                    _ => (404, "text/plain".into(), vec![]),
+                }
             }
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),
         };
