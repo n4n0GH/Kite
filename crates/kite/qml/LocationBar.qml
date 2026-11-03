@@ -243,8 +243,11 @@ QQC2.TextField {
                         text: modelData.type === "go" ? (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
                             : modelData.title || modelData.url
                         elide: Text.ElideRight
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: implicitWidth
+                        // Takes the rest of the row unless a URL follows it (which
+                        // then does). With nothing able to grow, the layout would
+                        // spread the spare width over the cells and shift the
+                        // text differently in each row.
+                        Layout.fillWidth: modelData.url === ""
                     }
                     QQC2.Label {
                         visible: modelData.url !== ""
