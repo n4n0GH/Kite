@@ -70,6 +70,9 @@ static void replyJson(QWebEngineUrlRequestJob *job, int status, const QByteArray
     buffer->open(QIODevice::ReadOnly);
     QMultiMap<QByteArray, QByteArray> headers;
     headers.insert("Cache-Control", "no-store");
+    // Content scripts in sub-frames call from the web page's origin; they
+    // are authenticated by token (src/rpc.rs).
+    headers.insert("Access-Control-Allow-Origin", "*");
     job->setAdditionalResponseHeaders(headers);
     job->reply("application/json", buffer);
 }

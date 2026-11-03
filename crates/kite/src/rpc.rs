@@ -6,9 +6,14 @@
 //! * `GET  moz-extension://<uuid>/__kite__/poll?ctx=…` — long poll for replies
 //!   and events (held open by the scheme handler until something arrives)
 //!
-//! The traffic never passes through the hosting web page, only the extension's
-//! own documents may use it (checked against the request initiator), and every
-//! call is still authenticated by the extension's token in the runtime.
+//! Content scripts in sub-frames use the same endpoints from their isolated
+//! world (the scheme ignores the page's CSP). Their requests carry the web
+//! page's origin, so they must POST the extension's secret token instead,
+//! and nothing secret is ever put in a URL (pages can see request URLs in
+//! their resource timing).
+//!
+//! The traffic never passes through the hosting web page; every call is still
+//! authenticated by the extension's token in the runtime.
 
 use crate::state::app;
 use kite_core::webext::runtime::Origin;
@@ -84,15 +89,26 @@ pub enum Handled {
     Held,
 }
 
-/// Handle an `__kite__/rpc` or `__kite__/poll` request from extension `ext_base`.
-pub fn handle(path_and_query: &str, ext_base: &str, initiator: &str, body: &[u8], job: u64) -> Handled {
-    // Only the extension's own documents (never web pages) may use this.
-    if !initiator.trim_end_matches('/').eq_ignore_ascii_case(ext_base.trim_end_matches('/')) {
+/// Handle an `__kite__/rpc` or `__kite__/poll` request for extension `ext_id`
+/// (whose pages live at `ext_base`).
+pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &str, body: &[u8], job: u64) -> Handled {
+    let (path, query) = path_and_query.split_once('?').unwrap_or((path_and_query, ""));
+    let from_extension_page = initiator.trim_end_matches('/').eq_ignore_ascii_case(ext_base.trim_end_matches('/'));
+    let body: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    // Anything else must be the extension's content script: it knows the token.
+    let content_script = !from_extension_page && {
+        let rt = app().runtime();
+        body["token"].as_str().is_some_and(|t| rt.ext_for_token(t) == Some(ext_id))
+    };
+    if !from_extension_page && !content_script {
         return Handled::Now(403, "{}".into());
     }
-    let (path, query) = path_and_query.split_once('?').unwrap_or((path_and_query, ""));
     if path.ends_with("/poll") {
-        let ctx = url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == "ctx").map(|(_, v)| v.into_owned()).unwrap_or_default();
+        let ctx = if content_script {
+            body["ctx"].as_str().unwrap_or_default().to_owned()
+        } else {
+            url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == "ctx").map(|(_, v)| v.into_owned()).unwrap_or_default()
+        };
         if ctx.is_empty() {
             return Handled::Now(400, "{}".into());
         }
@@ -112,7 +128,7 @@ pub fn handle(path_and_query: &str, ext_base: &str, initiator: &str, body: &[u8]
         return result;
     }
     if path.ends_with("/rpc") {
-        let Ok(v) = serde_json::from_slice::<Value>(body) else { return Handled::Now(400, "{}".into()) };
+        let v = body;
         let ctx = v["ctx"].as_str().unwrap_or_default().to_owned();
         if ctx.is_empty() {
             return Handled::Now(400, "{}".into());
@@ -123,8 +139,13 @@ pub fn handle(path_and_query: &str, ext_base: &str, initiator: &str, body: &[u8]
         });
         let fx = {
             let mut rt = app().runtime();
-            // UI iframes live in the tab the user is interacting with.
-            let (tab_id, window_id) = rt.active_tab();
+            let (tab_id, window_id) = match v["top"].as_str() {
+                // A content script in a sub-frame: Qt doesn't say which tab
+                // it is in, so go by the top frame's origin.
+                Some(top) if content_script => rt.tab_for_origin(top),
+                // UI iframes live in the tab the user is interacting with.
+                _ => rt.active_tab(),
+            };
             let origin = Origin { view, tab_id, window_id };
             rt.call(&origin, v["token"].as_str().unwrap_or(""), &ctx, v["method"].as_str().unwrap_or(""), v["args"].clone(), v["callId"].as_i64().unwrap_or(0))
         };

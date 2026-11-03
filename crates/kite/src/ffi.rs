@@ -158,10 +158,10 @@ pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, 
         *out = KiteBuf::empty();
         return 0;
     };
-    let base = {
+    let (ext_id, base) = {
         let rt = app().runtime();
         match rt.registry.by_uuid(u.host_str().unwrap_or("")).filter(|e| e.info.enabled) {
-            Some(e) => e.base_url(),
+            Some(e) => (e.info.id.clone(), e.base_url()),
             None => {
                 *status = 404;
                 *out = KiteBuf::empty();
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, 
         Some(q) => format!("{}?{q}", u.path()),
         None => u.path().to_owned(),
     };
-    match crate::rpc::handle(&pq, &base, initiator, body, job) {
+    match crate::rpc::handle(&pq, &ext_id, &base, initiator, body, job) {
         crate::rpc::Handled::Now(code, json) => {
             *status = code;
             *out = KiteBuf::from_vec(json.into_bytes());

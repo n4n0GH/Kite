@@ -517,6 +517,14 @@ impl Runtime {
 
     /// Best guess of the tab a network request belongs to (Qt's profile-level
     /// interceptor does not tell us), by matching the first-party URL.
+    /// (tab, window) showing a page of `origin` (e.g. "https://kde.org"),
+    /// preferring the active tab, then the most recently used one.
+    pub fn tab_for_origin(&self, origin: &str) -> (i64, i64) {
+        let id = self.tab_for_first_party(origin);
+        let window = self.tabs.get(&id).and_then(|t| t["windowId"].as_i64()).unwrap_or(-1);
+        (id, window)
+    }
+
     pub fn tab_for_first_party(&self, first_party: &str) -> i64 {
         let origin = |u: &str| url::Url::parse(u).map(|u| u.origin().ascii_serialization()).unwrap_or_default();
         let fp = origin(first_party);
@@ -1286,7 +1294,7 @@ impl Runtime {
             // ---------------- internal ----------------
             ("_", "register") => {
                 let info = arg(args, 0);
-                log::debug!("context {ctx} registered: {} in {}", info["kind"], origin.view);
+                log::debug!("context {ctx} registered: {} in {} (tab {}, frame {})", info["kind"], origin.view, origin.tab_id, info["frameId"]);
                 let kind = info["kind"].as_str().unwrap_or("content").to_owned();
                 let url = info["url"].as_str().unwrap_or_default().to_owned();
                 self.ctxs.insert(
