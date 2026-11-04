@@ -81,7 +81,7 @@ QQC2.Menu {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Full Screen"; icon.name: "view-fullscreen"; checkable: true; checked: win.visibility === Window.FullScreen; onTriggered: checked ? win.showFullScreen() : win.showNormal() }
         QQC2.MenuItem { text: "Page Source"; icon.name: "text-html"; onTriggered: win.openTab("view-source:" + win.currentTab.url, {background: false, afterCurrent: true}) }
-        QQC2.MenuItem { text: "Developer Tools"; icon.name: "tools-report-bug"; onTriggered: win.currentTab.showDevTools() }
+        QQC2.MenuItem { text: "Developer Tools"; icon.name: "utilities-terminal"; onTriggered: win.currentTab.showDevTools() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Bookmarks Sidebar"; checkable: true; checked: win.sidebar === "bookmarks"; onTriggered: win.showSidebar("bookmarks") }
         QQC2.MenuItem { text: "History Sidebar"; checkable: true; checked: win.sidebar === "history"; onTriggered: win.showSidebar("history") }

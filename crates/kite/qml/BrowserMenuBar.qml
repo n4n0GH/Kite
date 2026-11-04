@@ -93,7 +93,7 @@ QQC2.MenuBar {
         QQC2.MenuItem { text: "&Add-ons"; icon.name: "preferences-plugin"; onTriggered: menuBar.app.showAddons() }
         QQC2.MenuItem { text: "&Passwords"; icon.name: "dialog-password"; onTriggered: menuBar.app.showPreferences("passwords") }
         QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "&Developer Tools"; icon.name: "tools-report-bug"; onTriggered: menuBar.tab.showDevTools() }
+        QQC2.MenuItem { text: "&Developer Tools"; icon.name: "utilities-terminal"; onTriggered: menuBar.tab.showDevTools() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "&Settings"; icon.name: "settings-configure"; onTriggered: menuBar.app.showPreferences() }
     }

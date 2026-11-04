@@ -486,7 +486,19 @@ Kirigami.ApplicationWindow {
             spacing: Kirigami.Units.largeSpacing
             property var list: []
             function reload() { list = JSON.parse(Browser.allSiteSettings()) }
-            Component.onCompleted: reload()
+            Component.onCompleted: { reload(); suggest() }
+            // The current tab's site, if it has no settings yet, ready to add.
+            // (Replaces an earlier suggestion, not what the user typed.)
+            property string suggested: ""
+            function suggest() {
+                if (w.editSite !== "" || newHost.text !== suggested) return
+                const win = w.app.activeWindow
+                const url = win && win.currentTab ? win.currentTab.url : ""
+                const host = /^https?:/i.test(url) ? Browser.hostOf(url) : ""
+                suggested = host && !list.some(e => e.host === host) ? host : ""
+                newHost.text = suggested
+            }
+            Connections { target: w; function onActiveChanged() { if (w.active) ss.suggest() } }
             // A short description of what is set for a site.
             function summary(s) {
                 const parts = []

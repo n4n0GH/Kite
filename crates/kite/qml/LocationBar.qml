@@ -39,6 +39,17 @@ QQC2.TextField {
     Connections { target: field.tab; ignoreUnknownSignals: true; function onUrlChanged() { field.refreshBookmark(); field.shieldAllowed = Browser.adblockAllowed(Browser.hostOf(field.tab.url)) } }
     Connections { target: Browser; function onBookmarksChanged() { field.refreshBookmark() } }
 
+    // The page's site, and whether it has settings of its own (Site
+    // Settings: zoom, dark mode, CSS, JavaScript).
+    readonly property string siteHost: tab && /^https?:/i.test(tab.url) ? Browser.hostOf(tab.url) : ""
+    property bool siteHasSettings: false
+    function refreshSite() {
+        const s = siteHost ? JSON.parse(Browser.siteSettings(siteHost)) : null
+        siteHasSettings = !!s && (s.zoom > 0 || s.dark_mode > 0 || s.css !== "" || s.js !== "")
+    }
+    onSiteHostChanged: refreshSite()
+    Connections { target: field.win ? field.win.app : null; ignoreUnknownSignals: true; function onSiteSettingsEdited(host) { if (host === field.siteHost) field.refreshSite() } }
+
     function toggleBookmark() {
         if (!tab || !tab.url) return
         if (!bookmark) { Browser.addBookmark(tab.url, tab.title, JSON.parse(Browser.bookmarkRoots()).unsorted); refreshBookmark() }
@@ -196,6 +207,16 @@ QQC2.TextField {
             text: field.tab ? Math.round(field.tab.view.zoomFactor * 100) + "%" : ""
             font: Kirigami.Theme.smallFont
             TapHandler { onTapped: field.tab.setZoom(1.0) }
+        }
+        // Site Settings of this site (adds them if it has none yet).
+        QQC2.ToolButton {
+            Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
+            padding: 2
+            visible: field.siteHost !== "" && !field.editing
+            icon.name: "configure"
+            icon.color: field.siteHasSettings ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+            onClicked: field.win.app.showSiteSettings(field.siteHost)
+            QQC2.ToolTip.text: (field.siteHasSettings ? "Edit settings for " : "Add settings for ") + field.siteHost; QQC2.ToolTip.visible: hovered
         }
         QQC2.ToolButton {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height

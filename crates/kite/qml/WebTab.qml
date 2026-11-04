@@ -120,7 +120,12 @@ Item {
     function setZoom(z) {
         web.zoomFactor = z
         const host = Browser.hostOf(url)
-        if (host) Browser.setSiteSetting(host, "zoom", Math.round(z * 100))
+        if (host) {
+            Browser.setSiteSetting(host, "zoom", Math.round(z * 100))
+            // Other tabs of the site follow; the address bar updates.
+            // (Private windows don't store zoom: nothing changed.)
+            if (!window.privateMode) app.siteSettingsEdited(host)
+        }
     }
 
     function saveState() {

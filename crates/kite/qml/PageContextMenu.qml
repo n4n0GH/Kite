@@ -138,5 +138,5 @@ QQC2.Menu {
 
     QQC2.MenuSeparator {}
     QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1}) }
-    QQC2.MenuItem { text: "Inspect"; icon.name: "tools-report-bug"; onTriggered: { menu.act(WebEngineView.InspectElement); menu.tab.showDevTools() } }
+    QQC2.MenuItem { text: "Inspect"; icon.name: "utilities-terminal"; onTriggered: { menu.act(WebEngineView.InspectElement); menu.tab.showDevTools() } }
 }
