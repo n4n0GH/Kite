@@ -324,7 +324,7 @@ Item {
                         return
                     }
                     const bg = dest === WebEngineNewWindowRequest.InNewBackgroundTab
-                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.indexOfTab(wt.tabId) + 1, openerTabId: wt.tabId, container: wt.container})
+                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, container: wt.container})
                 }
 
                 onWindowCloseRequested: wt.close()

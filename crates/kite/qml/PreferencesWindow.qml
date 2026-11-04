@@ -285,7 +285,6 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { text: "Hide the tab bar when only one tab is open"; checked: w.get("tabs.hideWhenSingle"); onToggled: w.set("tabs.hideWhenSingle", checked) }
             QQC2.Label { text: "Also available by right-clicking the tab bar."; opacity: 0.7; font: Kirigami.Theme.smallFont }
             QQC2.CheckBox { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; checked: w.get("tabs.newTabAfterActive"); onToggled: w.set("tabs.newTabAfterActive", checked) }
-            QQC2.CheckBox { text: "Open links in background tabs"; checked: w.get("tabs.openNewTabsInBackground"); onToggled: w.set("tabs.openNewTabsInBackground", checked) }
             QQC2.CheckBox { text: "Switch to tabs opened from links"; checked: w.get("tabs.switchToNewTabFromLink"); onToggled: w.set("tabs.switchToNewTabFromLink", checked) }
             QQC2.CheckBox { text: "Open popup windows in tabs"; checked: w.get("tabs.openPopupsInTabs"); onToggled: w.set("tabs.openPopupsInTabs", checked) }
             QQC2.CheckBox { Kirigami.FormData.label: "Closing:"; text: "Close window when the last tab is closed"; checked: w.get("tabs.closeWindowWithLastTab"); onToggled: w.set("tabs.closeWindowWithLastTab", checked) }

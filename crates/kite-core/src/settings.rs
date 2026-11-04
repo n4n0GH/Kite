@@ -42,12 +42,10 @@ pub fn defaults() -> Map<String, Value> {
         // Tabs
         "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical" (left) | "verticalRight"
         "tabs.hideWhenSingle": false,
-        "tabs.openNewTabsInBackground": true,
         "tabs.openPopupsInTabs": false,
         "tabs.newTabAfterActive": true,
         "tabs.closeWindowWithLastTab": false,
         "tabs.switchToNewTabFromLink": false,
-        "tabs.showCloseButtons": true,
         // Browsing
         "web.javascript": true,
         "web.autoloadImages": true,
@@ -94,7 +92,6 @@ pub fn defaults() -> Map<String, Value> {
         // Downloads
         "downloads.directory": downloads,
         "downloads.askWhereToSave": false,
-        "downloads.closeManagerOnFinish": false,
         // Content blocking
         "adblock.enabled": true,
         "adblock.subscriptions": [
@@ -121,6 +118,17 @@ const RENAMED: &[(&str, &str)] = &[("appearance.tabPosition", "tabs.position")];
 
 /// Settings whose meaning moved elsewhere.
 fn migrate(values: &mut Map<String, Value>) {
+    // "Open links in background tabs" was the opposite of "Switch to tabs
+    // opened from links"; only the latter is left.
+    if let Some(Value::Bool(background)) = values.remove("tabs.openNewTabsInBackground") {
+        if !background {
+            values.insert("tabs.switchToNewTabFromLink".into(), Value::Bool(true));
+        }
+    }
+    // Settings nothing reads.
+    for old in ["tabs.showCloseButtons", "downloads.closeManagerOnFinish"] {
+        values.remove(old);
+    }
     // "Show home button" became the home item of the customizable toolbar.
     if let Some(Value::Bool(show)) = values.remove("appearance.showHomeButton") {
         if !show {
@@ -191,6 +199,21 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_tabs_setting_migrates() {
+        let dir = std::env::temp_dir().join(format!("kite-settings-bg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("settings.json");
+        std::fs::write(&p, r#"{"tabs.openNewTabsInBackground": false, "tabs.showCloseButtons": false}"#).unwrap();
+        let s = Settings::load(p.clone());
+        assert!(s.get_bool("tabs.switchToNewTabFromLink"));
+        assert_eq!(s.get("tabs.openNewTabsInBackground"), Value::Null);
+        assert_eq!(s.get("tabs.showCloseButtons"), Value::Null);
+        std::fs::write(&p, r#"{"tabs.openNewTabsInBackground": true}"#).unwrap();
+        assert!(!Settings::load(p).get_bool("tabs.switchToNewTabFromLink"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn hidden_home_button_moves_into_toolbar_items() {
         let dir = tempfile::tempdir().unwrap();

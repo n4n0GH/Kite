@@ -138,7 +138,8 @@ QtObject {
             for (const w of session) restoreWindow(w)
             if (urls.length) for (const u of urls) activeWindow.openTab(u, {background: false})
         } else {
-            const first = urls.length ? urls : [startup === "blank" ? "about:blank" : homeUrl()]
+            // "Open start page": the new tab page; "Open home page": the home page.
+            const first = urls.length ? urls : [startup === "blank" ? "about:blank" : startup === "speeddial" ? newTabUrl() : homeUrl()]
             newWindow({urls: first})
         }
         backgroundHost.reload()

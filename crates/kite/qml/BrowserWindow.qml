@@ -99,6 +99,10 @@ QQC2.ApplicationWindow {
     function indexOfTab(id) { for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).tabId === id) return i; return -1 }
     function setTabProperty(id, key, value) { const i = indexOfTab(id); if (i >= 0) tabModel.setProperty(i, key, value) }
 
+    // Where a tab opened from `tab` (a link, its context menu) goes: next to
+    // it ("tabs.newTabAfterActive"), or at the end.
+    function linkTabIndex(tab) { return app.setting("tabs.newTabAfterActive") ? indexOfTab(tab.tabId) + 1 : undefined }
+
     function openTab(url, opts) {
         opts = opts || {}
         const id = app.nextTabId++
@@ -359,6 +363,13 @@ QQC2.ApplicationWindow {
             Layout.fillWidth: true
             win: bw
             catalog: bw.toolbarCatalog
+        }
+
+        // The "Bookmarks Toolbar" folder ("appearance.showBookmarksToolbar")
+        BookmarksBar {
+            Layout.fillWidth: true
+            visible: bw.showBookmarksBar
+            win: bw
         }
 
         TabStripSlot {
