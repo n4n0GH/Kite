@@ -12,6 +12,7 @@
 #include <QQuickItem>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QMimeData>
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -69,11 +70,18 @@ protected:
             closeMenus(win);
             break;
         // A drag over a browser window (from a page, or another app): the
-        // window reveals a hidden tab bar to drop on (BrowserWindow.qml).
-        case QEvent::DragEnter:
-            if (win->metaObject()->indexOfMethod("dragEntered()") >= 0)
+        // window reveals a hidden tab bar to drop on (BrowserWindow.qml) if
+        // the tab bar can take what is dragged (TabStrip.qml: URLs, text).
+        // Pointer moves of pages that capture the mouse (games) are mouse
+        // events, never drags; a page's own drag of custom data (e.g. game
+        // pieces) is not shown the tab bar.
+        case QEvent::DragEnter: {
+            const QMimeData *data = static_cast<QDragEnterEvent *>(e)->mimeData();
+            const bool usable = data && (!data->urls().isEmpty() || !data->text().trimmed().isEmpty());
+            if (usable && win->metaObject()->indexOfMethod("dragEntered()") >= 0)
                 QMetaObject::invokeMethod(win, "dragEntered", Qt::QueuedConnection);
             break;
+        }
         case QEvent::DragLeave:
         case QEvent::Drop:
             if (win->metaObject()->indexOfMethod("dragLeft()") >= 0)
