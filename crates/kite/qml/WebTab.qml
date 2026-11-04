@@ -14,6 +14,8 @@ Item {
     required property int tabId
     // Container tab id ("" = none); fixed for the tab's life (its profile).
     required property string container
+    // Split view pane: 0 = left, 1 = right (BrowserWindow).
+    required property int pane
     property int tabIndex: 0
     property var window
     property var app
@@ -131,7 +133,7 @@ Item {
     }
 
     function saveState() {
-        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container}
+        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container, pane: pane}
     }
 
     function extInfo() {
@@ -213,6 +215,8 @@ Item {
                 id: web
                 anchors.fill: parent
                 profile: wt.app.profileFor(wt.window.privateMode, wt.container)
+                // Split view: clicking into a pane makes it the active one.
+                onActiveFocusChanged: if (activeFocus && wt.window.split) wt.window.activatePane(wt.pane)
                 webChannel: channel
                 webChannelWorld: wt.isExtensionPage ? 0 : 1
                 lifecycleState: WebEngineView.LifecycleState.Active

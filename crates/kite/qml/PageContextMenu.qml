@@ -51,6 +51,9 @@ QQC2.Menu {
 
     // Links
     QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, container: menu.tab.container}) }
+    // Split view: in the other pane (starting split view), shown there while
+    // this pane stays the active one.
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, openerTabId: menu.tab.tabId, container: menu.tab.container}) }
     // (A property: a Menu declared inside a Menu is always added to it.)
     property ContainerMenu _containerMenu: ContainerMenu {
         title: "Open Link in Container Tab"
@@ -67,6 +70,7 @@ QQC2.Menu {
 
     // Media
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadImageToDisk) }

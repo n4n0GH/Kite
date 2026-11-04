@@ -42,7 +42,7 @@ QQC2.ToolBar {
                     urlbar: urlbarItem, extensions: extensionsItem, downloads: downloadsItem, menu: menuItem,
                     newTab: newTabItem, newWindow: newWindowItem, privateWindow: privateWindowItem,
                     bookmarks: bookmarksItem, history: historyItem, sidebar: sidebarItem, print: printItem,
-                    find: findItem, zoom: zoomItem, fullScreen: fullScreenItem, addons: addonsItem,
+                    find: findItem, zoom: zoomItem, fullScreen: fullScreenItem, splitView: splitViewItem, addons: addonsItem,
                     settings: settingsItem, flexibleSpace: spaceItem,
                 })[modelData] || null
             }
@@ -178,6 +178,10 @@ QQC2.ToolBar {
     Component {
         id: fullScreenItem
         Button { icon.name: "view-fullscreen"; tip: "Full Screen"; checkable: true; checked: toolbar.win.visibility === Window.FullScreen; onClicked: checked ? toolbar.win.showFullScreen() : toolbar.win.showNormal() }
+    }
+    Component {
+        id: splitViewItem
+        Button { icon.name: "view-split-left-right"; tip: "Split View"; checkable: true; checked: toolbar.win.split; onClicked: toolbar.win.toggleSplit() }
     }
     Component {
         id: addonsItem

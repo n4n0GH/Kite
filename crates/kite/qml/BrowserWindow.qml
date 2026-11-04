@@ -20,6 +20,70 @@ QQC2.ApplicationWindow {
     property alias count: tabModel.count
     property int currentIndex: 0
     property var currentTab: null
+
+    // ---- split view ------------------------------------------------------------
+    // Each tab is in a pane ("pane" role): 0 = left, 1 = right. With tabs in
+    // both, the window shows them side by side, each pane its own current
+    // tab; `currentTab` is the active pane's (the address bar, toolbar and
+    // shortcuts act on it).
+    property var paneTab: [-1, -1]          // each pane's current tab id
+    property int activePane: 0
+    property int rightPaneCount: 0          // tabs in the right pane
+    property real rightPaneWidth: 0         // as the user dragged it (0: half)
+    // Each pane's area for its web views (and the find bar of the active one).
+    function paneArea(pane) { return pane === 1 && split ? rightContent : content }
+    // Where the right pane begins, for the tab bar's split.
+    readonly property real splitPoint: rightContent.x
+    readonly property bool split: rightPaneCount > 0
+    function paneOf(id) { const i = indexOfTab(id); return i >= 0 ? tabModel.get(i).pane : 0 }
+    function setPaneTab(pane, id) { const p = paneTab.slice(); p[pane] = id; paneTab = p }
+    function countPane1() { let n = 0; for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).pane === 1) n++; rightPaneCount = n }
+    // The tab ids of a pane, in tab order.
+    function paneTabs(pane) { const ids = []; for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).pane === pane) ids.push(tabModel.get(i).tabId); return ids }
+    // Clicking into a pane makes it the active one.
+    function activatePane(pane) {
+        if (pane === activePane || paneTab[pane] < 0) return
+        setCurrentIndex(indexOfTab(paneTab[pane]))
+    }
+    // Move a tab to the other pane (starting split view, or ending it when
+    // its pane is left empty).
+    function moveToOtherPane(id) {
+        const i = indexOfTab(id)
+        if (i < 0) return
+        const from = tabModel.get(i).pane, to = 1 - from
+        if (from === 0 && paneTabs(0).length === 1 && !split) return   // nothing would be left
+        tabModel.setProperty(i, "pane", to)
+        countPane1()
+        // The pane it left shows its next tab, or ends.
+        const rest = paneTabs(from)
+        if (paneTab[from] === id) setPaneTab(from, rest.length ? rest[Math.min(rest.length - 1, Math.max(0, rest.indexOf(id)))] : -1)
+        if (rest.length === 0) endSplitIfEmpty()
+        setCurrentIndex(indexOfTab(id))
+    }
+    // A pane without tabs: the right one closes; the left one takes the
+    // right one's tabs.
+    function endSplitIfEmpty() {
+        if (paneTabs(0).length === 0 && split) {
+            for (let i = 0; i < tabModel.count; ++i) tabModel.setProperty(i, "pane", 0)
+            paneTab = [paneTab[1], -1]
+        } else if (paneTabs(1).length === 0) {
+            paneTab = [paneTab[0], -1]
+        }
+        countPane1()
+        if (!split) activePane = 0
+    }
+    // "Split View": a new tab on the right, or back to one pane.
+    function toggleSplit() {
+        if (split) {
+            for (let i = 0; i < tabModel.count; ++i) tabModel.setProperty(i, "pane", 0)
+            countPane1()
+            paneTab = [currentTab ? currentTab.tabId : paneTab[0], -1]
+            activePane = 0
+            if (currentTab) setCurrentIndex(indexOfTab(currentTab.tabId))
+        } else {
+            openTab(app.newTabUrl(), {background: false, pane: 1}).focusLocationBar()
+        }
+    }
     property var tabItems: ({})
     property var lastActiveTabId: -1
     property string sidebar: ""            // "", "bookmarks", "history", "ext:<id>"
@@ -112,21 +176,26 @@ QQC2.ApplicationWindow {
         // A container tab ("privacy.containers"): its own cookies and storage.
         const container = !privateMode && opts.container && app.containersEnabled && app.containerInfo(opts.container) ? opts.container : ""
         if (container) app.containerProfile(container)
-        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container})
+        // Its pane: as asked, its opener's, or the active one.
+        const pane = opts.pane !== undefined ? opts.pane : opts.openerTabId !== undefined && opts.openerTabId >= 0 ? paneOf(opts.openerTabId) : activePane
+        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container, pane: pane})
+        countPane1()
+        // (showInPane: its pane shows it, even in the background.)
+        if (paneTab[pane] < 0 || opts.showInPane) setPaneTab(pane, id)
         const t = tabById(id)
         t.openerTabId = opts.openerTabId !== undefined ? opts.openerTabId : -1
         Extensions.browserEvent("tabCreated", JSON.stringify({tab: t.extInfo()}))
         if (opts.request) opts.request.openIn(t.view)
         else if (opts.lazy) t.pendingUrl = url
         else if (url) t.load(url)
-        if (!opts.background || tabModel.count === 1) setCurrentIndex(idx)
+        if (!opts.background || tabModel.count === 1 || (paneTab[pane] === id && pane === activePane)) setCurrentIndex(idx)
         else if (idx <= currentIndex && tabModel.count > 1) currentIndex++
         reindex()
         return t
     }
 
     function restoreTab(saved) {
-        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container})
+        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container, pane: saved.pane === 1 ? 1 : 0})
         t.restoreLook(saved.title, saved.url)
         if (saved.zoom > 0) t.view.zoomFactor = saved.zoom
         return t
@@ -137,20 +206,32 @@ QQC2.ApplicationWindow {
         const t = tabAt(index)
         if (t && !privateMode) Browser.pushClosedTab(JSON.stringify(t.saveState()))
         const id = tabModel.get(index).tabId
+        const pane = tabModel.get(index).pane
         const wasCurrent = index === currentIndex
-        // Pick the tab to activate: the opener if it exists, else the neighbour.
-        let next = index < tabModel.count - 1 ? index : index - 1
-        if (t && t.openerTabId >= 0 && indexOfTab(t.openerTabId) >= 0 && wasCurrent) next = indexOfTab(t.openerTabId)
+        const wasPaneCurrent = paneTab[pane] === id
+        // The tab to show next in its pane: the opener (if it is there),
+        // else the neighbour.
+        const before = paneTabs(pane)
+        const at = before.indexOf(id)
+        let next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
+        if (t && t.openerTabId >= 0 && before.includes(t.openerTabId)) next = t.openerTabId
         tabModel.remove(index)
+        countPane1()
         Extensions.browserEvent("tabRemoved", JSON.stringify({tabId: id, windowId: windowId, windowClosing: false}))
         if (tabModel.count === 0) {
             if (app.setting("tabs.closeWindowWithLastTab") || app.windows.length > 1) { bw.close(); return }
-            openTab(app.newTabUrl(), {background: false})
+            paneTab = [-1, -1]
+            openTab(app.newTabUrl(), {background: false, pane: 0})
             return
         }
-        if (next > index) next--
-        if (wasCurrent) { currentIndex = -1; setCurrentIndex(Math.max(0, Math.min(next, tabModel.count - 1))) }
-        else if (index < currentIndex) currentIndex--
+        if (wasPaneCurrent) setPaneTab(pane, next)
+        if (next < 0) endSplitIfEmpty()
+        if (wasCurrent) {
+            currentIndex = -1
+            setCurrentIndex(indexOfTab(paneTab[activePane] >= 0 ? paneTab[activePane] : paneTab[0]))
+        } else {
+            currentIndex = currentTab ? indexOfTab(currentTab.tabId) : 0
+        }
         reindex()
         currentTab = tabAt(currentIndex)
     }
@@ -176,6 +257,10 @@ QQC2.ApplicationWindow {
     function setCurrentIndex(i) {
         if (i < 0 || i >= tabModel.count) return
         const prev = currentTab ? currentTab.tabId : -1
+        const row = tabModel.get(i)
+        // The tab's pane shows it and becomes the active one.
+        setPaneTab(row.pane, row.tabId)
+        activePane = row.pane
         currentIndex = i
         currentTab = tabAt(i)
         if (!currentTab) return
@@ -188,6 +273,17 @@ QQC2.ApplicationWindow {
     }
 
     function tabModel_get(i) { return tabModel.get(i) }
+    // After a session's tabs are back: each pane's current tab.
+    function restorePanes(saved) {
+        if (saved.splitWidth > 0) rightPaneWidth = saved.splitWidth
+        const pc = saved.paneCurrent || []
+        for (const pane of [0, 1]) {
+            const t = tabAt(pc[pane])
+            if (t && tabModel.get(pc[pane]).pane === pane) setPaneTab(pane, t.tabId)
+            else { const ids = paneTabs(pane); setPaneTab(pane, ids.length ? ids[0] : -1) }
+        }
+        setCurrentIndex(Math.min(saved.current || 0, count - 1))
+    }
     function focusLocationBarNow() { if (locationBar) locationBar.focusAndSelect() }
     function findResult(count, active) { findBar.matches = count; findBar.activeMatch = active }
 
@@ -200,7 +296,13 @@ QQC2.ApplicationWindow {
         return tabModel.get(from).pinned ? Math.min(to, pinned - 1) : Math.max(to, pinned)
     }
 
-    function nextTab(step) { if (tabModel.count) setCurrentIndex((currentIndex + step + tabModel.count) % tabModel.count) }
+    // Ctrl+Tab and friends: within the active pane.
+    function nextTab(step) {
+        const ids = paneTabs(activePane)
+        if (!ids.length) return
+        const at = Math.max(0, ids.indexOf(currentTab ? currentTab.tabId : -1))
+        setCurrentIndex(indexOfTab(ids[(at + step + ids.length) % ids.length]))
+    }
 
     function reopenClosedTab(i) {
         const saved = JSON.parse(Browser.popClosedTab(i || 0))
@@ -214,7 +316,9 @@ QQC2.ApplicationWindow {
     function saveState() {
         const tabs = []
         for (let i = 0; i < tabModel.count; ++i) { const t = tabAt(i); if (t) tabs.push(t.saveState()) }
-        return {tabs: tabs, current: currentIndex, geometry: [x, y, width, height], maximized: visibility === Window.Maximized}
+        // (Split view: each pane's current tab, and the right pane's width.)
+        return {tabs: tabs, current: currentIndex, paneCurrent: [indexOfTab(paneTab[0]), indexOfTab(paneTab[1])], splitWidth: rightPaneWidth,
+                geometry: [x, y, width, height], maximized: visibility === Window.Maximized}
     }
 
     function extInfo(populate) {
@@ -388,12 +492,25 @@ QQC2.ApplicationWindow {
         shown: bw.tabBarShown
     }
 
+    // Split view: a line along the top of the active pane.
+    component PaneMarker: Rectangle {
+        property int pane
+        z: 2
+        visible: bw.split && bw.activePane === pane
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 2
+        color: Kirigami.Theme.highlightColor
+    }
+
     // Vertical tab list, left or right of the page: slides in from its side
     // when shown (and out when hidden), at the width the user last gave it.
     component SideTabs: Item {
         id: sideTabs
         property string side   // "left" | "right"
-        readonly property bool inUse: bw.tabPosition === (side === "left" ? "vertical" : "verticalRight") && !bw.contentFullScreen
+        // Split view lists each pane's tabs on its side; else the list is on
+        // the chosen side.
+        readonly property bool verticalTabs: bw.tabPosition === "vertical" || bw.tabPosition === "verticalRight"
+        readonly property bool inUse: !bw.contentFullScreen && (bw.split ? verticalTabs : bw.tabPosition === (side === "left" ? "vertical" : "verticalRight"))
         readonly property bool shown: inUse && bw.tabBarShown
         property real savedWidth: Kirigami.Units.gridUnit * 14
         property real shownWidth: shown ? savedWidth : 0
@@ -411,7 +528,7 @@ QQC2.ApplicationWindow {
             height: sideTabs.height
             // Stays at the window's edge while the list slides in or out.
             x: sideTabs.side === "left" ? sideTabs.width - width : 0
-            sourceComponent: TabStrip { browser: bw; position: sideTabs.side === "left" ? "vertical" : "verticalRight" }
+            sourceComponent: TabStrip { browser: bw; position: sideTabs.side === "left" ? "vertical" : "verticalRight"; pane: bw.split ? (sideTabs.side === "left" ? 0 : 1) : -1 }
         }
     }
 
@@ -431,24 +548,30 @@ QQC2.ApplicationWindow {
             mode: bw.sidebar
         }
 
+        // The left pane (the only one without split view).
         Item {
             id: content
             QQC2.SplitView.fillWidth: true
+            QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 12
             Repeater {
                 model: tabModel
+                // Each tab's view sits in its pane's area; each pane shows its
+                // current tab.
                 delegate: WebTab {
                     required property int index
                     tabIndex: index
                     window: bw
                     app: bw.app
-                    width: content.width
-                    height: content.height - (findBar.visible ? findBar.height : 0)
-                    visible: index === bw.currentIndex
+                    parent: bw.paneArea(pane)
+                    width: parent ? parent.width : 0
+                    height: parent ? parent.height - (findBar.visible && findBar.parent === parent ? findBar.height : 0) : 0
+                    visible: tabId === bw.paneTab[pane]
                 }
             }
 
             FindBar {
                 id: findBar
+                parent: bw.paneArea(bw.activePane)
                 anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                 tab: bw.currentTab
             }
@@ -456,6 +579,8 @@ QQC2.ApplicationWindow {
             // Hovered link
             Rectangle {
                 id: statusBubble
+                parent: bw.paneArea(bw.activePane)
+                z: 1
                 property string text: bw.currentTab ? bw.currentTab.hoveredLink : ""
                 visible: text !== "" && app.liveSettings["appearance.showStatusBar"]
                 anchors { left: parent.left; bottom: findBar.visible ? findBar.top : parent.bottom }
@@ -472,6 +597,8 @@ QQC2.ApplicationWindow {
                     font: Kirigami.Theme.smallFont
                 }
             }
+
+            PaneMarker { pane: 0 }
 
             // Toasts
             Rectangle {
@@ -494,6 +621,17 @@ QQC2.ApplicationWindow {
                 Timer { id: toastTimer; interval: 4000; onTriggered: toastBox.opacity = 0 }
                 TapHandler { onTapped: toastBox.opacity = 0 }
             }
+        }
+
+        // The right pane (split view).
+        Item {
+            id: rightContent
+            visible: bw.split
+            QQC2.SplitView.preferredWidth: bw.rightPaneWidth > 0 ? bw.rightPaneWidth : (content.width + width) / 2
+            QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 12
+            // Remember the width the user drags it to.
+            onWidthChanged: if (bw.split && splitView.resizing && width > 0) bw.rightPaneWidth = width
+            PaneMarker { pane: 1 }
         }
 
         SideTabs { side: "right" }

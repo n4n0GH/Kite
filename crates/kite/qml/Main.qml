@@ -162,7 +162,8 @@ QtObject {
         const urls = opts.urls || []
         if (opts.tabs) {
             for (const t of opts.tabs) w.restoreTab(t)
-            w.setCurrentIndex(Math.min(opts.current || 0, w.count - 1))
+            // (Split view: each pane's current tab too.)
+            w.restorePanes(opts.saved || {current: opts.current})
         } else if (urls.length === 0 && !opts.empty) {
             w.openTab(newTabUrl(), {background: false})
         }
@@ -172,7 +173,7 @@ QtObject {
     }
 
     function restoreWindow(saved) {
-        return newWindow({tabs: saved.tabs, current: saved.current, geometry: saved.geometry, maximized: saved.maximized})
+        return newWindow({tabs: saved.tabs, current: saved.current, saved: saved, geometry: saved.geometry, maximized: saved.maximized})
     }
 
     function windowClosed(w) {

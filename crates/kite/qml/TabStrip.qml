@@ -13,6 +13,10 @@ Rectangle {
     // "top" | "belowToolbar" | "bottom" | "vertical" (left) | "verticalRight"
     property string position: "top"
     readonly property bool vertical: position === "vertical" || position === "verticalRight"
+    // Split view: the pane whose tabs this strip shows (-1: all).
+    property int pane: -1
+    // New tabs from this strip go to its pane.
+    readonly property int newTabPane: pane < 0 ? browser.activePane : pane
     // Side the current tab merges into: the page below it, or above it for
     // a strip under the page.
     readonly property string placement: vertical ? position : position === "bottom" ? "bottom" : "top"
@@ -85,7 +89,7 @@ Rectangle {
             } else return
             // Copy, never move: a selection dragged out of a text field stays.
             drop.accept(Qt.CopyAction)
-            stripRoot.browser.openTab(url, {background: false, index: at})
+            stripRoot.browser.openTab(url, {background: false, index: at, pane: stripRoot.newTabPane})
         }
     }
     // Insertion marker for a drop.
@@ -148,16 +152,24 @@ Rectangle {
             // the wheel and its scroll bar.
             interactive: false
             clip: true
-            currentIndex: stripRoot.browser.currentIndex
+            // This strip's pane's current tab.
+            readonly property int pane: stripRoot.pane
+            currentIndex: { stripRoot.browser.currentIndex; return stripRoot.browser.indexOfTab(stripRoot.browser.paneTab[stripRoot.pane < 0 ? stripRoot.browser.activePane : stripRoot.pane]) }
             highlightFollowsCurrentItem: false
             boundsBehavior: Flickable.StopAtBounds
             readonly property real normalWidth: {
                 const m = stripRoot.browser.tabs
+                stripRoot.browser.rightPaneCount   // (tabs changing pane)
                 let pinned = 0
-                for (let i = 0; i < m.count; ++i) if (m.get(i).pinned) pinned++
+                let shown = 0
+                for (let i = 0; i < m.count; ++i) {
+                    if (stripRoot.pane >= 0 && m.get(i).pane !== stripRoot.pane) continue
+                    shown++
+                    if (m.get(i).pinned) pinned++
+                }
                 // Leave room for the new-tab button at the end.
                 const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - (footerItem ? footerItem.width : 0)
-                return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, m.count - pinned)))
+                return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, shown - pinned)))
             }
             QQC2.ScrollBar.vertical: QQC2.ScrollBar { id: verticalScrollBar; active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
             // Width for tabs in the vertical list: the scroll bar, when shown,
@@ -213,7 +225,7 @@ Rectangle {
                 display: stripRoot.vertical ? QQC2.AbstractButton.TextBesideIcon : QQC2.AbstractButton.IconOnly
                 width: stripRoot.vertical ? strip.itemWidth : implicitWidth
                 height: stripRoot.vertical ? Kirigami.Units.gridUnit * 2 : strip.height
-                onClicked: stripRoot.browser.openTab(stripRoot.browser.app.newTabUrl(), {background: false}).focusLocationBar()
+                onClicked: stripRoot.browser.openTab(stripRoot.browser.app.newTabUrl(), {background: false, pane: stripRoot.newTabPane}).focusLocationBar()
                 QQC2.ToolTip.text: "New Tab (Ctrl+T)"
                 QQC2.ToolTip.visible: hovered && !stripRoot.vertical
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay

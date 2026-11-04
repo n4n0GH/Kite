@@ -25,10 +25,17 @@ Item {
     // merges into the toolbar or page on that side) or "vertical".
     property string placement: "top"
     readonly property bool vertical: placement === "vertical" || placement === "verticalRight"
-    readonly property bool current: index === browser.currentIndex
+    // Split view: the pane the tab is in; a strip of one pane doesn't show
+    // the other's tabs (they take no space).
+    required property int pane
+    readonly property bool inStrip: tabList.pane < 0 || tabList.pane === pane
+    // The tab its pane shows (the active pane's is the window's current tab).
+    readonly property bool current: browser.paneTab[pane] === tabId
+    readonly property bool activePane: !browser.split || browser.activePane === pane
+    visible: inStrip
 
-    width: vertical ? tabList.itemWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
-    height: vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
+    width: !inStrip ? 0 : vertical ? tabList.itemWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
+    height: !inStrip ? 0 : vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
     z: dragHandler.active ? 10 : 0
 
     // The tab's face fills its slot (the strip has no inner padding).
@@ -91,7 +98,8 @@ Item {
         // the container's colour.
         Rectangle {
             visible: root.current || !!root.containerInfo
-            opacity: root.current ? 1 : 0.75
+            // (Softer for the current tab of the pane that isn't active.)
+            opacity: root.current && root.activePane ? 1 : 0.5
             // (A list on the right marks the side facing the page.)
             x: root.placement === "verticalRight" ? parent.width - width : 0
             y: root.vertical ? 0 : root.placement === "bottom" ? parent.height - 2 : 0
@@ -245,6 +253,13 @@ Item {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Reload Tab"; icon.name: "view-refresh"; onTriggered: root.browser.tabById(root.tabId).view.reload() }
         QQC2.MenuItem { id: duplicateItem; text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: t.container, index: root.index + 1}) } }
+        // Split view: the tab to the other pane (starting split view).
+        QQC2.MenuItem {
+            text: root.browser.split ? "Move to Other Side" : "Open in Split View"
+            icon.name: "view-split-left-right"
+            enabled: root.browser.split || root.browser.count > 1
+            onTriggered: root.browser.moveToOtherPane(root.tabId)
+        }
         // (A property: a Menu declared inside a Menu is always added to it.)
         property ContainerMenu _containerMenu: ContainerMenu {
             title: "Reopen in Container"

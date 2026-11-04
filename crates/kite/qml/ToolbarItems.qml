@@ -25,6 +25,7 @@ QtObject {
         {id: "find", name: "Find in Page", icon: "edit-find"},
         {id: "zoom", name: "Zoom Controls", icon: "zoom-in"},
         {id: "fullScreen", name: "Full Screen", icon: "view-fullscreen"},
+        {id: "splitView", name: "Split View", icon: "view-split-left-right"},
         {id: "addons", name: "Add-ons", icon: "kite-extension"},
         {id: "settings", name: "Settings", icon: "settings-configure"},
         {id: "flexibleSpace", name: "Flexible Space", icon: "distribute-horizontal-x", repeatable: true},

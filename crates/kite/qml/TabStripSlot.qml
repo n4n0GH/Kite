@@ -24,6 +24,17 @@ Item {
         width: slot.width
         height: slot.fullHeight
         y: slot.position === "bottom" ? 0 : slot.height - slot.fullHeight
-        sourceComponent: TabStrip { browser: slot.browser; position: slot.position }
+        sourceComponent: slot.browser.split ? splitStrips : oneStrip
+    }
+    Component { id: oneStrip; TabStrip { browser: slot.browser; position: slot.position } }
+    // Split view: a strip per pane, divided where the right pane begins.
+    Component {
+        id: splitStrips
+        Item {
+            implicitHeight: left.implicitHeight
+            TabStrip { id: left; browser: slot.browser; position: slot.position; pane: 0; width: slot.browser.splitPoint; height: parent.height }
+            Kirigami.Separator { x: slot.browser.splitPoint; height: parent.height }
+            TabStrip { browser: slot.browser; position: slot.position; pane: 1; x: slot.browser.splitPoint + 1; width: parent.width - x; height: parent.height }
+        }
     }
 }
