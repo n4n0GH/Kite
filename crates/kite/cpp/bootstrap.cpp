@@ -68,6 +68,17 @@ protected:
         case QEvent::WindowDeactivate:
             closeMenus(win);
             break;
+        // A drag over a browser window (from a page, or another app): the
+        // window reveals a hidden tab bar to drop on (BrowserWindow.qml).
+        case QEvent::DragEnter:
+            if (win->metaObject()->indexOfMethod("dragEntered()") >= 0)
+                QMetaObject::invokeMethod(win, "dragEntered", Qt::QueuedConnection);
+            break;
+        case QEvent::DragLeave:
+        case QEvent::Drop:
+            if (win->metaObject()->indexOfMethod("dragLeft()") >= 0)
+                QMetaObject::invokeMethod(win, "dragLeft", Qt::QueuedConnection);
+            break;
         default:
             break;
         }

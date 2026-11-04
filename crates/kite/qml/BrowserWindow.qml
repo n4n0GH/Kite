@@ -74,7 +74,16 @@ QQC2.ApplicationWindow {
     // "top" | "belowToolbar" | "bottom" | "vertical" (TabStrip.qml)
     readonly property string tabPosition: app.liveSettings["tabs.position"] || "top"
     // The tab bar can hide while the window has a single tab.
-    readonly property bool tabBarShown: !(app.liveSettings["tabs.hideWhenSingle"] && tabModel.count <= 1)
+    // … but shows while something is dragged over the window, to be
+    // dropped on it (TabStrip.qml).
+    readonly property bool tabBarShown: !(app.liveSettings["tabs.hideWhenSingle"] && tabModel.count <= 1) || dragOver
+    // Something is dragged over the window (the C++ input filter calls
+    // dragEntered() and dragLeft()). Cleared a moment after the drag leaves
+    // or is dropped, so a drop's new tab is there before the bar would hide.
+    property bool dragOver: false
+    function dragEntered() { dragOverTimer.stop(); dragOver = true }
+    function dragLeft() { dragOverTimer.restart() }
+    Timer { id: dragOverTimer; interval: 250; onTriggered: bw.dragOver = false }
     function setTabPosition(p) { Browser.setSetting("tabs.position", JSON.stringify(p)) }
 
     function registerTab(t) { tabItems[t.tabId] = t }

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.kite
 
 // The tab strip, placed where "tabs.position" says: above or below
 // the toolbars or below the page (horizontal), or as a list on the left
@@ -42,6 +43,70 @@ Rectangle {
             const step = stripRoot.vertical ? Kirigami.Units.gridUnit * 2 : strip.normalWidth
             strip.scrollBy(-delta / 120 * step / 2)
         }
+    }
+
+    // Drops on the bar open a new tab where they land: a URL (link, image,
+    // video, file) is opened, text (e.g. a selection on a page) is searched
+    // with the default search engine.
+    DropArea {
+        id: dropArea
+        anchors.fill: parent
+        // Where the new tab would go (shown by dropMarker); -1 while nothing
+        // usable is dragged over the bar.
+        property int index: -1
+        function usable(d) { return (d.hasUrls && d.urls.length > 0) || (d.hasText && d.text.trim() !== "") }
+        function update(x, y) {
+            const p = strip.mapFromItem(dropArea, x, y)
+            if (p.x < 0 || p.y < 0 || p.x > strip.width || p.y > strip.height) { index = strip.count; return }
+            const cx = p.x + strip.contentX, cy = p.y + strip.contentY
+            const i = strip.indexAt(cx, cy)
+            if (i < 0) { index = strip.count; return }
+            const item = strip.itemAtIndex(i)
+            const after = stripRoot.vertical ? cy - item.y > item.height / 2 : cx - item.x > item.width / 2
+            index = i + (after ? 1 : 0)
+        }
+        onEntered: drag => {
+            if (!usable(drag)) { drag.accepted = false; index = -1; return }
+            drag.accept(Qt.CopyAction)
+            update(drag.x, drag.y)
+        }
+        onPositionChanged: drag => { if (index >= 0) update(drag.x, drag.y) }
+        onExited: index = -1
+        onDropped: drop => {
+            const at = index
+            index = -1
+            let url = ""
+            if (drop.hasUrls && drop.urls.length > 0) {
+                url = drop.urls[0].toString()
+                // Not scripts (a dragged "javascript:" bookmarklet link).
+                if (/^javascript:/i.test(url)) return
+            } else if (drop.hasText && drop.text.trim() !== "") {
+                url = Browser.searchUrl(stripRoot.browser.app.setting("general.searchEngine"), drop.text.trim())
+            } else return
+            // Copy, never move: a selection dragged out of a text field stays.
+            drop.accept(Qt.CopyAction)
+            stripRoot.browser.openTab(url, {background: false, index: at})
+        }
+    }
+    // Insertion marker for a drop.
+    Rectangle {
+        id: dropMarker
+        z: 2
+        visible: dropArea.index >= 0
+        color: Kirigami.Theme.highlightColor
+        readonly property var edge: {
+            if (dropArea.index < 0) return Qt.point(0, 0)
+            const n = strip.count
+            const item = n === 0 ? null : strip.itemAtIndex(Math.min(dropArea.index, n - 1))
+            if (!item) return strip.mapToItem(stripRoot, 0, 0)
+            const end = dropArea.index >= n
+            return stripRoot.vertical ? strip.mapToItem(stripRoot, 0, item.y - strip.contentY + (end ? item.height : 0))
+                                      : strip.mapToItem(stripRoot, item.x - strip.contentX + (end ? item.width : 0), 0)
+        }
+        x: stripRoot.vertical ? edge.x : Math.max(0, edge.x - width / 2)
+        y: stripRoot.vertical ? Math.max(0, edge.y - height / 2) : edge.y
+        width: stripRoot.vertical ? strip.width : 2
+        height: stripRoot.vertical ? 2 : strip.height
     }
 
     GridLayout {
