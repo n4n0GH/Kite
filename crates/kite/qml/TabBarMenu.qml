@@ -16,7 +16,8 @@ QQC2.Menu {
         {k: "top", t: "Above the Address Bar"},
         {k: "belowToolbar", t: "Below the Address Bar"},
         {k: "bottom", t: "Below the Page"},
-        {k: "vertical", t: "Vertical List on the Side"},
+        {k: "vertical", t: "Vertical List on the Left"},
+        {k: "verticalRight", t: "Vertical List on the Right"},
     ]
 
     // Checkable items lose their bindings when clicked; refresh on open.

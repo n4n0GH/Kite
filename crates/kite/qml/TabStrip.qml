@@ -10,12 +10,12 @@ import org.kde.kite
 Rectangle {
     id: stripRoot
     property var browser
-    // "top" | "belowToolbar" | "bottom" | "vertical"
+    // "top" | "belowToolbar" | "bottom" | "vertical" (left) | "verticalRight"
     property string position: "top"
-    readonly property bool vertical: position === "vertical"
+    readonly property bool vertical: position === "vertical" || position === "verticalRight"
     // Side the current tab merges into: the page below it, or above it for
     // a strip under the page.
-    readonly property string placement: vertical ? "vertical" : position === "bottom" ? "bottom" : "top"
+    readonly property string placement: vertical ? position : position === "bottom" ? "bottom" : "top"
 
     implicitHeight: vertical ? 0 : Kirigami.Units.gridUnit * 2.2
     implicitWidth: vertical ? Kirigami.Units.gridUnit * 14 : 0

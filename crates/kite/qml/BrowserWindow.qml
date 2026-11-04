@@ -76,7 +76,8 @@ QQC2.ApplicationWindow {
         const p = browserMenuBar.mapFromItem(null, x, y)
         if (!browserMenuBar.contains(p)) menuBarPeek = false
     }
-    // "top" | "belowToolbar" | "bottom" | "vertical" (TabStrip.qml)
+    // "top" | "belowToolbar" | "bottom" | "vertical" (on the left) |
+    // "verticalRight" (TabStrip.qml)
     readonly property string tabPosition: app.liveSettings["tabs.position"] || "top"
     // The tab bar can hide while the window has a single tab.
     // … but shows while something is dragged over the window, to be
@@ -376,33 +377,39 @@ QQC2.ApplicationWindow {
         shown: bw.tabBarShown
     }
 
+    // Vertical tab list, left or right of the page: slides in from its side
+    // when shown (and out when hidden), at the width the user last gave it.
+    component SideTabs: Item {
+        id: sideTabs
+        property string side   // "left" | "right"
+        readonly property bool inUse: bw.tabPosition === (side === "left" ? "vertical" : "verticalRight") && !bw.contentFullScreen
+        readonly property bool shown: inUse && bw.tabBarShown
+        property real savedWidth: Kirigami.Units.gridUnit * 14
+        property real shownWidth: shown ? savedWidth : 0
+        Behavior on shownWidth { NumberAnimation { id: sideTabsAnimation; duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
+        visible: inUse && shownWidth > 0
+        clip: true
+        QQC2.SplitView.preferredWidth: shownWidth
+        QQC2.SplitView.minimumWidth: shown && !sideTabsAnimation.running ? Kirigami.Units.gridUnit * 8 : 0
+        // Remember the width the user drags it to (not the window's own
+        // layout changes, e.g. while it opens).
+        onWidthChanged: if (shown && splitView.resizing && width > 0) savedWidth = width
+        Loader {
+            active: sideTabs.inUse
+            width: sideTabs.savedWidth
+            height: sideTabs.height
+            // Stays at the window's edge while the list slides in or out.
+            x: sideTabs.side === "left" ? sideTabs.width - width : 0
+            sourceComponent: TabStrip { browser: bw; position: sideTabs.side === "left" ? "vertical" : "verticalRight" }
+        }
+    }
+
     QQC2.SplitView {
+        id: splitView
         anchors.fill: parent
         orientation: Qt.Horizontal
 
-        // Vertical tab list: slides in from the left when shown (and out when
-        // hidden), at the width the user last gave it.
-        Item {
-            id: sideTabs
-            readonly property bool inUse: bw.tabPosition === "vertical" && !bw.contentFullScreen
-            readonly property bool shown: inUse && bw.tabBarShown
-            property real savedWidth: Kirigami.Units.gridUnit * 14
-            property real shownWidth: shown ? savedWidth : 0
-            Behavior on shownWidth { NumberAnimation { id: sideTabsAnimation; duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
-            visible: inUse && shownWidth > 0
-            clip: true
-            QQC2.SplitView.preferredWidth: shownWidth
-            QQC2.SplitView.minimumWidth: shown && !sideTabsAnimation.running ? Kirigami.Units.gridUnit * 8 : 0
-            // Remember the width the user drags it to.
-            onWidthChanged: if (shown && !sideTabsAnimation.running && width > 0) savedWidth = width
-            Loader {
-                active: sideTabs.inUse
-                width: sideTabs.savedWidth
-                height: sideTabs.height
-                x: sideTabs.width - width
-                sourceComponent: TabStrip { browser: bw; position: "vertical" }
-            }
-        }
+        SideTabs { side: "left" }
 
         Sidebar {
             id: sidebarPanel
@@ -477,6 +484,8 @@ QQC2.ApplicationWindow {
                 TapHandler { onTapped: toastBox.opacity = 0 }
             }
         }
+
+        SideTabs { side: "right" }
     }
 
     // ---- popups & menus -----------------------------------------------------------------

@@ -20,7 +20,6 @@ Kirigami.ApplicationWindow {
     readonly property var pages: [
         {key: "general", title: "General", icon: "go-home"},
         {key: "appearance", title: "Appearance", icon: "preferences-desktop-theme"},
-        {key: "tabs", title: "Tabs", icon: "tab-new"},
         {key: "browsing", title: "Browsing", icon: "internet-web-browser"},
         {key: "search", title: "Search Engines", icon: "search"},
         {key: "privacy", title: "Privacy", icon: "preferences-system-privacy"},
@@ -53,7 +52,6 @@ Kirigami.ApplicationWindow {
             sourceComponent: {
                 switch (w.page) {
                 case "appearance": return appearance
-                case "tabs": return tabs
                 case "browsing": return browsing
                 case "search": return search
                 case "privacy": return privacy
@@ -256,6 +254,7 @@ Kirigami.ApplicationWindow {
     Component {
         id: appearance
         Kirigami.FormLayout {
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "General" }
             QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: w.set("appearance.showBookmarksToolbar", checked) }
             QQC2.CheckBox {
                 text: "Show home button"
@@ -274,15 +273,11 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Force dark mode on websites"; checked: w.get("appearance.forceDarkMode"); onToggled: w.set("appearance.forceDarkMode", checked) }
             QQC2.CheckBox { text: "Overlay scrollbars (thin, widen on hover, hide when idle)"; checked: w.get("appearance.overlayScrollbars"); onToggled: w.set("appearance.overlayScrollbars", checked) }
             QQC2.Label { text: "Some changes apply to new tabs and windows; scrollbar changes after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
-        }
-    }
 
-    Component {
-        id: tabs
-        Kirigami.FormLayout {
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tabs" }
             QQC2.ComboBox {
-                Kirigami.FormData.label: "Tab bar:"
-                model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the side"}]
+                Kirigami.FormData.label: "Position:"
+                model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the left"}, {k: "verticalRight", t: "Vertical list on the right"}]
                 textRole: "t"
                 currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("tabs.position")))
                 onActivated: i => w.set("tabs.position", model[i].k)

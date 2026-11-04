@@ -40,7 +40,7 @@ pub fn defaults() -> Map<String, Value> {
         // Thin page scrollbars that widen on hover and hide while idle (needs a restart).
         "appearance.overlayScrollbars": true,
         // Tabs
-        "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical"
+        "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical" (left) | "verticalRight"
         "tabs.hideWhenSingle": false,
         "tabs.openNewTabsInBackground": true,
         "tabs.openPopupsInTabs": false,

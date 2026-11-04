@@ -24,7 +24,7 @@ Item {
     // Where the strip is: "top" / "bottom" (horizontal, the current tab
     // merges into the toolbar or page on that side) or "vertical".
     property string placement: "top"
-    readonly property bool vertical: placement === "vertical"
+    readonly property bool vertical: placement === "vertical" || placement === "verticalRight"
     readonly property bool current: index === browser.currentIndex
 
     width: vertical ? tabList.itemWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
@@ -92,7 +92,8 @@ Item {
         Rectangle {
             visible: root.current || !!root.containerInfo
             opacity: root.current ? 1 : 0.75
-            x: root.vertical ? 0 : 0
+            // (A list on the right marks the side facing the page.)
+            x: root.placement === "verticalRight" ? parent.width - width : 0
             y: root.vertical ? 0 : root.placement === "bottom" ? parent.height - 2 : 0
             width: root.vertical ? 3 : parent.width
             height: root.vertical ? parent.height : 2
