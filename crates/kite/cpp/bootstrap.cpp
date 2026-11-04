@@ -175,6 +175,44 @@ private:
 // Store a page's favicon in Kite's icon cache (for the speed dial). The
 // image comes from QtWebEngine's own "favicon" image provider, which
 // already holds the icon the page loaded, so the site isn't contacted again.
+// Qt's favicon image provider answers a request from the first web view
+// showing that icon. An unloaded (discarded) view still shows its icon but
+// has no page behind it, and reading the icon from it crashes. Kite takes
+// unloaded views out of the provider's list and puts them back once they
+// are loaded again. FaviconProviderHelper is private to QtWebEngineQuick;
+// these members are exported.
+class QQuickWebEngineView : public QQuickItem {};
+class FaviconProviderHelper : public QObject {
+public:
+    static FaviconProviderHelper *instance();
+    void attach(QPointer<QQuickWebEngineView> view);
+    void detach(QPointer<QQuickWebEngineView> view);
+};
+
+static QQuickItem *findItem(QQuickItem *in, const QString &name)
+{
+    for (QQuickItem *c : in->childItems()) {
+        if (c->objectName() == name) return c;
+        if (QQuickItem *f = findItem(c, name)) return f;
+    }
+    return nullptr;
+}
+
+extern "C" void kite_cpp_favicon_track(const char *viewName, bool track)
+{
+    const QString name = QString::fromUtf8(viewName);
+    for (QWindow *w : QGuiApplication::topLevelWindows()) {
+        auto *q = qobject_cast<QQuickWindow *>(w);
+        if (!q) continue;
+        QQuickItem *item = findItem(q->contentItem(), name);
+        if (!item || !item->inherits("QQuickWebEngineView")) continue;
+        QPointer<QQuickWebEngineView> view(static_cast<QQuickWebEngineView *>(item));
+        if (track) FaviconProviderHelper::instance()->attach(view);
+        else FaviconProviderHelper::instance()->detach(view);
+        return;
+    }
+}
+
 extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl)
 {
     static const QString prefix = QStringLiteral("image://favicon/");

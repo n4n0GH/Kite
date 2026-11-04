@@ -47,12 +47,20 @@ extern "C" {
     fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
     fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char);
+    fn kite_cpp_favicon_track(view_name: *const c_char, track: bool);
 }
 
 /// Cache the favicon a page is showing (`icon_url` = image://favicon/...).
 pub fn save_favicon(page_url: &str, icon_url: &str) {
     let (Ok(p), Ok(i)) = (CString::new(page_url), CString::new(icon_url)) else { return };
     unsafe { kite_cpp_save_favicon(p.as_ptr(), i.as_ptr()) }
+}
+
+/// Take a web view (by objectName) out of Qt's favicon provider while it is
+/// unloaded, or put it back (see bootstrap.cpp).
+pub fn favicon_track(view_name: &str, track: bool) {
+    let Ok(n) = CString::new(view_name) else { return };
+    unsafe { kite_cpp_favicon_track(n.as_ptr(), track) }
 }
 
 /// A favicon from `save_favicon`, as PNG.

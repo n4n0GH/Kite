@@ -302,6 +302,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "saveFavicon"]
         fn save_favicon(self: &Browser, page_url: &QString, icon_url: &QString);
+        /// An unloaded tab's view leaves Qt's favicon provider (`track`
+        /// false) until it is loaded again (see bootstrap.cpp).
+        #[qinvokable]
+        #[cxx_name = "faviconTrack"]
+        fn favicon_track(self: &Browser, view_name: &QString, track: bool);
         /// Name of the extension doing content blocking instead of Kite, or "".
         #[qinvokable]
         #[cxx_name = "contentBlocker"]
@@ -949,6 +954,10 @@ impl qobject::Browser {
 
     fn save_favicon(&self, page_url: &QString, icon_url: &QString) {
         crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string());
+    }
+
+    fn favicon_track(&self, view_name: &QString, track: bool) {
+        crate::ffi::favicon_track(&view_name.to_string(), track);
     }
 
     fn content_blocker(&self) -> QString {

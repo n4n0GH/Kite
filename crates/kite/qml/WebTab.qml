@@ -92,6 +92,14 @@ Item {
     readonly property bool discarded: web.lifecycleState === WebEngineView.LifecycleState.Discarded
     readonly property bool unloaded: discarded || pendingUrl !== ""
     onUnloadedChanged: window.setTabProperty(tabId, "unloaded", unloaded)
+    // An unloaded view has no page to take its icon from: it leaves Qt's
+    // favicon provider (which would crash reading it) and the tab shows the
+    // cached icon until the page is back.
+    onDiscardedChanged: {
+        Browser.faviconTrack(web.objectName, !discarded)
+        if (discarded) { const c = Browser.cachedFavicon(url); if (c !== "") window.setTabProperty(tabId, "icon", c) }
+        else window.setTabProperty(tabId, "icon", web.icon.toString())
+    }
     // Text typed into the page that wasn't submitted (it would be lost).
     property bool formDirty: false
     // Shown tabs (the current one, both panes in split view) stay loaded.
@@ -289,6 +297,7 @@ Item {
 
             WebEngineView {
                 id: web
+                objectName: "kite-web-" + wt.tabId
                 anchors.fill: parent
                 profile: wt.app.profileFor(wt.window.privateMode, wt.container)
                 // Split view: clicking into a pane makes it the active one.
