@@ -59,6 +59,8 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
+        // Scroll distance per mouse wheel notch on pages, in px; 0 = the system's.
+        "web.wheelScrollPixels": 0,
         // Settings → Shortcuts: action id → key sequences, for the actions
         // whose keys the user changed (the defaults live in Main.qml).
         "shortcuts": {},

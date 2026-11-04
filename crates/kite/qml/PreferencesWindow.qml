@@ -505,6 +505,26 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { text: "Smooth scrolling"; checked: w.get("web.smoothScrolling"); onToggled: w.set("web.smoothScrolling", checked) }
             QQC2.CheckBox { text: "Spatial navigation (arrow keys between links)"; checked: w.get("web.spatialNavigation"); onToggled: w.set("web.spatialNavigation", checked) }
             QQC2.CheckBox { text: "Print backgrounds"; checked: w.get("web.printBackgrounds"); onToggled: w.set("web.printBackgrounds", checked) }
+            // ---- "web.wheelScrollPixels" (bootstrap.cpp scales wheel notches) ----
+            QQC2.CheckBox {
+                id: wheelSystem
+                Kirigami.FormData.label: "Mouse wheel:"
+                readonly property int systemPx: Browser.systemWheelPixels()
+                text: "Scroll like other apps (" + systemPx + " px per notch)"
+                checked: w.get("web.wheelScrollPixels") <= 0
+                onToggled: w.set("web.wheelScrollPixels", checked ? 0 : wheelPx.value)
+            }
+            RowLayout {
+                enabled: !wheelSystem.checked
+                QQC2.SpinBox {
+                    id: wheelPx
+                    from: 10; to: 1000; stepSize: 10; editable: true
+                    value: w.get("web.wheelScrollPixels") > 0 ? w.get("web.wheelScrollPixels") : wheelSystem.systemPx
+                    onValueModified: w.set("web.wheelScrollPixels", value)
+                }
+                QQC2.Label { text: "px per wheel notch" }
+            }
+            QQC2.Label { text: "Scroll distance on web pages. Touchpads and Ctrl+wheel (zoom) are not affected."; opacity: 0.7; font: Kirigami.Theme.smallFont }
             QQC2.CheckBox { Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; checked: w.get("web.spellcheck"); onToggled: w.set("web.spellcheck", checked) }
             QQC2.TextField { Kirigami.FormData.label: "Languages:"; text: w.get("web.spellcheckLanguages").join(", "); onEditingFinished: w.set("web.spellcheckLanguages", text.split(",").map(s => s.trim()).filter(s => s)) }
             QQC2.TextField { Kirigami.FormData.label: "User agent:"; Layout.fillWidth: true; placeholderText: "Default"; text: w.get("web.userAgent"); onEditingFinished: w.set("web.userAgent", text) }

@@ -50,6 +50,8 @@ extern "C" {
     fn kite_cpp_favicon_track(view_name: *const c_char, track: bool);
     fn kite_cpp_key_text(key: std::ffi::c_int, modifiers: std::ffi::c_int) -> *const c_char;
     fn kite_cpp_key_native(sequence: *const c_char) -> *const c_char;
+    fn kite_cpp_set_wheel_pixels(px: std::ffi::c_int);
+    fn kite_cpp_system_wheel_pixels() -> std::ffi::c_int;
 }
 
 /// Cache the favicon a page is showing (`icon_url` = image://favicon/...).
@@ -74,6 +76,17 @@ pub fn key_text(key: i32, modifiers: i32) -> String {
 pub fn key_native(sequence: &str) -> String {
     let Ok(s) = CString::new(sequence) else { return sequence.to_owned() };
     unsafe { std::ffi::CStr::from_ptr(kite_cpp_key_native(s.as_ptr())).to_string_lossy().into_owned() }
+}
+
+/// Scroll distance per mouse wheel notch on pages, 0 for the system's.
+pub fn set_wheel_pixels(px: i64) {
+    unsafe { kite_cpp_set_wheel_pixels(px.clamp(0, 2000) as std::ffi::c_int) }
+}
+
+/// The system's scroll distance per wheel notch on pages (wheel scroll
+/// lines × 20 px).
+pub fn system_wheel_pixels() -> i32 {
+    unsafe { kite_cpp_system_wheel_pixels() }
 }
 
 /// A favicon from `save_favicon`, as PNG.

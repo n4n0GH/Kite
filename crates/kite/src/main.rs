@@ -92,6 +92,7 @@ fn main() {
     argv.push(std::ptr::null_mut());
     // The strings must outlive the QApplication.
     std::mem::forget(args);
+    ffi::set_wheel_pixels(state::app().shared.settings().get_i64("web.wheelScrollPixels"));
     let code = unsafe { kite_bootstrap((argv.len() - 1) as c_int, argv.as_mut_ptr()) };
     if private {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());

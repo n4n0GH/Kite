@@ -315,6 +315,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "keySequenceDisplay"]
         fn key_sequence_display(self: &Browser, sequence: &QString) -> QString;
+        /// The system's scroll distance per mouse wheel notch, in px.
+        #[qinvokable]
+        #[cxx_name = "systemWheelPixels"]
+        fn system_wheel_pixels(self: &Browser) -> i32;
         /// Name of the extension doing content blocking instead of Kite, or "".
         #[qinvokable]
         #[cxx_name = "contentBlocker"]
@@ -395,6 +399,7 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         "privacy.cookies" => a.cookie_policy.store(crate::state::cookie_policy(v.as_str().unwrap_or("all")), std::sync::atomic::Ordering::Relaxed),
         "privacy.dnsOverHttps" | "privacy.dnsServer" => crate::ffi::apply_dns(),
         "browsing.safeBrowsing" | "browsing.safeBrowsingKey" => crate::state::safe_browsing_changed(),
+        "web.wheelScrollPixels" => crate::ffi::set_wheel_pixels(v.as_i64().unwrap_or(0)),
         k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
@@ -974,6 +979,10 @@ impl qobject::Browser {
 
     fn key_sequence_display(&self, sequence: &QString) -> QString {
         q(crate::ffi::key_native(&sequence.to_string()))
+    }
+
+    fn system_wheel_pixels(&self) -> i32 {
+        crate::ffi::system_wheel_pixels()
     }
 
     fn content_blocker(&self) -> QString {

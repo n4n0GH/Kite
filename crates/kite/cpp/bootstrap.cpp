@@ -19,6 +19,8 @@
 #include <QTimer>
 #include <QPointer>
 #include <QWheelEvent>
+#include <atomic>
+#include <QStyleHints>
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -38,6 +40,15 @@ static QQmlApplicationEngine *g_engine = nullptr;
 //   so a click elsewhere hides it again;
 // * a window losing focus closes its open menus (e.g. right-clicking the
 //   title bar opens the window manager's menu, a click Qt Quick never sees).
+// Scroll distance per mouse wheel notch on pages ("web.wheelScrollPixels",
+// set from Rust; 0 = the system's). QtWebEngine scrolls a notch by the
+// system's wheel scroll lines × 20 px, so a notch is scaled to the chosen
+// distance before it reaches the page.
+static std::atomic<int> g_wheelPixels{0};
+extern "C" void kite_cpp_set_wheel_pixels(int px) { g_wheelPixels = px; }
+static int systemWheelPixels() { return QGuiApplication::styleHints()->wheelScrollLines() * 20; }
+extern "C" int kite_cpp_system_wheel_pixels() { return qApp ? systemWheelPixels() : 60; }
+
 class KiteInputFilter : public QObject {
 public:
     using QObject::QObject;
@@ -69,9 +80,23 @@ protected:
             }
             break;
         }
-        case QEvent::Wheel:
+        case QEvent::Wheel: {
             m_altAlone = false;
-            break;
+            auto *w = static_cast<QWheelEvent *>(e);
+            const int px = g_wheelPixels;
+            // Mouse wheels only (touchpads scroll by pixels), not Ctrl+wheel
+            // (zoom), and only over pages.
+            if (m_rescaling || px <= 0 || !w->pixelDelta().isNull() || (w->modifiers() & Qt::ControlModifier)) break;
+            const double f = double(px) / systemWheelPixels();
+            if (qFuzzyCompare(f, 1.0) || !overWebView(win, w->scenePosition())) break;
+            const QPoint a = w->angleDelta();
+            QWheelEvent scaled(w->position(), w->globalPosition(), w->pixelDelta(), QPoint(qRound(a.x() * f), qRound(a.y() * f)),
+                               w->buttons(), w->modifiers(), w->phase(), w->inverted(), w->source(), w->pointingDevice());
+            m_rescaling = true;
+            QCoreApplication::sendEvent(win, &scaled);
+            m_rescaling = false;
+            return true;
+        }
         case QEvent::MouseMove: {
             auto *m = static_cast<QMouseEvent *>(e);
             if (m->buttons() == Qt::NoButton && overlayScrollbars())
@@ -105,6 +130,20 @@ protected:
         return false;
     }
 private:
+    bool m_rescaling = false;
+    // Is a page (WebEngineView) the topmost item under this point?
+    static bool overWebView(QQuickWindow *win, QPointF scenePos)
+    {
+        QQuickItem *it = win->contentItem()->parentItem() ? win->contentItem()->parentItem() : win->contentItem();
+        while (it) {
+            if (it->inherits("QQuickWebEngineView")) return true;
+            const QPointF p = it->mapFromScene(scenePos);
+            QQuickItem *c = it->childAt(p.x(), p.y());
+            if (!c) return false;
+            it = c;
+        }
+        return false;
+    }
     // Overlay page scrollbars (main.rs: Chromium's FluentOverlayScrollbar)
     // hide while idle, and Chromium doesn't bring them back when the pointer
     // comes near (it only shows them for scrolling input). So: when the
