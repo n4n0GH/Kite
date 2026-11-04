@@ -139,6 +139,8 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
                     None => (404, "text/html".into(), b"<h1>Not found</h1><p>The start page copy has no such file.</p>".to_vec()),
                 }
             }
+            // A known phishing or malware site (dangerous-site protection).
+            "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
             // HTTPS-only: the site has no working https version.
             "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),
@@ -294,6 +296,14 @@ pub unsafe extern "C" fn kite_intercept(
         // Never interfere with add-on installs from AMO.
         if kite_core::webext::amo::is_amo_download(url) {
             return String::new();
+        }
+        // Page loads: known dangerous sites get a warning page instead.
+        if rtype == "mainFrame" {
+            if let Some(threat) = a.safe_browsing.check(url) {
+                log::info!("safebrowsing: {} listed as {}", url, threat.as_str());
+                let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+                return format!("redirect:kite:dangerous?threat={}&url={}", threat.as_str(), enc(url));
+            }
         }
         // Page loads: without tracking parameters, over https (privacy.*).
         if rtype == "mainFrame" {
@@ -505,6 +515,40 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
 <p>HTTPS-only mode is on, but <span class="host">{host}</span> could not be loaded over a secure connection.</p>
 <p>The site may not support HTTPS. If you continue, the page is loaded without encryption: others on your network could see or change what you send and receive.</p>
 <div class="buttons"><a class="button primary" href="javascript:history.back()">Go back</a><a class="button" href="{allow}">Continue to the HTTP site</a></div>
+</body></html>"#,
+        allow = html_escape(&allow)
+    )
+}
+
+/// The warning shown instead of a known dangerous site.
+fn dangerous_page(target: &str, threat: &str) -> String {
+    let host = html_escape(&kite_core::util::host_of(target));
+    let (title, text) = match threat {
+        "phishing" => ("Deceptive site ahead", "This site is listed as a phishing site: it may pretend to be another site to steal passwords, payment details or other personal information."),
+        "unwanted" => ("Site with unwanted software ahead", "This site is listed for offering software that changes your system or browser in ways you may not want."),
+        _ => ("Dangerous site ahead", "This site is listed for spreading malware: it may try to install programs that steal information or damage your computer."),
+    };
+    let source = match app().safe_browsing.mode() {
+        kite_core::safebrowsing::Mode::Google => "Google Safe Browsing",
+        _ => "the malware-filter project's open lists",
+    };
+    let allow = format!("kite:dangerous-allow?url={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>());
+    format!(
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title>
+<meta name="color-scheme" content="light dark">
+<style>
+body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
+h1 {{ font-size: 1.5em; font-weight: 600; color: #da4453; }}
+.host {{ font-weight: 600; }}
+.small {{ opacity: .7; font-size: .9em; }}
+.buttons {{ margin-top: 2em; display: flex; gap: .75em; flex-wrap: wrap; }}
+a.button {{ padding: .5em 1.1em; border-radius: 4px; text-decoration: none; border: 1px solid #888; color: inherit; }}
+a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
+</style></head><body>
+<h1>{title}</h1>
+<p><span class="host">{host}</span>: {text}</p>
+<p class="small">Listed by {source}. Lists can be wrong; only continue if you trust this site.</p>
+<div class="buttons"><a class="button primary" href="javascript:history.back()">Go back</a><a class="button" href="{allow}">Continue anyway</a></div>
 </body></html>"#,
         allow = html_escape(&allow)
     )

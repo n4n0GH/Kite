@@ -17,6 +17,7 @@ pub mod passwords;
 pub mod privacy;
 pub mod paths;
 pub mod screensaver;
+pub mod safebrowsing;
 pub mod search;
 pub mod session;
 pub mod settings;

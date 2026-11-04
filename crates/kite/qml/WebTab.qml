@@ -311,13 +311,17 @@ Item {
                 // "Continue to the HTTP site" on the HTTPS-only page: allowed
                 // for this session, then loaded (Chromium won't redirect from
                 // a kite: page to plain http).
+                // (Also "Continue anyway" on the dangerous-site warning.)
                 onNavigationRequested: request => {
                     const u = request.url.toString()
-                    if (!u.startsWith("kite:https-allow?")) return
+                    const dangerous = u.startsWith("kite:dangerous-allow?")
+                    if (!u.startsWith("kite:https-allow?") && !dangerous) return
                     request.reject()
                     const target = decodeURIComponent((u.match(/[?&]url=([^&]*)/) || [])[1] || "")
-                    if (!target.startsWith("http:")) return
-                    Browser.allowHttp(Browser.hostOf(target))
+                    if (!/^https?:/.test(target)) return
+                    if (dangerous) Browser.safeBrowsingAllow(Browser.hostOf(target))
+                    else if (target.startsWith("http:")) Browser.allowHttp(Browser.hostOf(target))
+                    else return
                     // Not from inside this handler (that re-enters Chromium).
                     Qt.callLater(() => { web.url = target })
                 }

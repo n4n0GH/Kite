@@ -4,6 +4,38 @@ A KDE web browser written in Rust, modelled on [Falkon](https://invent.kde.org/n
 with **native support for Firefox WebExtensions** installed straight from
 [addons.mozilla.org](https://addons.mozilla.org).
 
+How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPARISON.md).
+
+## Features
+
+* **Tabs:** the tab bar above or below the address bar, below the page, or as a vertical
+  list on either side (hidden with a single tab if wanted); pinned tabs, scroll arrows and
+  wheel scrolling, drag to reorder, links/images/text dropped on the bar open in new tabs.
+* **Tab groups:** named and coloured, collapsible; shown as a group tab on horizontal bars
+  and as a file tree in vertical lists; dragged as a whole. Ctrl/Shift+click selects
+  several tabs for the tab menu.
+* **Split view:** two pages side by side, resizable, each with its own tabs (the tab bar
+  splits with them); "Open Link in New Split Tab".
+* **Toolbar and menus:** customizable toolbar, optional classic menu bar (Alt shows it),
+  bookmarks toolbar, an extensions panel with pin/unpin.
+* **Home and new tab page:** an address or a local HTML file, used in place or kept as a copy
+  in the profile (`kite:startpage/…`); saving the file reloads it.
+* **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules
+  and fingerprint protection, from Settings or the address bar.
+* **Privacy:** third-party cookies blocked by default, Global Privacy Control, tracking
+  parameters removed from addresses, link pings dropped, a common user agent, WebRTC limited
+  to public addresses, HTTPS-only mode, DNS over HTTPS, a proxy (SOCKS5/HTTP), container
+  tabs, per-site cookie rules and fingerprint protection; each can be switched separately.
+* **Dangerous-site warnings (opt-in, off by default):** pages and downloads checked against
+  Google Safe Browsing (with your own API key; only hash prefixes leave the computer) or the
+  open malware-filter phishing/URLhaus lists (checked entirely locally).
+* **Content blocking:** built in (Brave's engine with EasyList/EasyPrivacy), paused while an
+  extension such as uBlock Origin does the blocking.
+* **Passwords:** see below.
+* **Desktop:** Kirigami/Breeze UI following the KDE colour scheme and icon theme, KDE
+  notifications, Chromium's overlay scrollbars shown when the pointer nears the edge, Screen
+  Wake Lock through the desktop's screensaver inhibition.
+
 ## Building
 
 Requirements: Rust (rustup), Qt ≥ 6.9 with QtWebEngine (Core + Quick runtime), Kirigami (KF6),
@@ -42,17 +74,22 @@ container) for wider compatibility.
 ```
 crates/kite-core   pure Rust, unit-tested, no Qt
   history, bookmarks (Falkon bookmarks.json format), browsedata.db (Falkon schema),
-  sessions, search engines + location-bar logic, site settings, downloads,
-  adblock (Brave's engine, EasyList/EasyPrivacy, cached compiled engine)
+  sessions, search engines + location-bar logic, site settings, downloads, settings,
+  adblock (Brave's engine, EasyList/EasyPrivacy, cached compiled engine),
+  privacy (tracking-parameter stripping, HTTPS-only upgrades), startpage (custom start pages),
+  safebrowsing (Google Update API v4 + open lists)
   webext/  amo (AMO API client, sha256-verified downloads), xpi, registry,
            manifest (MV2+MV3), i18n, match patterns, storage, dnr,
            runtime (the WebExtension API backend), scripts + js/ (browser.* API)
 crates/kite        the application
   src/  cxx-qt QML singletons `Browser` and `Extensions`, C ABI for the glue
   cpp/  thin C++: QtWebEngine init, moz-extension:/kite: scheme handlers,
-        request interceptor, cookie store hooks
-  qml/  UI: windows, tabs, location bar, menus, library, downloads,
-        preferences, add-ons manager (Kirigami / Breeze)
+        request interceptor, cookie store hooks and filter, DNS over HTTPS,
+        input filter (menu bar on Alt, drags over the window, scrollbar reveal)
+  src/js/  page scripts (Screen Wake Lock shim, scrollbar styling, fingerprint protection)
+  icons/   Kite's own icons (a fallback icon theme in the resources)
+  qml/  UI: windows, tabs and tab groups, split view, location bar, menus, library,
+        downloads, preferences, add-ons manager (Kirigami / Breeze)
 ```
 
 ### How WebExtensions work
@@ -73,18 +110,22 @@ platform itself, with Firefox semantics:
 * `browser.*` is promise-based; `chrome.*` additionally supports callbacks and `lastError`.
 * Cross-origin `fetch`/XHR from extension pages to permitted hosts bypass CORS
   (performed natively), like Firefox.
-* `declarativeNetRequest` rules are evaluated in the request interceptor.
+* `declarativeNetRequest` rules are evaluated in the request interceptor; blocking
+  `webRequest.onBeforeRequest` listeners are asked too and can cancel or redirect.
+* Content scripts in iframes reach the runtime through the extension's own origin
+  (the bridge only lives in the top frame).
 
 Supported namespaces: runtime, extension, i18n, storage (local/sync/session/managed),
 tabs, windows, browserAction/action/pageAction, sidebarAction, menus/contextMenus,
 scripting, contentScripts, alarms, permissions, management, commands, cookies,
-webNavigation, webRequest (observing), declarativeNetRequest, history, bookmarks,
+webNavigation, webRequest (incl. blocking onBeforeRequest), declarativeNetRequest, history, bookmarks,
 downloads, notifications, topSites, sessions, search, idle, theme, omnibox,
 browsingData, identity, dom, plus read-only privacy/proxy/browserSettings stubs.
 
 Verified with unmodified AMO add-ons: **Dark Reader** (background, storage, tabs,
-content scripts, popup UI), **uBlock Origin Lite** (DNR blocking incl. surrogate
-redirects), **uBlock Origin** (loads, downloads and compiles its filter lists).
+content scripts, popup UI), **uBlock Origin** (blocking webRequest, scriptlets in the
+page's main world, popup), **uBlock Origin Lite** (DNR blocking incl. surrogate
+redirects), **Vimium** (content scripts in every frame).
 
 ## Password manager
 
@@ -104,14 +145,18 @@ location bar. HTTP authentication can be remembered too.
 
 ## Known limitations
 
-* Blocking `webRequest` listeners are called but cannot cancel/modify requests (Qt's
-  interceptor is synchronous). Classic uBlock Origin therefore doesn't block;
-  use uBO Lite or Kite's built-in content blocker.
-* Content scripts in sub-frames run, but only synchronous APIs work there.
-* `webRequest.filterResponseData`, native messaging, `runtime.getBackgroundPage`,
-  containers, `find`, `dns` and themes are not implemented.
+* Blocking `webRequest` listeners are only asked about `onBeforeRequest`, and must answer
+  within 250 ms (Qt's request interceptor is synchronous); header changes from blocking
+  `onBeforeSendHeaders`/`onHeadersReceived` listeners aren't applied.
+* `webRequest.filterResponseData`, native messaging, `runtime.getBackgroundPage`, the
+  containers (`contextualIdentities`) API, `find`, `dns`, `tabGroups` and themes are not
+  implemented. Tabs report their container (`cookieStoreId`), but extensions can't list or
+  manage containers, and the `cookies` API covers the main container only.
 * Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
-* Password manager: logins inside iframes are not detected.
-* Falkon features not yet ported: named session manager,
-  speed-dial editing, cookie/certificate managers, proxy settings, mouse gestures,
-  vertical/tree tabs, KWallet/KIO integration, user stylesheets.
+* Password manager: logins inside iframes are not detected; no password generator.
+* Not available: sync, translation, reader view, picture-in-picture, passkeys (WebAuthn),
+  address/card autofill, browser themes, a profile picker (profiles are chosen with
+  `--profile`).
+* Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
+* Falkon features not yet ported: named session manager, speed-dial editing,
+  cookie/certificate managers, mouse gestures, tree-style (nested) tabs, KIO integration.

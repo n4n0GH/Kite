@@ -622,6 +622,13 @@ QtObject {
             Extensions.installFromUrl(url)
             return
         }
+        // Dangerous-site protection: known malware isn't downloaded.
+        const threat = Browser.safeBrowsingCheck(url)
+        if (threat) {
+            download.cancel()
+            if (activeWindow) activeWindow.toast("Download blocked: " + Browser.hostOf(url) + " is listed for " + (threat === "phishing" ? "phishing" : threat === "unwanted" ? "unwanted software" : "malware"), "dialog-warning")
+            return
+        }
         const dir = setting("downloads.directory")
         const name = pendingDownloadNames[url] || download.suggestedFileName || download.downloadFileName
         delete pendingDownloadNames[url]

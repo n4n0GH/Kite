@@ -171,6 +171,10 @@ pub fn is_amo_download(s: &str) -> bool {
 
 // --- tiny SHA-256 (avoids a crypto dependency just for checksums) ---------
 pub fn sha256_hex(data: &[u8]) -> String {
+    sha256(data).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn sha256(data: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
         0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
@@ -213,7 +217,11 @@ pub fn sha256_hex(data: &[u8]) -> String {
             h[i] = h[i].wrapping_add(a[i]);
         }
     }
-    h.iter().map(|x| format!("{x:08x}")).collect()
+    let mut out = [0u8; 32];
+    for (i, x) in h.iter().enumerate() {
+        out[4 * i..4 * i + 4].copy_from_slice(&x.to_be_bytes());
+    }
+    out
 }
 
 #[cfg(test)]

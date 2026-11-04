@@ -305,6 +305,55 @@ Kirigami.ApplicationWindow {
             QQC2.TextField { Kirigami.FormData.label: "Languages:"; text: w.get("web.spellcheckLanguages").join(", "); onEditingFinished: w.set("web.spellcheckLanguages", text.split(",").map(s => s.trim()).filter(s => s)) }
             QQC2.TextField { Kirigami.FormData.label: "User agent:"; Layout.fillWidth: true; placeholderText: "Default"; text: w.get("web.userAgent"); onEditingFinished: w.set("web.userAgent", text) }
             QQC2.Label { text: "User agent and spelling changes apply after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+
+            // ---- dangerous sites ("browsing.safeBrowsing", safebrowsing.rs) ----
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Dangerous Sites" }
+            QQC2.ComboBox {
+                id: sbMode
+                Kirigami.FormData.label: "Protection:"
+                model: [{k: "off", t: "Disabled"}, {k: "google", t: "Use Google Safe Browsing"}, {k: "open", t: "Use open lists"}]
+                textRole: "t"
+                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("browsing.safeBrowsing")))
+                onActivated: i => { w.set("browsing.safeBrowsing", model[i].k); sbStatus.refresh() }
+            }
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                wrapMode: Text.Wrap
+                opacity: 0.8
+                font: Kirigami.Theme.smallFont
+                text: [
+                    "Known phishing and malware sites load like any other. No extra network traffic.",
+                    "Pages and downloads are checked against Google's lists of dangerous sites, with a warning before they open.\n\nTraffic: Kite downloads Google's lists of address fingerprints (shortened hashes) about every 30 minutes, a few megabytes at first, then small updates, and compares addresses on your computer. Only when an address matches a fingerprint, which is rare, does Kite ask Google about that fingerprint to confirm.\n\nPrivacy: Google never receives the addresses you visit, but sees your IP address with each update and confirmation, and a confirmation tells it you may be visiting one of the few sites sharing that fingerprint. The API key ties these requests to your Google account.",
+                    "Pages and downloads are checked against two public lists of phishing and malware sites (malware-filter on GitLab, compiled from PhishTank, OpenPhish, URLhaus and others), with a warning before they open.\n\nTraffic: Kite downloads the lists once a day, about 15 MB, from GitLab's servers.\n\nPrivacy: all checks happen on your computer; nothing about the sites you visit is sent. GitLab sees your IP address once a day. The lists are smaller and slower to catch new sites than Google's."
+                ][sbMode.currentIndex]
+            }
+            RowLayout {
+                visible: sbMode.currentIndex === 1
+                Kirigami.FormData.label: "API key:"
+                QQC2.TextField {
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 18
+                    placeholderText: "Google Cloud API key"
+                    echoMode: TextInput.PasswordEchoOnEdit
+                    text: w.get("browsing.safeBrowsingKey")
+                    onEditingFinished: { w.set("browsing.safeBrowsingKey", text.trim()); sbStatus.refresh() }
+                }
+                QQC2.Button {
+                    text: "Get a Key…"
+                    icon.name: "internet-services"
+                    onClicked: Qt.openUrlExternally("https://developers.google.com/safe-browsing/v4/get-started")
+                    QQC2.ToolTip.text: "Create a free key for the Safe Browsing API in the Google Cloud console (free for non-commercial use)"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                }
+            }
+            QQC2.Label {
+                id: sbStatus
+                visible: sbMode.currentIndex > 0 && text !== ""
+                Kirigami.FormData.label: "Lists:"
+                opacity: 0.8
+                function refresh() { text = Browser.safeBrowsingStatus() }
+                Component.onCompleted: refresh()
+                // (Updates run in the background.)
+                Timer { interval: 2000; repeat: true; running: sbStatus.visible || sbMode.currentIndex > 0; onTriggered: sbStatus.refresh() }
+            }
         }
     }
 

@@ -56,6 +56,8 @@ pub fn defaults() -> Map<String, Value> {
         "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
         "web.printBackgrounds": true,
         "web.userAgent": "",
+        "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
+        "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
         "web.doNotTrack": false,
         "web.spellcheck": true,
         "web.spellcheckLanguages": ["en-US"],

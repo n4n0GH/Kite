@@ -240,6 +240,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "fileModified"]
         fn file_modified(self: &Browser, path: &QString) -> f64;
+        /// Dangerous-site protection: the threat `url` is known for
+        /// ("phishing", "malware", "unwanted"), or "".
+        #[qinvokable]
+        #[cxx_name = "safeBrowsingCheck"]
+        fn safe_browsing_check(self: &Browser, url: &QString) -> QString;
+        /// Visit `host` anyway this session.
+        #[qinvokable]
+        #[cxx_name = "safeBrowsingAllow"]
+        fn safe_browsing_allow(self: &Browser, host: &QString);
+        /// The lists' state, for Settings.
+        #[qinvokable]
+        #[cxx_name = "safeBrowsingStatus"]
+        fn safe_browsing_status(self: &Browser) -> QString;
         /// Visit `host` over plain http this session (HTTPS-only exception).
         #[qinvokable]
         #[cxx_name = "allowHttp"]
@@ -368,6 +381,7 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         "privacy.sendReferer" => a.send_referer.store(v.as_bool().unwrap_or(true), std::sync::atomic::Ordering::Relaxed),
         "privacy.cookies" => a.cookie_policy.store(crate::state::cookie_policy(v.as_str().unwrap_or("all")), std::sync::atomic::Ordering::Relaxed),
         "privacy.dnsOverHttps" | "privacy.dnsServer" => crate::ffi::apply_dns(),
+        "browsing.safeBrowsing" | "browsing.safeBrowsingKey" => crate::state::safe_browsing_changed(),
         k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
@@ -857,6 +871,15 @@ impl qobject::Browser {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as f64)
             .unwrap_or(0.0)
+    }
+    fn safe_browsing_check(&self, url: &QString) -> QString {
+        q(app().safe_browsing.check(&url.to_string()).map(|t| t.as_str()).unwrap_or(""))
+    }
+    fn safe_browsing_allow(&self, host: &QString) {
+        app().safe_browsing.allow(&host.to_string());
+    }
+    fn safe_browsing_status(&self) -> QString {
+        q(&app().safe_browsing.status())
     }
     fn allow_http(&self, host: &QString) {
         app().privacy.allow_http(&host.to_string());

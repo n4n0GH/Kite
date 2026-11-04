@@ -22,6 +22,10 @@ pub struct App {
     pub cookie_policy: std::sync::atomic::AtomicU8,
     /// The privacy settings the network layer reads ("privacy.*").
     pub privacy: Privacy,
+    /// Dangerous-site protection ("browsing.safeBrowsing").
+    pub safe_browsing: Arc<kite_core::safebrowsing::SafeBrowsing>,
+    /// Wakes the safe browsing updater (a setting changed).
+    pub safe_browsing_wake: Arc<(Mutex<bool>, std::sync::Condvar)>,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
     pub initial_urls: Vec<String>,
@@ -69,7 +73,15 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         privacy.apply(key, &shared.settings().get(key));
     }
     privacy.load_cookie_rules(&shared);
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    let safe_browsing = Arc::new(kite_core::safebrowsing::SafeBrowsing::new(profile.path("safebrowsing")));
+    {
+        let s = shared.settings();
+        safe_browsing.configure(kite_core::safebrowsing::Mode::parse(&s.get_str("browsing.safeBrowsing")), &s.get_str("browsing.safeBrowsingKey"));
+    }
+    safe_browsing.load_cached();
+    let safe_browsing_wake = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    spawn_safe_browsing_updater(safe_browsing.clone(), safe_browsing_wake.clone());
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, safe_browsing, safe_browsing_wake, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }
@@ -205,4 +217,33 @@ impl Privacy {
     pub fn allow_http(&self, host: &str) {
         self.http_allowed.lock().unwrap().insert(host.to_owned());
     }
+}
+
+/// Keeps the safe browsing lists up to date: an update now, then when the
+/// lists are due (or when the setting changes).
+fn spawn_safe_browsing_updater(sb: Arc<kite_core::safebrowsing::SafeBrowsing>, wake: Arc<(Mutex<bool>, std::sync::Condvar)>) {
+    std::thread::Builder::new()
+        .name("safebrowsing".into())
+        .spawn(move || loop {
+            let wait = sb.update().min(std::time::Duration::from_secs(3600));
+            let (lock, cvar) = &*wake;
+            let mut woken = lock.lock().unwrap();
+            if !*woken {
+                woken = cvar.wait_timeout(woken, wait).unwrap().0;
+            }
+            *woken = false;
+        })
+        .ok();
+}
+
+/// After "browsing.safeBrowsing*" changed.
+pub fn safe_browsing_changed() {
+    let a = app();
+    {
+        let s = a.shared.settings();
+        a.safe_browsing.configure(kite_core::safebrowsing::Mode::parse(&s.get_str("browsing.safeBrowsing")), &s.get_str("browsing.safeBrowsingKey"));
+    }
+    let (lock, cvar) = &*a.safe_browsing_wake;
+    *lock.lock().unwrap() = true;
+    cvar.notify_one();
 }
