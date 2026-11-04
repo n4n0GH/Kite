@@ -71,7 +71,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Local HTML file as new tab page | ✅ | ❌ | ❌ | Chrome and Firefox need an extension. |
 | Start page copy kept in the browser, live reload on save | ✅ | ❌ | ❌ | |
 | Customisable toolbar | ✅ | ⚠️ | ✅ | Chrome: pinning a few buttons only. |
-| Customisable keyboard shortcuts | ✅ | ❌ | ⚠️ | Firefox: extension commands only. Kite: every action and extension command. |
+| Customisable keyboard shortcuts | ✅ | ❌ | ⚠️ | Firefox: extension commands only. Kite: every browser action. |
 | Classic menu bar | ✅ | ❌ | ✅ | Kite and Firefox show it briefly on Alt. |
 | Bookmarks toolbar | ✅ | ✅ | ✅ | |
 | Follows the desktop theme (KDE/Breeze) | ✅ | ⚠️ | ⚠️ | Chrome has a "GTK/Qt" theme option; Firefox follows GTK. |

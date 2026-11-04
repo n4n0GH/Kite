@@ -68,15 +68,15 @@ Kirigami.ApplicationWindow {
         }
     }
 
-    // ---- keyboard shortcuts ("shortcuts"; the actions are app.shortcutActions) ----
+    // ---- keyboard shortcuts ("shortcuts"; the actions are app.shortcutActions,
+    // Kite's own: extensions configure their shortcuts themselves) ----
     Component {
         id: shortcuts
         ColumnLayout {
             id: sc
             spacing: Kirigami.Units.smallSpacing
             readonly property var overrides: w.app.liveSettings["shortcuts"] || {}
-            property var actions: w.app.shortcutActions.concat(w.app.extensionShortcutActions())
-            Connections { target: Extensions; function onRevisionChanged() { sc.actions = w.app.shortcutActions.concat(w.app.extensionShortcutActions()) } }
+            readonly property var actions: w.app.shortcutActions
             readonly property var groups: actions.reduce((g, a) => g.includes(a.group) ? g : g.concat([a.group]), [])
             property string filter: ""
             function keys(a) { return sc.overrides[a.id] !== undefined ? sc.overrides[a.id] : a.keys }

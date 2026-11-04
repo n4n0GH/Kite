@@ -660,19 +660,20 @@ QQC2.ApplicationWindow {
     Shortcut { sequence: "Esc"; enabled: findBar.visible && !bw.contentFullScreen; onActivated: findBar.close() }
     // Escape leaves a page's fullscreen (as in other browsers).
     Shortcut { sequence: "Esc"; enabled: bw.contentFullScreen; onActivated: bw.exitContentFullScreen(false) }
-    // Extension keyboard commands
-    property var extCommands: app.extensionShortcutActions()
-    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = app.extensionShortcutActions() } }
+    // Extension keyboard commands: the keys the extension's manifest gives
+    // (extensions handle their own shortcut configuration).
+    property var extCommands: JSON.parse(Extensions.commands())
+    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = JSON.parse(Extensions.commands()) } }
     Instantiator {
         model: bw.extCommands
         delegate: Shortcut {
             required property var modelData
-            sequences: app.shortcutKeys(modelData.id, modelData.keys)
+            sequence: modelData.shortcut.replace("MacCtrl", "Ctrl").replace("Command", "Ctrl")
             onActivated: {
                 const tabId = bw.currentTab ? bw.currentTab.tabId : -1
-                if (modelData.command === "_execute_browser_action" || modelData.command === "_execute_action") bw.openExtensionPopup(modelData.ext)
-                else if (modelData.command === "_execute_sidebar_action") bw.showSidebar("ext:" + modelData.ext)
-                else Extensions.command(modelData.ext, modelData.command, tabId)
+                if (modelData.name === "_execute_browser_action" || modelData.name === "_execute_action") bw.openExtensionPopup(modelData.ext)
+                else if (modelData.name === "_execute_sidebar_action") bw.showSidebar("ext:" + modelData.ext)
+                else Extensions.command(modelData.ext, modelData.name, tabId)
             }
         }
     }

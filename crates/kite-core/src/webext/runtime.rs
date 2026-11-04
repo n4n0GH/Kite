@@ -1127,9 +1127,7 @@ impl Runtime {
             self.registry
                 .enabled()
                 .flat_map(|e| {
-                    // All commands, also those without a suggested key: the
-                    // user can give them one (Settings → Shortcuts).
-                    e.manifest.commands.iter().map(move |c| json!({"ext": e.info.id, "extName": e.manifest.name, "name": c.name, "shortcut": c.shortcut, "description": c.description}))
+                    e.manifest.commands.iter().filter(|c| !c.shortcut.is_empty()).map(move |c| json!({"ext": e.info.id, "name": c.name, "shortcut": c.shortcut, "description": c.description}))
                 })
                 .collect(),
         )

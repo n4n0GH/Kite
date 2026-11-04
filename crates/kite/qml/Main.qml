@@ -129,15 +129,6 @@ QtObject {
         {id: "addons", group: "Tools", name: "Add-ons", keys: ["Ctrl+Shift+A"]},
         {id: "settings", group: "Tools", name: "Settings", keys: ["Ctrl+Shift+,", "Ctrl+,"]},
     ]
-    // Extension commands as actions ("ext:<id>:<command>"), keys suggested by
-    // the extension.
-    function extensionShortcutActions() {
-        return JSON.parse(Extensions.commands()).map(c => ({
-            id: "ext:" + c.ext + ":" + c.name, group: "Extension: " + c.extName, ext: c.ext, command: c.name,
-            name: c.description || (c.name === "_execute_browser_action" || c.name === "_execute_action" ? "Open the toolbar button's popup" : c.name === "_execute_sidebar_action" ? "Open the sidebar" : c.name),
-            keys: c.shortcut ? [c.shortcut.replace("MacCtrl", "Ctrl").replace("Command", "Ctrl")] : []
-        }))
-    }
     // The keys of an action: the user's, or the defaults.
     function shortcutKeys(id, defaults) {
         const o = liveSettings["shortcuts"] || {}
