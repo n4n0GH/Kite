@@ -69,6 +69,12 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
 
     // Media
+    QQC2.MenuItem {
+        visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo; height: visible ? implicitHeight : 0
+        text: menu.tab && menu.tab.inPip ? "Back from Picture-in-Picture" : "Picture-in-Picture"; icon.name: "kite-pip"
+        // The video under the pointer (request position is in view pixels).
+        onTriggered: { const z = menu.tab.view.zoomFactor || 1; menu.tab.app.startPip(menu.tab, menu.req.position.x / z, menu.req.position.y / z) }
+    }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }

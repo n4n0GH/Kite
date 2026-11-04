@@ -44,7 +44,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
 | Named sessions | ❌ | ❌ | ❌ | All need an extension. |
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
-| Picture-in-picture video | ❌ | ✅ | ✅ | |
+| Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |
 | Profiles | ⚠️ | ✅ | ✅ | Kite: `--profile NAME` on the command line, no profile picker. |
 | Private windows | ✅ | ✅ | ✅ | |
 
@@ -193,7 +193,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 
 **Where Kite lags:**
 - Its engine trails Chrome, and it runs only on Linux.
-- No sync, translation, reader view, picture-in-picture, passkeys or card autofill.
+- No sync, translation, reader view, passkeys or card autofill.
 - No browser themes.
 - No profile picker; profiles are chosen on the command line.
 - Its extension API coverage is narrower than Firefox's.

@@ -86,6 +86,15 @@ Item {
         web.url = u
     }
 
+    // ---- picture-in-picture (Main.qml startPip) ----
+    // The page has a video to offer (bridge.js), and the page is in the
+    // picture-in-picture window.
+    property bool hasVideo: false
+    readonly property bool inPip: app.pipTab === wt
+    // Move the page into `item` (the picture-in-picture window), or back
+    // (null).
+    function moveViewTo(item) { web.parent = item ? item : viewHolder }
+
     // ---- unloading inactive tabs ("tabs.unloadInactive") ----
     // An unloaded tab keeps its place, title, icon and history; Chromium
     // drops the page itself and reloads it when the tab is shown again.
@@ -106,7 +115,7 @@ Item {
     onVisibleChanged: if (!visible) lastAccessed = Date.now()
     // Why the tab must stay loaded ("" when it can be unloaded).
     function keepLoadedReason() {
-        if (visible) return "shown"
+        if (visible || inPip) return "shown"
         if (pendingUrl !== "" || heldUrl !== "" || discarded) return "not loaded"
         if (web.recentlyAudible && !web.audioMuted) return "playing sound"
         if (wakeLockHeld) return "keeping the screen on"
@@ -236,7 +245,7 @@ Item {
     }
 
     Component.onCompleted: window.registerTab(wt)
-    Component.onDestruction: { setWakeLock(false); window.unregisterTab(wt) }
+    Component.onDestruction: { if (app.pipTab === wt) app.stopPip(false); setWakeLock(false); window.unregisterTab(wt) }
 
     onUrlChanged: window.setTabProperty(tabId, "url", url)
     onTitleChanged: window.setTabProperty(tabId, "title", title)
@@ -292,8 +301,18 @@ Item {
         }
 
         Item {
+            id: viewHolder
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Kirigami.PlaceholderMessage {
+                anchors.centerIn: parent
+                width: parent.width - Kirigami.Units.gridUnit * 4
+                visible: wt.inPip
+                icon.name: "kite-pip"
+                text: "Playing in picture-in-picture"
+                helpfulAction: Kirigami.Action { text: "Back to Tab"; icon.name: "kite-pip-exit"; onTriggered: wt.app.stopPip(true) }
+            }
 
             WebEngineView {
                 id: web
@@ -329,6 +348,7 @@ Item {
 
                 onUrlChanged: {
                     wt.formDirty = false
+                    wt.hasVideo = false
                     const u = url.toString()
                     const host = Browser.hostOf(u)
                     if (host !== wt.lastHost) {
@@ -499,7 +519,7 @@ Item {
                 width: parent.width - Kirigami.Units.gridUnit * 4
                 visible: wt.crashed
                 icon.name: "tab-close-other"
-                text: "This wt has crashed"
+                text: "This tab has crashed"
                 explanation: "The page's process stopped unexpectedly."
                 helpfulAction: Kirigami.Action { text: "Reload"; icon.name: "view-refresh"; onTriggered: { wt.crashed = false; web.reload() } }
             }
@@ -574,6 +594,8 @@ Item {
         onWakeLockRequested: id => wt.requestWakeLock(id)
         onWakeLockReleased: wt.setWakeLock(false)
         onFormEdited: dirty => wt.formDirty = dirty
+        onVideoFoundInPage: wt.hasVideo = true
+        onPipEndedInPage: if (wt.inPip) wt.app.stopPip(true)
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true
             wt.refreshLogins()

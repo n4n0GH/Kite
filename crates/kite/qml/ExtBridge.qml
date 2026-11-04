@@ -30,6 +30,12 @@ QtObject {
     signal autofillBlurred()
     signal autofillKeyPressed(string key)
     signal autofillSubmitted(string json)
+    // Picture-in-picture (bridge.js): the page has a video to offer, and the
+    // video shown in picture-in-picture went away.
+    signal videoFoundInPage()
+    signal pipEndedInPage()
+    function videoFound() { if (viewKind === "tab") videoFoundInPage() }
+    function pipEnded() { if (viewKind === "tab") pipEndedInPage() }
     // Text typed into a form and not sent yet (keeps the tab from unloading).
     signal formEdited(bool dirty)
     function formDirty(dirty) { if (viewKind === "tab") formEdited(dirty) }

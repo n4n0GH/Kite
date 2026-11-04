@@ -20,6 +20,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   bookmarks toolbar, an extensions panel with pin/unpin.
 * **Keyboard shortcuts:** every Kite action can get its own keys (Settings → Shortcuts),
   with conflict warnings and reset to the defaults. Extensions keep the keys they declare.
+* **Picture-in-picture:** a page's video in a small window above others (address bar
+  button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
+  moves into the window and shows only the video.
 * **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
   Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
   unsent form input or keeping the screen on stay loaded. Also from the tab menu and
@@ -176,7 +179,11 @@ saved or update an existing entry; never from private windows.
   manage containers, and the `cookies` API covers the main container only.
 * Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
 * Password manager and form autofill: fields inside iframes are not detected; no card autofill.
-* Not available: sync, translation, reader view, picture-in-picture, passkeys (WebAuthn),
+* Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
+  own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the
+  window can only stay on top with a KWin window rule ("Keep above" for the title
+  "Picture-in-Picture").
+* Not available: sync, translation, reader view, passkeys (WebAuthn),
   card autofill, browser themes, a profile picker (profiles are chosen with
   `--profile`).
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.

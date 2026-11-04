@@ -78,6 +78,50 @@ QtObject {
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
 
+    // ---- picture-in-picture (PipWindow.qml, bridge.js __kitePip) ----
+    // One at a time: the tab whose page is shown in the picture-in-picture
+    // window. Its WebEngineView moves into the window and back.
+    property var pipTab: null
+    property PipWindow pipWindow: null
+    property Component _pipComp: Component { PipWindow {} }
+    // Show the video at (x, y) of the tab's page (CSS px; -1: its main video).
+    function startPip(tab, x, y) {
+        if (!tab || tab.unloaded) return
+        if (pipTab === tab) { stopPip(true); return }
+        if (pipTab) stopPip(false)
+        tab.view.runJavaScript("globalThis.__kitePip ? __kitePip.enter(" + (x === undefined ? -1 : x) + ", " + (y === undefined ? -1 : y) + ") : {ok: false}", 1, r => {
+            if (!r || !r.ok) { tab.window.toast("No video to show in picture-in-picture on this page", "dialog-information"); return }
+            if (!pipWindow) {
+                pipWindow = _pipComp.createObject(null)
+                pipWindow.backToTab.connect(() => app.stopPip(true))
+                pipWindow.closeRequested.connect(() => app.stopPip(false, true))
+            }
+            // A quarter of the screen's width, the video's shape.
+            const sw = tab.window.screen ? tab.window.screen.desktopAvailableWidth : 1920
+            const sh = tab.window.screen ? tab.window.screen.desktopAvailableHeight : 1080
+            const w = Math.round(Math.max(320, sw / 4))
+            pipWindow.width = w
+            pipWindow.height = Math.round(w * r.height / r.width)
+            pipWindow.x = sw - pipWindow.width - 24
+            pipWindow.y = sh - pipWindow.height - 24
+            pipWindow.pageTitle = tab.title
+            pipTab = tab
+            tab.moveViewTo(pipWindow.area)
+            pipWindow.show()
+            pipWindow.raise()
+        })
+    }
+    // `back`: show the tab again (the video keeps playing); `pause`: closed.
+    function stopPip(back, pause) {
+        const tab = pipTab
+        if (!tab) return
+        pipTab = null
+        tab.moveViewTo(null)
+        tab.view.runJavaScript("globalThis.__kitePip && __kitePip.exit(" + (pause ? "true" : "false") + ")", 1)
+        if (pipWindow) pipWindow.hide()
+        if (back) tab.activate()
+    }
+
     // ---- keyboard shortcuts (Settings → Shortcuts) ----
     // Every action with its default keys (portable key sequences); the user's
     // changes are in "shortcuts" (id → keys). BrowserWindow binds them.
@@ -119,6 +163,7 @@ QtObject {
         {id: "savePage", group: "Page", name: "Save page", keys: ["Ctrl+S"]},
         {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
         {id: "devTools", group: "Page", name: "Developer tools", keys: ["F12", "Ctrl+Shift+I"]},
+        {id: "pictureInPicture", group: "Page", name: "Picture-in-picture", keys: ["Ctrl+Shift+]"]},
         {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},
         {id: "bookmarkAllTabs", group: "Bookmarks and history", name: "Bookmark all tabs", keys: ["Ctrl+Shift+D"]},
         {id: "bookmarksSidebar", group: "Bookmarks and history", name: "Bookmarks sidebar", keys: ["Ctrl+B"]},

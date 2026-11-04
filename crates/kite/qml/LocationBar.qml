@@ -152,6 +152,18 @@ QQC2.TextField {
                 QQC2.ToolTip.text: modelData.title; QQC2.ToolTip.visible: hovered
             }
         }
+        // Picture-in-picture, for pages with a video (Main.qml startPip).
+        QQC2.ToolButton {
+            Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
+            padding: 2
+            visible: field.tab && (field.tab.hasVideo || field.tab.inPip) && !field.editing
+            icon.name: field.tab && field.tab.inPip ? "kite-pip-exit" : "kite-pip"
+            icon.color: field.tab && field.tab.inPip ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+            onClicked: field.win.app.startPip(field.tab)
+            QQC2.ToolTip.text: (field.tab && field.tab.inPip ? "Back from picture-in-picture" : "Picture-in-picture")
+                + " (" + field.win.app.shortcutKeys("pictureInPicture").map(k => Browser.keySequenceDisplay(k)).join(", ") + ")"
+            QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
         QQC2.ToolButton {
             id: keyButton
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
