@@ -916,11 +916,45 @@ QQC2.ApplicationWindow {
         property string gid
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
-        title: "Rename Group"
+        title: "Name and Colour"
         standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
-        onOpened: { groupName.text = (bw.tabGroups[gid] || {}).name || ""; groupName.selectAll(); groupName.forceActiveFocus() }
+        // The colour applies at once (the tabs show it); Cancel restores it.
+        property string startColor: ""
+        readonly property string color: (bw.tabGroups[gid] || {}).color || ""
+        onOpened: { startColor = color; groupName.text = (bw.tabGroups[gid] || {}).name || ""; groupName.selectAll(); groupName.forceActiveFocus() }
         onAccepted: if (groupName.text.trim() !== "") bw.updateGroup(gid, {name: groupName.text.trim()})
-        QQC2.TextField { id: groupName; onAccepted: groupRename.accept() }
+        onRejected: bw.updateGroup(gid, {color: startColor})
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            QQC2.TextField { id: groupName; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 14; onAccepted: groupRename.accept() }
+            RowLayout {
+                spacing: Kirigami.Units.smallSpacing
+                Repeater {
+                    model: bw.groupColors
+                    delegate: QQC2.AbstractButton {
+                        id: swatch
+                        required property string modelData
+                        required property int index
+                        readonly property bool chosen: groupRename.color === modelData
+                        implicitWidth: Kirigami.Units.iconSizes.medium
+                        implicitHeight: implicitWidth
+                        text: ["Blue", "Red", "Yellow", "Green", "Pink", "Purple", "Cyan", "Orange", "Grey"][index]
+                        onClicked: bw.updateGroup(groupRename.gid, {color: modelData})
+                        contentItem: Item {}
+                        background: Rectangle {
+                            radius: width / 2
+                            color: swatch.modelData
+                            // The chosen colour has a ring around it.
+                            border.width: swatch.chosen ? 3 : swatch.hovered ? 2 : 0
+                            border.color: swatch.chosen ? Kirigami.Theme.textColor : Qt.alpha(Kirigami.Theme.textColor, 0.5)
+                        }
+                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.checked: chosen
+                    }
+                }
+            }
+        }
     }
     CustomizeToolbarDialog { id: customizeDialog; win: bw; catalog: bw.toolbarCatalog }
 
