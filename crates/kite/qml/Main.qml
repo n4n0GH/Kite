@@ -206,6 +206,9 @@ QtObject {
             const wanted = JSON.parse(Extensions.userScripts(p === profile))
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
+            // Overlay scrollbars also for pages styling their own.
+            const scrollbars = Browser.scrollbarScript()
+            if (scrollbars) wanted.push({name: "kite:scrollbars", sourceCode: scrollbars, worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // The DNT header is added by the request interceptor; pages also
             // see the preference in navigator.doNotTrack.
             if (setting("web.doNotTrack"))

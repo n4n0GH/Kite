@@ -229,6 +229,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "wakeLockScript"]
         fn wake_lock_script(self: &Browser) -> QString;
+        /// Script giving pages' custom scrollbars the overlay style
+        /// (js/scrollbars.js), or "" without overlay scrollbars.
+        #[qinvokable]
+        #[cxx_name = "scrollbarScript"]
+        fn scrollbar_script(self: &Browser) -> QString;
         /// The cached favicon of `page_url`'s site as a data: URL, or "".
         #[qinvokable]
         #[cxx_name = "cachedFavicon"]
@@ -803,6 +808,13 @@ impl qobject::Browser {
 
     fn wake_lock_script(&self) -> QString {
         q(include_str!("js/wakelock.js"))
+    }
+
+    fn scrollbar_script(&self) -> QString {
+        // Whether Chromium was started with overlay scrollbars (main.rs, or
+        // the user's own flags): the setting may have changed since.
+        let on = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS").is_ok_and(|f| f.contains("FluentOverlayScrollbar"));
+        q(if on { include_str!("js/scrollbars.js") } else { "" })
     }
 
     fn cached_favicon(&self, page_url: &QString) -> QString {

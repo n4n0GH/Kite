@@ -29,6 +29,8 @@ pub fn defaults() -> Map<String, Value> {
         "toolbar.items": ["back", "forward", "reload", "home", "urlbar", "extensions", "downloads", "menu"],
         "appearance.defaultZoom": 100,
         "appearance.forceDarkMode": false,
+        // Thin page scrollbars that widen on hover and hide while idle (needs a restart).
+        "appearance.overlayScrollbars": true,
         // Tabs
         "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical"
         "tabs.hideWhenSingle": false,

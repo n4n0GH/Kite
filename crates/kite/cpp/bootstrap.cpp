@@ -13,6 +13,10 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QMimeData>
+#include <QElapsedTimer>
+#include <QTimer>
+#include <QPointer>
+#include <QWheelEvent>
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -66,6 +70,12 @@ protected:
         case QEvent::Wheel:
             m_altAlone = false;
             break;
+        case QEvent::MouseMove: {
+            auto *m = static_cast<QMouseEvent *>(e);
+            if (m->buttons() == Qt::NoButton && overlayScrollbars())
+                revealScrollbar(win, m->scenePosition());
+            break;
+        }
         case QEvent::WindowDeactivate:
             closeMenus(win);
             break;
@@ -93,6 +103,58 @@ protected:
         return false;
     }
 private:
+    // Overlay page scrollbars (main.rs: Chromium's FluentOverlayScrollbar)
+    // hide while idle, and Chromium doesn't bring them back when the pointer
+    // comes near (it only shows them for scrolling input). So: when the
+    // pointer moves near a page's right edge, the page gets a tiny wheel
+    // nudge, 1/120 of a notch down and back (half a pixel each way, the
+    // page ends where it was), which shows the scrollbar there.
+    static bool overlayScrollbars()
+    {
+        static const bool on = qEnvironmentVariable("QTWEBENGINE_CHROMIUM_FLAGS").contains(QLatin1String("FluentOverlayScrollbar"));
+        return on;
+    }
+    static QQuickItem *webViewAt(QQuickWindow *win, const QPointF &scenePos)
+    {
+        QQuickItem *item = win->contentItem();
+        while (item) {
+            if (item->inherits("QQuickWebEngineView")) return item;
+            QQuickItem *child = item->childAt(item->mapFromScene(scenePos).x(), item->mapFromScene(scenePos).y());
+            if (!child) return nullptr;
+            item = child;
+        }
+        return nullptr;
+    }
+    void revealScrollbar(QQuickWindow *win, const QPointF &scenePos)
+    {
+        constexpr qreal zone = 32;      // px from the page's right edge
+        constexpr qint64 every = 700;   // ms between nudges (the bar shows ~1 s)
+        QQuickItem *view = webViewAt(win, scenePos);
+        const bool near = view && view->mapFromScene(scenePos).x() >= view->width() - zone;
+        if (!near) { m_scrollbarNear = false; return; }
+        if (m_scrollbarNear && m_lastNudge.isValid() && m_lastNudge.elapsed() < every) return;
+        m_scrollbarNear = true;
+        m_lastNudge.start();
+        QPointer<QQuickWindow> w(win);
+        // A complete scroll gesture (begin … end), so Chromium doesn't wait
+        // for the end of a scroll that never comes (keeping the bar shown).
+        auto send = [w, scenePos](int angle, Qt::ScrollPhase phase) {
+            if (!w) return;
+            QWheelEvent ev(scenePos, w->mapToGlobal(scenePos), QPoint(), QPoint(0, angle), Qt::NoButton, Qt::NoModifier, phase, false);
+            QCoreApplication::sendEvent(w, &ev);
+        };
+        // After the move event is through.
+        QTimer::singleShot(0, win, [send] {
+            send(0, Qt::ScrollBegin);
+            send(-1, Qt::ScrollUpdate);
+        });
+        QTimer::singleShot(30, win, [send] {
+            send(1, Qt::ScrollUpdate);
+            send(0, Qt::ScrollEnd);
+        });
+    }
+    bool m_scrollbarNear = false;
+    QElapsedTimer m_lastNudge;
     // Menus are shown in the window's popup overlay; their items' QObject
     // parent is the QQuickMenu. (Dialogs stay open.)
     static void closeMenus(QQuickWindow *win)
@@ -165,10 +227,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     if (qEnvironmentVariableIsEmpty("QT_QUICK_CONTROLS_STYLE"))
         qputenv("QT_QUICK_CONTROLS_STYLE", "org.kde.desktop");
-    // Chromium flags: allow our moz-extension pages to use the QWebChannel
-    // transport and keep GPU rasterization on.
-    if (qEnvironmentVariableIsEmpty("QTWEBENGINE_CHROMIUM_FLAGS"))
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization");
+    // Chromium flags are set by main.rs (they depend on settings).
     QtWebEngineQuick::initialize();
 
     static int s_argc = argc;

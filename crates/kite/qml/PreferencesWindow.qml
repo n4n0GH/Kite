@@ -107,7 +107,8 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { text: "Show link targets when hovering links"; checked: w.get("appearance.showStatusBar"); onToggled: w.set("appearance.showStatusBar", checked) }
             QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }
             QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Force dark mode on websites"; checked: w.get("appearance.forceDarkMode"); onToggled: w.set("appearance.forceDarkMode", checked) }
-            QQC2.Label { text: "Some changes apply to new tabs and windows."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+            QQC2.CheckBox { text: "Overlay scrollbars (thin, widen on hover, hide when idle)"; checked: w.get("appearance.overlayScrollbars"); onToggled: w.set("appearance.overlayScrollbars", checked) }
+            QQC2.Label { text: "Some changes apply to new tabs and windows; scrollbar changes after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
         }
     }
 

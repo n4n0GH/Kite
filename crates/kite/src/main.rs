@@ -69,6 +69,17 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Chromium flags (unless given): GPU rasterization, and overlay scrollbars
+    // ("appearance.overlayScrollbars"; js/scrollbars.js extends them to pages
+    // that style their own).
+    if std::env::var_os("QTWEBENGINE_CHROMIUM_FLAGS").is_none_or(|v| v.is_empty()) {
+        let mut flags = String::from("--enable-gpu-rasterization");
+        if state::app().shared.settings().get_bool("appearance.overlayScrollbars") {
+            flags.push_str(" --enable-features=FluentOverlayScrollbar");
+        }
+        std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+    }
+
     let args: Vec<CString> = qt_args.into_iter().map(|a| CString::new(a).unwrap_or_default()).collect();
     let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr() as *mut c_char).collect();
     argv.push(std::ptr::null_mut());
