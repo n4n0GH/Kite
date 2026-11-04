@@ -436,6 +436,7 @@ Kirigami.ApplicationWindow {
                     onClicked: { w.set("general.homepage", w.app.activeWindow.currentTab.url); homeChoice.mode = ""; homeChoice.mode = "url" }
                 }
                 PageChoice { Kirigami.FormData.label: "New tab page:"; Kirigami.FormData.labelAlignment: Qt.AlignTop; target: "newtab"; modeKey: "general.newTabPageMode"; urlKey: "general.newTabPage"; placeholder: "kite:start" }
+                QQC2.CheckBox { Kirigami.FormData.label: "Start page:"; text: "Show site tiles (sites you visit often and ones you add)"; checked: w.get("speeddial.showTiles"); onToggled: w.set("speeddial.showTiles", checked) }
                 Item { Kirigami.FormData.isSection: true }
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "Default search engine:"

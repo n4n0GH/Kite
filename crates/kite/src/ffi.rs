@@ -140,7 +140,10 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
     if let Some(rest) = url.strip_prefix("kite:") {
         let page = rest.split(['?', '#']).next().unwrap_or("");
         return match page {
-            "start" | "speeddial" | "newtab" | "home" => (200, "text/html".into(), crate::startpage::render().into_bytes()),
+            "start" | "speeddial" | "newtab" | "home" => {
+                let (msg, undo) = crate::startpage::edit(url, initiator).unwrap_or_default();
+                (200, "text/html".into(), crate::startpage::render(&msg, &undo).into_bytes())
+            }
             "search" => {
                 // kite:search?q=... from the start page form
                 let q = url::Url::parse(url)

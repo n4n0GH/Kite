@@ -66,7 +66,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 
 | Feature | Kite | Chrome | Firefox | Notes |
 |---|---|---|---|---|
-| Start page with frequently visited sites | ✅ | ✅ | ✅ | |
+| Start page with frequently visited sites | ✅ | ✅ | ✅ | Kite: tiles can be added, removed and reordered, or hidden. |
 | Local HTML file as home page | ✅ | ⚠️ | ✅ | Chrome accepts a file: URL as the home page. |
 | Local HTML file as new tab page | ✅ | ❌ | ❌ | Chrome and Firefox need an extension. |
 | Start page copy kept in the browser, live reload on save | ✅ | ❌ | ❌ | |

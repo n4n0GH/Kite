@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 //! Kite browser backend.
 //!
 //! Everything that does not need a GUI lives here so it can be unit tested
