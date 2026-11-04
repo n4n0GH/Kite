@@ -55,7 +55,14 @@ struct Context {
     window_id: i64,
     frame_id: i64,
     url: String,
+    /// Events of `LISTENED_EVENTS` this context has listeners for.
+    listens: std::collections::HashSet<String>,
 }
+
+/// Events only delivered to contexts that listen for them: their payloads
+/// can be large (storage changes carry old and new values, megabytes for
+/// uBlock Origin's caches), and every delivery has to cross into the view.
+const LISTENED_EVENTS: [&str; 5] = ["storage.onChanged", "storage.local.onChanged", "storage.sync.onChanged", "storage.session.onChanged", "storage.managed.onChanged"];
 
 struct PendingMsg {
     reply_view: String,
@@ -147,6 +154,8 @@ pub struct Runtime {
     worlds: HashMap<String, u32>,
     next_world: u32,
     ctxs: HashMap<String, Context>,
+    /// `_.listen` calls that came before the context registered.
+    early_listens: HashMap<String, std::collections::HashSet<String>>,
     tabs: BTreeMap<i64, Value>,
     windows: BTreeMap<i64, Value>,
     focused_window: i64,
@@ -228,6 +237,7 @@ impl Runtime {
             worlds: HashMap::new(),
             next_world: 10,
             ctxs: HashMap::new(),
+            early_listens: HashMap::new(),
             tabs: BTreeMap::new(),
             windows: BTreeMap::new(),
             focused_window: -1,
@@ -411,6 +421,7 @@ impl Runtime {
     }
 
     fn unregister(&mut self, ctx: &str) -> Vec<Effect> {
+        self.early_listens.remove(ctx);
         let Some(c) = self.ctxs.remove(ctx) else { return vec![] };
         if self.ready.get(&c.ext).is_some_and(|r| r == ctx) {
             self.ready.remove(&c.ext);
@@ -454,8 +465,12 @@ impl Runtime {
             .ctxs
             .iter()
             .filter(|(_, c)| c.ext == ext && (include_content || c.kind != "content"))
+            .filter(|(_, c)| !LISTENED_EVENTS.contains(&name) || c.listens.contains(name))
             .map(|(k, _)| k.clone())
             .collect();
+        if targets.is_empty() {
+            return vec![];
+        }
         self.deliver(&targets, json!({"type": "event", "name": name, "args": args}))
     }
 
@@ -1294,6 +1309,22 @@ impl Runtime {
         }
         match (ns, name) {
             // ---------------- internal ----------------
+            // A context started (true) or stopped listening to an event of
+            // LISTENED_EVENTS.
+            ("_", "listen") => {
+                let ev = arg_str(args, 0).to_owned();
+                let on = arg(args, 1).as_bool().unwrap_or(false);
+                let set = match self.ctxs.get_mut(ctx) {
+                    Some(c) => &mut c.listens,
+                    None => self.early_listens.entry(ctx.into()).or_default(),
+                };
+                if on {
+                    set.insert(ev);
+                } else {
+                    set.remove(&ev);
+                }
+                now!(Ok(Value::Null))
+            }
             ("_", "register") => {
                 let info = arg(args, 0);
                 log::debug!("context {ctx} registered: {} in {} (tab {}, frame {})", info["kind"], origin.view, origin.tab_id, info["frameId"]);
@@ -1309,6 +1340,7 @@ impl Runtime {
                         window_id: origin.window_id,
                         frame_id: info["frameId"].as_i64().unwrap_or(0),
                         url,
+                        listens: self.early_listens.remove(ctx).unwrap_or_default(),
                     },
                 );
                 let tab = (origin.tab_id >= 0).then(|| self.tabs.get(&origin.tab_id).cloned()).flatten();
@@ -2609,9 +2641,22 @@ mod tests {
         let o = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
         assert!(reply(&rt.call(&o, "bogus", "c1", "storage.local.get", json!([null]), 1)).is_err());
         rt.call(&o, &tok, "c1", "_.register", json!([{"kind": "background", "url": "moz-extension://x/bg.html"}]), 1);
-        let fx = rt.call(&o, &tok, "c1", "storage.local.set", json!([{"k": 1}]), 2);
+        let changed = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Deliver { payload, .. } if payload["name"] == "storage.onChanged"));
+        // Nobody listens: no event (its payload can be megabytes).
+        let fx = rt.call(&o, &tok, "c1", "storage.local.set", json!([{"k": 0}]), 2);
         assert_eq!(reply(&fx), Ok(Value::Null));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { payload, .. } if payload["name"] == "storage.onChanged")));
+        assert!(!changed(&fx));
+        // A listener: the event comes.
+        rt.call(&o, &tok, "c1", "_.listen", json!(["storage.onChanged", true]), 2);
+        let fx = rt.call(&o, &tok, "c1", "storage.local.set", json!([{"k": 1}]), 2);
+        assert!(changed(&fx));
+        // A listener announced before the context registered counts too.
+        rt.call(&o, &tok, "c2", "_.listen", json!(["storage.local.onChanged", true]), 2);
+        rt.call(&o, &tok, "c2", "_.register", json!([{"kind": "popup", "url": "moz-extension://x/p.html"}]), 1);
+        let fx = rt.call(&o, &tok, "c1", "storage.local.set", json!([{"k": 2}]), 2);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { payload, ctxs, .. } if payload["name"] == "storage.local.onChanged" && ctxs == &vec!["c2".to_string()])));
+        rt.call(&o, &tok, "c1", "_.listen", json!(["storage.onChanged", false]), 2);
+        assert!(!changed(&rt.call(&o, &tok, "c1", "storage.local.set", json!([{"k": 1}]), 2)));
         assert_eq!(reply(&rt.call(&o, &tok, "c1", "storage.local.get", json!(["k"]), 3)), Ok(json!({"k": 1})));
     }
 

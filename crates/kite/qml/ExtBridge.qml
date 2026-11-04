@@ -51,10 +51,14 @@ QtObject {
     function requestWakeLock(id) { if (viewKind === "tab") wakeLockRequested(id) }
     function releaseWakeLock() { if (viewKind === "tab") wakeLockReleased() }
 
-    function _onDeliver(view, json) { if (view === viewKey) deliver(json) }
-    Component.onCompleted: Extensions.deliver.connect(_onDeliver)
+    // Only this view's messages are taken (and converted) here.
+    function _onDeliveryReady(view) {
+        if (view !== viewKey) return
+        for (let json = Extensions.takeDelivery(viewKey); json !== ""; json = Extensions.takeDelivery(viewKey)) deliver(json)
+    }
+    Component.onCompleted: Extensions.deliveryReady.connect(_onDeliveryReady)
     Component.onDestruction: {
-        Extensions.deliver.disconnect(_onDeliver)
+        Extensions.deliveryReady.disconnect(_onDeliveryReady)
         if (viewKey !== "") Extensions.viewClosed(viewKey)
     }
 }

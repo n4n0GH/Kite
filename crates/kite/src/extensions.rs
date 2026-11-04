@@ -39,8 +39,16 @@ pub mod qobject {
         fn view_closed(self: Pin<&mut Extensions>, view: &QString);
         #[qinvokable]
         fn tick(self: Pin<&mut Extensions>);
+        /// Messages for `view` are waiting: its bridge takes them with
+        /// takeDelivery(), so only the view's own bridge converts them,
+        /// however many views listen.
         #[qsignal]
-        fn deliver(self: Pin<&mut Extensions>, view: QString, json: QString);
+        #[cxx_name = "deliveryReady"]
+        fn delivery_ready(self: Pin<&mut Extensions>, view: QString);
+        /// The next message for `view`, or "" when there is none.
+        #[qinvokable]
+        #[cxx_name = "takeDelivery"]
+        fn take_delivery(self: Pin<&mut Extensions>, view: &QString) -> QString;
         #[qsignal]
         #[cxx_name = "uiRequest"]
         fn ui_request(self: Pin<&mut Extensions>, view: QString, ctx: QString, call_id: i32, ext: QString, method: QString, args: QString);
@@ -156,6 +164,8 @@ struct PendingInstall {
 #[derive(Default)]
 pub struct ExtensionsRust {
     revision: i32,
+    /// Messages waiting for each view's bridge (see deliveryReady).
+    outbox: HashMap<String, std::collections::VecDeque<String>>,
     pending: HashMap<i32, PendingInstall>,
     next_request: i32,
 }
@@ -216,6 +226,32 @@ impl cxx_qt::Initialize for qobject::Extensions {
 }
 
 impl qobject::Extensions {
+    /// Queue a message for a view's bridge and tell the bridges (the signal
+    /// carries only the view's name; its bridge takes the messages). Views
+    /// without a bridge (yet) keep only the latest messages.
+    fn post(mut self: Pin<&mut Self>, view: String, json: String) {
+        {
+            let mut r = self.as_mut().rust_mut();
+            let queue = r.outbox.entry(view.clone()).or_default();
+            if queue.len() >= 256 {
+                queue.pop_front();
+            }
+            queue.push_back(json);
+        }
+        self.delivery_ready(q(view));
+    }
+
+    fn take_delivery(mut self: Pin<&mut Self>, view: &QString) -> QString {
+        let view = view.to_string();
+        let mut r = self.as_mut().rust_mut();
+        let Some(queue) = r.outbox.get_mut(&view) else { return QString::default() };
+        let next = queue.pop_front();
+        if queue.is_empty() {
+            r.outbox.remove(&view);
+        }
+        next.map(q).unwrap_or_default()
+    }
+
     fn apply(mut self: Pin<&mut Self>, fx: Vec<Effect>) {
         for e in fx {
             match e {
@@ -227,7 +263,7 @@ impl qobject::Extensions {
                     if view.starts_with(crate::rpc::VIEW_PREFIX) {
                         crate::rpc::deliver(&view, payload.to_string());
                     } else {
-                        self.as_mut().deliver(q(view), js(&payload));
+                        self.as_mut().post(view, payload.to_string());
                     }
                 }
                 Effect::Deliver { view, ctxs, payload } => {
@@ -235,7 +271,7 @@ impl qobject::Extensions {
                     if view.starts_with(crate::rpc::VIEW_PREFIX) {
                         crate::rpc::deliver(&view, payload.to_string());
                     } else {
-                        self.as_mut().deliver(q(view), js(&payload));
+                        self.as_mut().post(view, payload.to_string());
                     }
                 }
                 Effect::Ui { view, ctx, call_id, ext, method, args } if method == "net.fetch" => {
@@ -286,7 +322,8 @@ impl qobject::Extensions {
         self.apply(fx);
     }
 
-    fn view_closed(self: Pin<&mut Self>, view: &QString) {
+    fn view_closed(mut self: Pin<&mut Self>, view: &QString) {
+        self.as_mut().rust_mut().outbox.remove(&view.to_string());
         let fx = app().runtime().view_closed(&view.to_string());
         self.apply(fx);
     }

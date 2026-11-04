@@ -23,6 +23,9 @@ impl Storage {
     }
     fn with_conn(db: Connection) -> anyhow::Result<Self> {
         db.pragma_update(None, "journal_mode", "WAL")?;
+        // Calls come from the UI thread: in WAL mode NORMAL doesn't wait for
+        // the disk on every write (only at checkpoints) and stays consistent.
+        db.pragma_update(None, "synchronous", "NORMAL")?;
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS storage (ext TEXT NOT NULL, area TEXT NOT NULL, key TEXT NOT NULL,
              value TEXT NOT NULL, PRIMARY KEY (ext, area, key));",

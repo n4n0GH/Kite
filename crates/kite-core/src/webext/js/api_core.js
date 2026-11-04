@@ -48,6 +48,12 @@ function __kiteMakeAPI(cfg, transport) {
     }
   }
   const ev = (name, hooks) => new KiteEvent(name, hooks);
+  // Events the runtime only sends to contexts that listen for them (large
+  // payloads): tell it when the first listener comes and the last one goes.
+  const listened = (name) => ev(name, {
+    add: (cb, extra, n) => { if (n === 1) call('_.listen', name, true).catch(() => {}); },
+    remove: (cb, n) => { if (n === 0) call('_.listen', name, false).catch(() => {}); },
+  });
 
   // ---- messaging --------------------------------------------------------
   const ports = new Map();
@@ -234,7 +240,7 @@ function __kiteMakeAPI(cfg, transport) {
     a.onClicked = ev(ns + '.onClicked');
     return a;
   };
-  const storageArea = (area) => Object.assign(stub('storage.' + area, ['get', 'set', 'remove', 'clear', 'getBytesInUse', 'getKeys', 'setAccessLevel']), { onChanged: ev('storage.' + area + '.onChanged') });
+  const storageArea = (area) => Object.assign(stub('storage.' + area, ['get', 'set', 'remove', 'clear', 'getBytesInUse', 'getKeys', 'setAccessLevel']), { onChanged: listened('storage.' + area + '.onChanged') });
 
   // ---- namespaces -------------------------------------------------------
   const runtime = {
@@ -271,7 +277,7 @@ function __kiteMakeAPI(cfg, transport) {
     ...stub('extension', ['isAllowedIncognitoAccess', 'isAllowedFileSchemeAccess']),
     sendMessage: (...a) => runtime.sendMessage(...a), onMessage: runtime.onMessage, onRequest: runtime.onMessage,
   };
-  const storage = { local: storageArea('local'), sync: storageArea('sync'), session: storageArea('session'), managed: storageArea('managed'), onChanged: ev('storage.onChanged') };
+  const storage = { local: storageArea('local'), sync: storageArea('sync'), session: storageArea('session'), managed: storageArea('managed'), onChanged: listened('storage.onChanged') };
   const menus = {
     ...stub('menus', ['update', 'remove', 'removeAll', 'refresh', 'overrideContext']),
     create(props, cb) {
