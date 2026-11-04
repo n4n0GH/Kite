@@ -114,26 +114,26 @@ fn derive_key(password: &str, salt: &[u8]) -> anyhow::Result<Zeroizing<[u8; 32]>
     Ok(key)
 }
 
-fn random<const N: usize>() -> [u8; N] {
+pub(crate) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     getrandom::getrandom(&mut b).expect("system RNG");
     b
 }
 
-struct Sealer(XChaCha20Poly1305);
+pub(crate) struct Sealer(XChaCha20Poly1305);
 
 impl Sealer {
-    fn new(key: &[u8; 32]) -> Self {
+    pub(crate) fn new(key: &[u8; 32]) -> Self {
         Sealer(XChaCha20Poly1305::new(Key::from_slice(key)))
     }
-    fn seal(&self, plain: &[u8]) -> String {
+    pub(crate) fn seal(&self, plain: &[u8]) -> String {
         let nonce = random::<24>();
         let ct = self.0.encrypt(XNonce::from_slice(&nonce), plain).expect("encryption cannot fail");
         let mut out = nonce.to_vec();
         out.extend(ct);
         b64(&out)
     }
-    fn open(&self, sealed: &str) -> anyhow::Result<Vec<u8>> {
+    pub(crate) fn open(&self, sealed: &str) -> anyhow::Result<Vec<u8>> {
         let raw = unb64(sealed)?;
         if raw.len() < 24 {
             anyhow::bail!("corrupted entry");
@@ -142,7 +142,7 @@ impl Sealer {
             .decrypt(XNonce::from_slice(&raw[..24]), &raw[24..])
             .map_err(|_| anyhow::anyhow!("wrong master password or corrupted entry"))
     }
-    fn open_str(&self, sealed: &str) -> anyhow::Result<String> {
+    pub(crate) fn open_str(&self, sealed: &str) -> anyhow::Result<String> {
         Ok(String::from_utf8(self.open(sealed)?)?)
     }
 }
@@ -643,6 +643,46 @@ impl PasswordStore {
     }
 }
 
+// ---- password generator -------------------------------------------------------
+
+const GEN_LOWER: &str = "abcdefghijkmnopqrstuvwxyz";
+const GEN_UPPER: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const GEN_DIGITS: &str = "23456789";
+const GEN_SYMBOLS: &str = "-_.!@#$%&*+=?";
+
+/// A uniformly random index below `n` (rejection sampling, no modulo bias).
+fn random_below(n: usize) -> usize {
+    debug_assert!(n > 0 && n <= 256);
+    let limit = 256 - 256 % n;
+    loop {
+        let b = random::<1>()[0] as usize;
+        if b < limit {
+            return b % n;
+        }
+    }
+}
+
+/// A random password of `len` characters (8..=128) from letters and digits,
+/// plus symbols when `symbols`; look-alike characters (l, I, O, 0, 1) are
+/// left out. Every class used appears at least once.
+pub fn generate_password(len: usize, symbols: bool) -> String {
+    let len = len.clamp(8, 128);
+    let mut classes: Vec<&[u8]> = vec![GEN_LOWER.as_bytes(), GEN_UPPER.as_bytes(), GEN_DIGITS.as_bytes()];
+    if symbols {
+        classes.push(GEN_SYMBOLS.as_bytes());
+    }
+    let all: Vec<u8> = classes.concat();
+    let mut out: Vec<u8> = classes.iter().map(|c| c[random_below(c.len())]).collect();
+    while out.len() < len {
+        out.push(all[random_below(all.len())]);
+    }
+    // Shuffle so the guaranteed characters are not always first (Fisher-Yates).
+    for i in (1..out.len()).rev() {
+        out.swap(i, random_below(i + 1));
+    }
+    String::from_utf8(out).expect("ASCII")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,6 +715,19 @@ mod tests {
         assert_eq!(s.all(&db).unwrap().len(), 2);
         PasswordStore::add_exception(&db, "https://evil.test/a").unwrap();
         assert_eq!(s.decide(&db, "https://evil.test/b", "a", "b", "").unwrap(), Decision::Nothing);
+    }
+
+    #[test]
+    fn generated_passwords() {
+        for (len, sym) in [(8, false), (20, true), (64, true)] {
+            let p = generate_password(len, sym);
+            assert_eq!(p.len(), len);
+            assert!(p.chars().any(|c| c.is_ascii_lowercase()) && p.chars().any(|c| c.is_ascii_uppercase()) && p.chars().any(|c| c.is_ascii_digit()));
+            assert_eq!(p.chars().any(|c| GEN_SYMBOLS.contains(c)), sym);
+            assert!(!p.contains(['l', 'I', 'O', '0', '1']));
+        }
+        assert_eq!(generate_password(3, true).len(), 8);
+        assert_ne!(generate_password(20, true), generate_password(20, true));
     }
 
     #[test]

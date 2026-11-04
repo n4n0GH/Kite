@@ -78,13 +78,29 @@ QtObject {
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
 
+    // Unloading inactive tabs ("tabs.unloadInactive"): tabs not shown for
+    // "tabs.unloadAfterMinutes" are unloaded (WebTab.unload() keeps those
+    // playing sound, holding unsent form input, … loaded).
+    readonly property bool unloadInactive: !!liveSettings["tabs.unloadInactive"]
+    property Timer _unloadTimer: Timer {
+        interval: 30000; repeat: true; running: app.unloadInactive
+        onTriggered: {
+            const limit = Math.max(1, app.setting("tabs.unloadAfterMinutes")) * 60000
+            const now = Date.now()
+            for (const w of app.windows) for (const id in w.tabItems) {
+                const t = w.tabItems[id]
+                if (t && now - t.lastAccessed >= limit) t.unload()
+            }
+        }
+    }
+
     // Settings apply live: web views and windows bind to `liveSettings`
     // (e.g. liveSettings["web.javascript"]) and profile settings are
     // re-applied, so a change in Preferences reaches open tabs and windows
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
@@ -461,6 +477,7 @@ QtObject {
             for (const id of a.tabIds) { const t = findTab(id); if (t) t.close() }
             return null
         case "tabs.reload": { const t = tabOrThrow(a.tabId); (a.props && a.props.bypassCache) ? t.view.reloadAndBypassCache() : t.view.reload(); return null }
+        case "tabs.discard": { for (const id of [].concat(a.tabId)) { const t = tabOrThrow(id); if (!t.visible) t.unload() } return null }
         case "tabs.goBack": tabOrThrow(a.tabId).view.goBack(); return null
         case "tabs.goForward": tabOrThrow(a.tabId).view.goForward(); return null
         case "tabs.duplicate": { const t = tabOrThrow(a.tabId); return t.window.openTab(t.url, {background: false, index: t.index + 1}).extInfo() }

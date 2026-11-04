@@ -56,6 +56,12 @@ pub fn defaults() -> Map<String, Value> {
         "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
         "web.printBackgrounds": true,
         "web.userAgent": "",
+        "browsing.formFill": true,
+        // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
+        "tabs.unloadInactive": true,
+        "tabs.unloadAfterMinutes": 10,
+        "tabs.unloadKeepPinned": true,
+        "browsing.formFillSave": true,
         "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
         "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
         "web.doNotTrack": false,
@@ -91,6 +97,9 @@ pub fn defaults() -> Map<String, Value> {
         // Passwords
         "passwords.save": true,
         "passwords.autofill": true,
+        "passwords.generator": true,
+        "passwords.generatorLength": 20,
+        "passwords.generatorSymbols": true,
         // Downloads
         "downloads.directory": downloads,
         "downloads.askWhereToSave": false,

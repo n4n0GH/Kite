@@ -1552,9 +1552,6 @@ impl Runtime {
                     Ok(t) => t,
                     Err(err) => return now!(Err(err)),
                 };
-                if name == "discard" {
-                    return now!(Ok(Value::Null));
-                }
                 self.ui(origin, ctx, call_id, ext_id, method, json!({"tabId": tab, "props": arg(args, 1)}))
             }
             ("tabs", "setZoom") => {

@@ -306,6 +306,117 @@ Kirigami.ApplicationWindow {
             QQC2.TextField { Kirigami.FormData.label: "User agent:"; Layout.fillWidth: true; placeholderText: "Default"; text: w.get("web.userAgent"); onEditingFinished: w.set("web.userAgent", text) }
             QQC2.Label { text: "User agent and spelling changes apply after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
 
+            // ---- memory ("tabs.unloadInactive", WebTab.unload()) ----
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Memory" }
+            QQC2.CheckBox { id: unloadOn; Kirigami.FormData.label: "Inactive tabs:"; text: "Unload tabs that haven't been shown for a while"; checked: w.get("tabs.unloadInactive"); onToggled: w.set("tabs.unloadInactive", checked) }
+            RowLayout {
+                enabled: unloadOn.checked
+                QQC2.Label { text: "Unload after" }
+                QQC2.SpinBox { from: 1; to: 1440; editable: true; value: w.get("tabs.unloadAfterMinutes"); onValueModified: w.set("tabs.unloadAfterMinutes", value) }
+                QQC2.Label { text: "minutes" }
+            }
+            QQC2.CheckBox { enabled: unloadOn.checked; text: "Keep pinned tabs loaded"; checked: w.get("tabs.unloadKeepPinned"); onToggled: w.set("tabs.unloadKeepPinned", checked) }
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                wrapMode: Text.Wrap
+                opacity: 0.8
+                font: Kirigami.Theme.smallFont
+                text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. 10 minutes is the time Firefox waits before it considers a tab for unloading. Any tab can also be unloaded from its context menu."
+            }
+
+            // ---- form autofill ("browsing.formFill", formfill.rs) ----
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Forms" }
+            QQC2.CheckBox { id: ffOn; Kirigami.FormData.label: "Autofill:"; text: "Fill in forms with saved addresses"; checked: w.get("browsing.formFill"); onToggled: { w.set("browsing.formFill", checked); if (checked && FormFill.count > 0) FormFill.unlock() } }
+            QQC2.CheckBox { enabled: ffOn.checked; text: "Offer to save addresses typed into forms"; checked: w.get("browsing.formFillSave"); onToggled: w.set("browsing.formFillSave", checked) }
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                wrapMode: Text.Wrap
+                opacity: 0.8
+                font: Kirigami.Theme.smallFont
+                text: "Suggestions appear when you click into an address, name, email or phone field; nothing is filled in until you pick one. Saved entries are encrypted"
+                    + (FormFill.keyStore === "kwallet" ? ", with the key kept in KDE Wallet."
+                       : FormFill.keyStore === "file" ? ", with the key kept in a file in your Kite profile (KDE Wallet was not available), which protects them when the database alone is copied."
+                       : "; the key goes into KDE Wallet when it is available.")
+            }
+            ColumnLayout {
+                id: ff
+                Kirigami.FormData.label: "Saved:"
+                Kirigami.FormData.labelAlignment: Qt.AlignTop
+                Layout.fillWidth: true
+                property var entries: []
+                function refresh() { entries = FormFill.unlocked ? JSON.parse(FormFill.list()) : [] }
+                Component.onCompleted: { if (FormFill.count > 0 && !FormFill.unlocked) FormFill.unlock(); refresh() }
+                Connections { target: FormFill; function onChanged() { ff.refresh() } function onUnlockedChanged() { ff.refresh() } }
+                QQC2.Label {
+                    visible: text !== ""
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                    wrapMode: Text.Wrap
+                    text: FormFill.unlocking ? "Opening KDE Wallet…"
+                        : FormFill.error !== "" ? "Saved entries can't be read: " + FormFill.error + "."
+                        : !FormFill.unlocked && FormFill.count > 0 ? FormFill.count + " saved, locked."
+                        : FormFill.count === 0 ? "No saved addresses." : ""
+                    opacity: 0.8
+                }
+                RowLayout {
+                    visible: FormFill.error !== "" || (!FormFill.unlocked && FormFill.count > 0 && !FormFill.unlocking)
+                    QQC2.Button { text: "Try Again"; icon.name: "view-refresh"; onClicked: FormFill.unlock() }
+                    QQC2.Button { visible: FormFill.error !== ""; text: "Remove Saved Entries"; icon.name: "edit-delete"; onClicked: ffRemoveAll.open() }
+                }
+                Repeater {
+                    model: ff.entries
+                    delegate: RowLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Kirigami.Icon { source: "user-identity"; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+                        QQC2.Label { text: modelData.label; Layout.fillWidth: true; Layout.maximumWidth: Kirigami.Units.gridUnit * 20; elide: Text.ElideRight }
+                        QQC2.ToolButton { icon.name: "document-edit"; onClicked: { ffEdit.entry = modelData; ffEdit.open() } QQC2.ToolTip.text: "Edit"; QQC2.ToolTip.visible: hovered }
+                        QQC2.ToolButton { icon.name: "edit-delete"; onClicked: FormFill.remove(modelData.id); QQC2.ToolTip.text: "Remove"; QQC2.ToolTip.visible: hovered }
+                    }
+                }
+                RowLayout {
+                    QQC2.Button { text: "Add Address…"; icon.name: "list-add"; enabled: FormFill.error === "" && !FormFill.unlocking; onClicked: { ffEdit.entry = null; ffEdit.open() } }
+                    QQC2.Button { visible: ff.entries.length > 1; text: "Remove All…"; icon.name: "edit-delete"; onClicked: ffRemoveAll.open() }
+                }
+                Kirigami.PromptDialog {
+                    id: ffRemoveAll
+                    parent: QQC2.Overlay.overlay; anchors.centerIn: parent
+                    title: "Remove All Saved Addresses?"
+                    subtitle: "This cannot be undone."
+                    standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                    onAccepted: FormFill.removeAll()
+                }
+                Kirigami.Dialog {
+                    id: ffEdit
+                    parent: QQC2.Overlay.overlay; anchors.centerIn: parent
+                    property var entry: null
+                    readonly property var keys: ["givenName", "familyName", "organization", "street", "city", "region", "postalCode", "country", "email", "tel"]
+                    title: entry ? "Edit Address" : "Add Address"
+                    standardButtons: Kirigami.Dialog.Save | Kirigami.Dialog.Cancel
+                    padding: Kirigami.Units.largeSpacing
+                    onOpened: { for (const k of keys) ffFields[k].text = entry ? (entry[k] || "") : ""; ffFields.givenName.forceActiveFocus() }
+                    property var ffFields: ({givenName: fGiven, familyName: fFamily, organization: fOrg, street: fStreet, city: fCity, region: fRegion, postalCode: fPostal, country: fCountry, email: fEmail, tel: fTel})
+                    Kirigami.FormLayout {
+                        QQC2.TextField { id: fGiven; Kirigami.FormData.label: "First name:"; Layout.preferredWidth: Kirigami.Units.gridUnit * 18 }
+                        QQC2.TextField { id: fFamily; Kirigami.FormData.label: "Last name:" }
+                        QQC2.TextField { id: fOrg; Kirigami.FormData.label: "Organization:" }
+                        QQC2.TextArea { id: fStreet; Kirigami.FormData.label: "Street address:"; Layout.preferredWidth: Kirigami.Units.gridUnit * 18; Layout.preferredHeight: Kirigami.Units.gridUnit * 3.5; placeholderText: "One line per address line"; wrapMode: TextEdit.Wrap }
+                        QQC2.TextField { id: fCity; Kirigami.FormData.label: "City:" }
+                        QQC2.TextField { id: fRegion; Kirigami.FormData.label: "State / region:" }
+                        QQC2.TextField { id: fPostal; Kirigami.FormData.label: "Postal code:" }
+                        QQC2.TextField { id: fCountry; Kirigami.FormData.label: "Country:" }
+                        QQC2.TextField { id: fEmail; Kirigami.FormData.label: "Email:"; inputMethodHints: Qt.ImhEmailCharactersOnly }
+                        QQC2.TextField { id: fTel; Kirigami.FormData.label: "Phone:"; inputMethodHints: Qt.ImhDialableCharactersOnly; placeholderText: "+1 555 0100" }
+                    }
+                    onAccepted: {
+                        const d = {}
+                        for (const k of keys) d[k] = ffFields[k].text.trim()
+                        if (entry) d.id = entry.id
+                        const err = FormFill.save(JSON.stringify(d))
+                        if (err) w.app.toast(err, "dialog-error")
+                    }
+                }
+            }
+
             // ---- dangerous sites ("browsing.safeBrowsing", safebrowsing.rs) ----
             Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Dangerous Sites" }
             QQC2.ComboBox {
@@ -597,6 +708,13 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 QQC2.CheckBox { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; checked: w.get("passwords.save"); onToggled: w.set("passwords.save", checked) }
                 QQC2.CheckBox { text: "Fill in saved logins automatically"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
+                QQC2.CheckBox { id: genOn; Kirigami.FormData.label: "Generator:"; text: "Suggest strong passwords on sign-up forms"; checked: w.get("passwords.generator"); onToggled: w.set("passwords.generator", checked) }
+                RowLayout {
+                    enabled: genOn.checked
+                    QQC2.SpinBox { from: 8; to: 64; value: w.get("passwords.generatorLength"); onValueModified: w.set("passwords.generatorLength", value) }
+                    QQC2.Label { text: "characters" }
+                    QQC2.CheckBox { text: "Include symbols"; checked: w.get("passwords.generatorSymbols"); onToggled: w.set("passwords.generatorSymbols", checked) }
+                }
                 QQC2.ComboBox {
                     id: storage
                     Kirigami.FormData.label: "Store logins in:"
@@ -697,7 +815,15 @@ Kirigami.ApplicationWindow {
                 Kirigami.FormLayout {
                     QQC2.TextField { id: eHost; Kirigami.FormData.label: "Site:"; placeholderText: "example.com"; Layout.preferredWidth: Kirigami.Units.gridUnit * 18 }
                     QQC2.TextField { id: eUser; Kirigami.FormData.label: "Username:" }
-                    Kirigami.PasswordField { id: ePass; Kirigami.FormData.label: "Password:" }
+                    RowLayout {
+                        Kirigami.FormData.label: "Password:"
+                        Kirigami.PasswordField { id: ePass; Layout.fillWidth: true }
+                        QQC2.ToolButton {
+                            icon.name: "password-generate"
+                            onClicked: { ePass.text = FormFill.generatePassword(); ePass.showPassword = true }
+                            QQC2.ToolTip.text: "Generate a strong password"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                    }
                 }
                 onAccepted: {
                     const d = {host: eHost.text, username: eUser.text, password: ePass.text}

@@ -64,6 +64,7 @@ pub struct KWallet {
     service: &'static str,
     path: &'static str,
     handle: i32,
+    folder: &'static str,
 }
 
 impl KWallet {
@@ -81,6 +82,11 @@ impl KWallet {
     /// Open the network wallet. May block while KWallet asks for the wallet
     /// password, so call it off the UI thread.
     pub fn open(window_id: i64) -> anyhow::Result<Self> {
+        Self::open_folder(window_id, FOLDER)
+    }
+
+    /// Open the network wallet on another folder (created when missing).
+    pub fn open_folder(window_id: i64, folder: &'static str) -> anyhow::Result<Self> {
         let conn = Connection::session()?;
         let mut last_err = anyhow::anyhow!("KWallet is not available");
         for (service, path) in SERVICES {
@@ -98,9 +104,9 @@ impl KWallet {
             if handle < 0 {
                 anyhow::bail!("the wallet could not be opened (access denied or cancelled)");
             }
-            let w = KWallet { conn, service, path, handle };
-            if !w.call::<bool>("hasFolder", &(handle, FOLDER, APP_ID))? {
-                w.call::<bool>("createFolder", &(handle, FOLDER, APP_ID))?;
+            let w = KWallet { conn, service, path, handle, folder };
+            if !w.call::<bool>("hasFolder", &(handle, folder, APP_ID))? {
+                w.call::<bool>("createFolder", &(handle, folder, APP_ID))?;
             }
             return Ok(w);
         }
@@ -114,7 +120,7 @@ impl KWallet {
 
     /// All entries of the folder: key -> field map.
     pub fn entries(&self) -> anyhow::Result<Vec<(String, BTreeMap<String, String>)>> {
-        let list: HashMap<String, OwnedValue> = self.call("mapList", &(self.handle, FOLDER, APP_ID))?;
+        let list: HashMap<String, OwnedValue> = self.call("mapList", &(self.handle, self.folder, APP_ID))?;
         let mut out = vec![];
         for (key, v) in list {
             let bytes: Vec<u8> = match Vec::<u8>::try_from(v) {
@@ -130,7 +136,7 @@ impl KWallet {
     }
 
     pub fn write(&self, key: &str, map: &BTreeMap<String, String>) -> anyhow::Result<()> {
-        let rc: i32 = self.call("writeMap", &(self.handle, FOLDER, key, encode_map(map), APP_ID))?;
+        let rc: i32 = self.call("writeMap", &(self.handle, self.folder, key, encode_map(map), APP_ID))?;
         if rc != 0 {
             anyhow::bail!("KWallet refused to store the entry ({rc})");
         }
@@ -138,7 +144,7 @@ impl KWallet {
     }
 
     pub fn remove(&self, key: &str) -> anyhow::Result<()> {
-        let _: i32 = self.call("removeEntry", &(self.handle, FOLDER, key, APP_ID))?;
+        let _: i32 = self.call("removeEntry", &(self.handle, self.folder, key, APP_ID))?;
         Ok(())
     }
 }

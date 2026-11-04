@@ -13,6 +13,7 @@ pub mod downloads;
 pub mod favicons;
 pub mod history;
 pub mod kwallet;
+pub mod formfill;
 pub mod passwords;
 pub mod privacy;
 pub mod paths;

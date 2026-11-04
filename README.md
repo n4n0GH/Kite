@@ -18,6 +18,10 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   splits with them); "Open Link in New Split Tab".
 * **Toolbar and menus:** customizable toolbar, optional classic menu bar (Alt shows it),
   bookmarks toolbar, an extensions panel with pin/unpin.
+* **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
+  Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
+  unsent form input or keeping the screen on stay loaded. Also from the tab menu and
+  `tabs.discard()`.
 * **Home and new tab page:** an address or a local HTML file, used in place or kept as a copy
   in the profile (`kite:startpage/…`); saving the file reloads it.
 * **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules
@@ -138,6 +142,22 @@ location bar. HTTP authentication can be remembered too.
   with a master password (Argon2id + XChaCha20-Poly1305; key only in memory), or
   **KDE Wallet** over D-Bus, using Falkon's `FalkonPasswords` folder so both
   browsers share logins. Switching storage moves saved logins along.
+* **Password generator:** sign-up and change-password fields offer a strong random
+  password (length and symbols configurable; look-alike characters left out), filled
+  into the confirmation field too; also in the login editor.
+
+## Form autofill
+
+Addresses, names, emails and phone numbers (Settings → Browsing → Forms, on by
+default). Fields are recognised by their `autocomplete` tokens or, failing that, by
+name/label; focusing one shows the saved entries under it (arrow keys and Enter
+work while the page keeps focus), and picking one fills the visible fields of that
+form, including country drop-downs. Addresses typed into submitted forms can be
+saved or update an existing entry; never from private windows.
+
+* **Storage:** each entry sealed whole with XChaCha20-Poly1305 in `browsedata.db`;
+  the random key is kept in KDE Wallet (folder `Kite`) or, without KDE Wallet, in an
+  owner-only `formfill.key` file in the profile.
 * **Safety:** credentials are only released for the host of the tab's actual URL
   (taken from the view, never from page JavaScript), only to http(s) pages, never
   to extension pages; nothing is saved from private windows.
@@ -153,9 +173,9 @@ location bar. HTTP authentication can be remembered too.
   implemented. Tabs report their container (`cookieStoreId`), but extensions can't list or
   manage containers, and the `cookies` API covers the main container only.
 * Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
-* Password manager: logins inside iframes are not detected; no password generator.
+* Password manager and form autofill: fields inside iframes are not detected; no card autofill.
 * Not available: sync, translation, reader view, picture-in-picture, passkeys (WebAuthn),
-  address/card autofill, browser themes, a profile picker (profiles are chosen with
+  card autofill, browser themes, a profile picker (profiles are chosen with
   `--profile`).
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
 * Falkon features not yet ported: named session manager, speed-dial editing,

@@ -9,6 +9,7 @@
 mod browser;
 mod extensions;
 mod ffi;
+mod formfill;
 mod passwords;
 mod rpc;
 mod startpage;

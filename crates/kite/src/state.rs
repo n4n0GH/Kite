@@ -11,6 +11,8 @@ pub struct App {
     pub shared: Shared,
     pub runtime: Mutex<Runtime>,
     pub passwords: Mutex<kite_core::passwords::PasswordStore>,
+    /// Saved addresses for form autofill ("browsing.formFill").
+    pub formfill: Mutex<kite_core::formfill::FormFillStore>,
     /// Screen kept on for tabs holding a Screen Wake Lock.
     pub screen: Mutex<kite_core::screensaver::ScreenInhibitor>,
     pub adblock: Arc<AdBlock>,
@@ -57,6 +59,7 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         log::warn!("blocking webRequest unavailable: {e}");
     }
     let passwords = Mutex::new(kite_core::passwords::PasswordStore::open(&shared.db())?);
+    let formfill = Mutex::new(kite_core::formfill::FormFillStore::open(&shared.db())?);
     let adblock = Arc::new(AdBlock::new(profile.path("adblock")));
     {
         let s = shared.settings();
@@ -81,7 +84,7 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     safe_browsing.load_cached();
     let safe_browsing_wake = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
     spawn_safe_browsing_updater(safe_browsing.clone(), safe_browsing_wake.clone());
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, safe_browsing, safe_browsing_wake, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, formfill, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, safe_browsing, safe_browsing_wake, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }

@@ -376,7 +376,7 @@ QQC2.ApplicationWindow {
         let group = opts.group || ""
         if (!group && opts.openerTabId !== undefined && opts.openerTabId >= 0 && idx === indexOfTab(opts.openerTabId) + 1 && paneOf(opts.openerTabId) === pane) group = groupOf(opts.openerTabId)
         if (opts.pinned) group = ""
-        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container, pane: pane, group: group})
+        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, unloaded: false, container: container, pane: pane, group: group})
         if (group && tabGroups[group] && tabGroups[group].collapsed) updateGroup(group, {collapsed: false})
         groupsVersion++
         countPane1()

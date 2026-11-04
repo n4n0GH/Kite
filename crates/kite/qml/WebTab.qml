@@ -49,6 +49,13 @@ Item {
     property bool loginForm: false
     property var savePrompt: null
 
+    // Form autofill
+    property var addressPrompt: null
+    function answerAddressPrompt(choice) {
+        const p = addressPrompt
+        addressPrompt = null
+        if (p) FormFill.answer(p.request, choice)
+    }
     function refreshLogins() { logins = loginForm ? JSON.parse(Passwords.logins(web.url.toString())) : [] }
     function fillLogin(id) {
         const data = Passwords.fillData(web.url.toString(), id)
@@ -77,6 +84,35 @@ Item {
         crashed = false
         certError = null
         web.url = u
+    }
+
+    // ---- unloading inactive tabs ("tabs.unloadInactive") ----
+    // An unloaded tab keeps its place, title, icon and history; Chromium
+    // drops the page itself and reloads it when the tab is shown again.
+    readonly property bool discarded: web.lifecycleState === WebEngineView.LifecycleState.Discarded
+    readonly property bool unloaded: discarded || pendingUrl !== ""
+    onUnloadedChanged: window.setTabProperty(tabId, "unloaded", unloaded)
+    // Text typed into the page that wasn't submitted (it would be lost).
+    property bool formDirty: false
+    // Shown tabs (the current one, both panes in split view) stay loaded.
+    onVisibleChanged: if (!visible) lastAccessed = Date.now()
+    // Why the tab must stay loaded ("" when it can be unloaded).
+    function keepLoadedReason() {
+        if (visible) return "shown"
+        if (pendingUrl !== "" || heldUrl !== "" || discarded) return "not loaded"
+        if (web.recentlyAudible && !web.audioMuted) return "playing sound"
+        if (wakeLockHeld) return "keeping the screen on"
+        if (web.loading) return "loading"
+        if (formDirty) return "unsent form input"
+        if (devTools.active) return "developer tools open"
+        if (pinned && wt.app.setting("tabs.unloadKeepPinned")) return "pinned"
+        if (url === "" || url.startsWith("kite:") || url === "about:blank") return "browser page"
+        return ""
+    }
+    function unload() {
+        if (keepLoadedReason() !== "") return false
+        web.lifecycleState = WebEngineView.LifecycleState.Discarded
+        return discarded
     }
 
     onActivated: {
@@ -143,7 +179,7 @@ Item {
             id: tabId, index: window.indexOfTab(tabId), windowId: window.windowId, active: window.currentTab === wt,
             highlighted: window.currentTab === wt, pinned: pinned, url: url, title: title,
             favIconUrl: web.icon.toString().startsWith("image://favicon/") ? web.icon.toString().substring(16) : "",
-            status: status, incognito: window.privateMode, audible: web.recentlyAudible, discarded: pendingUrl !== "",
+            status: status, incognito: window.privateMode, audible: web.recentlyAudible, discarded: unloaded,
             mutedInfo: {muted: web.audioMuted}, width: web.width, height: web.height, lastAccessed: lastAccessed,
             openerTabId: openerTabId >= 0 ? openerTabId : undefined, hidden: false, isArticle: false, isInReaderMode: false,
             cookieStoreId: window.privateMode ? "firefox-private" : container ? "firefox-container-" + container : "firefox-default",
@@ -192,6 +228,18 @@ Item {
                     Kirigami.Action { text: "Block"; icon.name: "dialog-cancel"; onTriggered: { modelData.permission.deny(); wt.dropPermission(index) } }
                 ]
             }
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: wt.addressPrompt !== null
+            type: Kirigami.MessageType.Information
+            icon.name: "user-identity"
+            text: !wt.addressPrompt ? "" : (wt.addressPrompt.action === "update" ? "Update the saved address <b>" : "Save the address <b>") + wt.addressPrompt.label.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> for filling in forms?"
+            actions: [
+                Kirigami.Action { text: wt.addressPrompt && wt.addressPrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerAddressPrompt("save") },
+                Kirigami.Action { text: "Not Now"; onTriggered: wt.answerAddressPrompt("dismiss") }
+            ]
         }
 
         Kirigami.InlineMessage {
@@ -245,6 +293,7 @@ Item {
                 settings.localContentCanAccessRemoteUrls: wt.isExtensionPage
 
                 onUrlChanged: {
+                    wt.formDirty = false
                     const u = url.toString()
                     const host = Browser.hostOf(u)
                     if (host !== wt.lastHost) {
@@ -478,8 +527,16 @@ Item {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r
         }
+        onAutofillFocused: json => autofillPopup.show(JSON.parse(json))
+        onAutofillBlurred: autofillPopup.close()
+        onAutofillKeyPressed: key => autofillPopup.key(key)
+        onAutofillSubmitted: json => {
+            const r = JSON.parse(FormFill.formSubmitted(web.url.toString(), wt.window.privateMode, json))
+            if (r) wt.addressPrompt = r
+        }
         onWakeLockRequested: id => wt.requestWakeLock(id)
         onWakeLockReleased: wt.setWakeLock(false)
+        onFormEdited: dirty => wt.formDirty = dirty
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true
             wt.refreshLogins()
@@ -489,6 +546,16 @@ Item {
     Connections { target: Passwords; function onChanged() { wt.refreshLogins() } }
 
     PageContextMenu { id: contextMenu; tab: wt }
+    AutofillPopup {
+        id: autofillPopup
+        tab: wt; view: web; bridge: bridge
+        onPickedAddress: id => {
+            const data = FormFill.fillData(web.url.toString(), id)
+            if (data !== "null") bridge.fillAddress(data)
+        }
+        onPickedPassword: password => bridge.fillPassword(password)
+        onManage: wt.app.showPreferences("browsing")
+    }
     AuthDialog { id: authDialog; tab: wt }
 
     Loader {

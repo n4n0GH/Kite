@@ -16,6 +16,7 @@ Item {
     required property bool pinned
     required property bool audible
     required property bool muted
+    required property bool unloaded
     // Container tab id ("privacy.containers"), and its name and colour.
     required property string container
     readonly property var containerInfo: container ? browser.app.containerInfo(container) : null
@@ -218,6 +219,8 @@ Item {
                 Kirigami.Icon {
                     anchors.fill: parent
                     visible: !root.loading
+                    // Unloaded tabs are drawn faded.
+                    opacity: root.unloaded && !root.current ? 0.5 : 1
                     source: root.icon !== "" ? root.icon : "text-html"
                     fallback: "text-html"
                 }
@@ -227,7 +230,8 @@ Item {
                 Layout.fillWidth: true
                 text: root.title
                 elide: Text.ElideRight
-                opacity: root.current ? 1 : 0.8
+                opacity: root.current ? 1 : root.unloaded ? 0.55 : 0.8
+                font.italic: root.unloaded && !root.current
             }
             QQC2.ToolButton {
                 visible: root.audible || root.muted
@@ -367,7 +371,12 @@ Item {
         property var targets: [root.tabId]
         readonly property int n: targets.length
         readonly property string tabsWord: n > 1 ? n + " Tabs" : "Tab"
-        onAboutToShow: targets = root.browser.actionTabs(root.tabId)
+        // The targets that can be unloaded now (not shown, playing sound, …).
+        property var unloadable: []
+        onAboutToShow: {
+            targets = root.browser.actionTabs(root.tabId)
+            unloadable = targets.filter(id => { const t = root.browser.tabById(id); return t && t.keepLoadedReason() === "" })
+        }
         function inGroup() { return targets.some(id => root.browser.groupOf(id) !== "") }
         QQC2.MenuItem { text: "New Tab"; icon.name: "list-add"; onTriggered: root.browser.openTab(root.browser.app.newTabUrl(), {index: root.index + 1}) }
         QQC2.MenuSeparator {}
@@ -420,6 +429,13 @@ Item {
             onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
         }
         QQC2.MenuItem { text: root.pinned ? "Unpin Tab" : "Pin Tab"; icon.name: "window-pin"; onTriggered: root.browser.tabById(root.tabId).setPinned(!root.pinned) }
+        QQC2.MenuItem {
+            // Unloading frees a tab's memory; it reloads when shown again.
+            text: menu.unloadable.length > 1 ? "Unload " + menu.unloadable.length + " Tabs" : "Unload Tab"
+            icon.name: "media-playback-pause"
+            enabled: menu.unloadable.length > 0
+            onTriggered: { for (const id of menu.unloadable) root.browser.tabById(id).unload() }
+        }
         QQC2.MenuItem { text: root.muted ? "Unmute Tab" : "Mute Tab"; icon.name: root.muted ? "audio-volume-high" : "audio-volume-muted"; onTriggered: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted } }
         QQC2.MenuItem { text: "Move to New Window"; icon.name: "window-new"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.app.newWindow({urls: [t.url]}); root.browser.closeTab(root.index) } }
         QQC2.MenuItem { text: "Bookmark Tab…"; icon.name: "bookmark-new"; onTriggered: { const t = root.browser.tabById(root.tabId); Browser.addBookmark(t.url, t.title, ""); root.browser.toast("Bookmarked " + t.title, "bookmarks") } }

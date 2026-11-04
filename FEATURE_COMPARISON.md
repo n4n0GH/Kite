@@ -43,7 +43,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
 | Named sessions | ❌ | ❌ | ❌ | All need an extension. |
-| Unload inactive tabs (memory saver) | ⚠️ | ✅ | ✅ | Kite only loads restored tabs when first shown. |
+| Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ❌ | ✅ | ✅ | |
 | Profiles | ⚠️ | ✅ | ✅ | Kite: `--profile NAME` on the command line, no profile picker. |
 | Private windows | ✅ | ✅ | ✅ | |
@@ -145,9 +145,9 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | KDE Wallet storage | ✅ | ✅ | ❌ | Kite shares logins with Falkon. |
 | Master password / primary password | ✅ | ❌ | ✅ | |
 | Password import/export (CSV) | ✅ | ✅ | ✅ | Kite also reads Bitwarden CSV and Falkon XML. |
-| Password generator | ❌ | ✅ | ✅ | |
+| Password generator | ✅ | ✅ | ✅ | |
 | Passkeys (WebAuthn) | ❌ | ✅ | ✅ | |
-| Address and card autofill | ❌ | ✅ | ✅ | |
+| Address and card autofill | ⚠️ | ✅ | ✅ | Kite: addresses and contact details (encrypted), no cards. |
 
 ## Accounts and services
 
@@ -192,7 +192,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 
 **Where Kite lags:**
 - Its engine trails Chrome, and it runs only on Linux.
-- No sync, translation, reader view, picture-in-picture, passkeys or address/card autofill.
-- No password generator or browser themes.
+- No sync, translation, reader view, picture-in-picture, passkeys or card autofill.
+- No browser themes.
 - No profile picker; profiles are chosen on the command line.
 - Its extension API coverage is narrower than Firefox's.
