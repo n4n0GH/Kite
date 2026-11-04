@@ -58,6 +58,7 @@ pub fn defaults() -> Map<String, Value> {
         "web.userAgent": "",
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
+        "tabs.fillWidth": false,
         "tabs.unloadInactive": true,
         "tabs.unloadAfterMinutes": 10,
         "tabs.unloadKeepPinned": true,

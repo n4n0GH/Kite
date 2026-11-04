@@ -276,6 +276,7 @@ Kirigami.ApplicationWindow {
 
             Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tabs" }
             QQC2.ComboBox {
+                id: tabPos
                 Kirigami.FormData.label: "Position:"
                 model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the left"}, {k: "verticalRight", t: "Vertical list on the right"}]
                 textRole: "t"
@@ -284,6 +285,8 @@ Kirigami.ApplicationWindow {
             }
             QQC2.CheckBox { text: "Hide the tab bar when only one tab is open"; checked: w.get("tabs.hideWhenSingle"); onToggled: w.set("tabs.hideWhenSingle", checked) }
             QQC2.Label { text: "Also available by right-clicking the tab bar."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+            QQC2.CheckBox { enabled: tabPos.currentIndex < 3; text: "Stretch tabs across the whole tab bar"; checked: w.get("tabs.fillWidth"); onToggled: w.set("tabs.fillWidth", checked) }
+            QQC2.Label { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)."; opacity: 0.7; font: Kirigami.Theme.smallFont }
             QQC2.CheckBox { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; checked: w.get("tabs.newTabAfterActive"); onToggled: w.set("tabs.newTabAfterActive", checked) }
             QQC2.CheckBox { text: "Switch to tabs opened from links"; checked: w.get("tabs.switchToNewTabFromLink"); onToggled: w.set("tabs.switchToNewTabFromLink", checked) }
             QQC2.CheckBox { text: "Open popup windows in tabs"; checked: w.get("tabs.openPopupsInTabs"); onToggled: w.set("tabs.openPopupsInTabs", checked) }

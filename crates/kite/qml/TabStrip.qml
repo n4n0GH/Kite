@@ -162,17 +162,25 @@ Rectangle {
                 stripRoot.browser.rightPaneCount   // (tabs changing pane)
                 let pinned = 0
                 let shown = 0
+                let groupTabs = 0   // group name tabs (collapsed or heading an open group)
                 stripRoot.browser.tabGroups; stripRoot.browser.groupsVersion   // (collapsed groups)
                 for (let i = 0; i < m.count; ++i) {
                     if (stripRoot.pane >= 0 && m.get(i).pane !== stripRoot.pane) continue
                     const g = m.get(i).group, info = g ? stripRoot.browser.tabGroups[g] : null
-                    if (info && info.collapsed && !stripRoot.browser.isGroupFirst(m.get(i).tabId)) continue
+                    const first = info && stripRoot.browser.isGroupFirst(m.get(i).tabId)
+                    if (info && info.collapsed && !first) continue
+                    if (first) groupTabs++
+                    if (first && info.collapsed) continue
                     shown++
                     if (m.get(i).pinned) pinned++
                 }
                 // Leave room for the new-tab button at the end.
-                const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - (footerItem ? footerItem.width : 0)
-                return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, avail / Math.max(1, shown - pinned)))
+                const avail = width - pinned * Kirigami.Units.gridUnit * 2.4 - groupTabs * Kirigami.Units.gridUnit * 8 - (footerItem ? footerItem.width : 0)
+                const each = avail / Math.max(1, shown - pinned)
+                // "tabs.fillWidth": tabs share the whole strip, however few;
+                // otherwise they stop growing at a comfortable width.
+                if (stripRoot.browser.app.liveSettings["tabs.fillWidth"]) return Math.max(Kirigami.Units.gridUnit * 5, Math.floor(each))
+                return Math.max(Kirigami.Units.gridUnit * 5, Math.min(Kirigami.Units.gridUnit * 14, each))
             }
             QQC2.ScrollBar.vertical: QQC2.ScrollBar { id: verticalScrollBar; active: stripRoot.vertical; visible: stripRoot.vertical && strip.contentHeight > strip.height }
             // Width for tabs in the vertical list: the scroll bar, when shown,
