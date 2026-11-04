@@ -38,7 +38,7 @@ QT_QML=$("$QMAKE" -query QT_INSTALL_QML)
 fetch() { # name url
     local dest=$TOOLS/$1
     if [[ ! -x $dest ]]; then
-        say "Downloading $1"
+        say "Downloading $1" >&2
         mkdir -p "$TOOLS"
         curl -fL --retry 3 -o "$dest.part" "$2"
         chmod +x "$dest.part"
@@ -50,6 +50,10 @@ LD_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/l
 LDQT_URL=https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$ARCH.AppImage
 LINUXDEPLOY=${LINUXDEPLOY:-$(fetch "linuxdeploy-$ARCH.AppImage" "$LD_URL")}
 LINUXDEPLOY_PLUGIN_QT=${LINUXDEPLOY_PLUGIN_QT:-$(fetch "linuxdeploy-plugin-qt-$ARCH.AppImage" "$LDQT_URL")}
+# The AppImage runtime, fetched here rather than by appimagetool (whose own
+# download can hang).
+RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$ARCH
+export LDAI_RUNTIME_FILE=${LDAI_RUNTIME_FILE:-$(fetch "runtime-$ARCH" "$RUNTIME_URL")}
 # linuxdeploy finds plugins named linuxdeploy-plugin-* next to itself or on PATH.
 ln -sf "$LINUXDEPLOY_PLUGIN_QT" "$TOOLS/linuxdeploy-plugin-qt"
 export PATH=$TOOLS:$PATH
