@@ -14,7 +14,7 @@ QQC2.ToolBar {
     position: QQC2.ToolBar.Footer
 
     function open() { visible = true; field.forceActiveFocus(); field.selectAll(); if (field.text) find(false) }
-    function close() { visible = false; if (tab) { tab.view.findText(""); tab.view.forceActiveFocus() } }
+    function close() { visible = false; if (tab) { tab.view.findText(""); tab.focusPage() } }
     function find(backward) {
         if (!tab) return
         if (!visible) { open(); return }

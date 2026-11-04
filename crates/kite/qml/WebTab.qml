@@ -120,7 +120,33 @@ Item {
         if (pendingUrl !== "") { const u = pendingUrl; load(u) }
         web.lifecycleState = WebEngineView.LifecycleState.Active
         if (url === "" || url === app.newTabUrl()) focusLocationBar()
-        else web.forceActiveFocus()
+        else focusPage()
+    }
+
+    // A page that finished loading in the shown tab takes the keyboard (so
+    // arrow keys and Space scroll it right away), unless something else is
+    // being typed into: the address bar, the find bar, a field in a dialog.
+    // Clicked buttons (reload, bookmarks, the toolbar) don't keep it.
+    function focusPageAfterLoad() {
+        if (window.currentTab !== wt || !window.active) return
+        // Already focused (e.g. after Enter in the address bar): only bring
+        // the input method in line with the loaded page.
+        if (web.activeFocus) { focusPage(); return }
+        if (url === "" || url === app.newTabUrl() || app.isStartPage(url)) return
+        const f = window.activeFocusItem
+        if (f && (f.cursorPosition !== undefined || f.editable === true)) return
+        focusPage()
+    }
+
+    // Give the page the keyboard. With an input method (IBus, Fcitx), Qt
+    // doesn't always tell it that the text field it was serving (e.g. the
+    // address bar) lost focus: it keeps turning keys into typed text, which a
+    // page without a focused field drops, so key bindings (Vimium's j/k)
+    // never see them. Asking Qt to re-check, once the focus has moved,
+    // switches the input method off for the page (as a click or Tab would).
+    function focusPage() {
+        web.forceActiveFocus()
+        Qt.callLater(() => { if (web.activeFocus) { Qt.inputMethod.reset(); Qt.inputMethod.update(Qt.ImQueryAll) } })
     }
 
     function activate() { window.setCurrentIndex(window.indexOfTab(tabId)); window.raise(); window.requestActivate() }
@@ -340,10 +366,12 @@ Item {
                         wt.navEvent("onCompleted", {url: u})
                         Browser.recordVisit(u, title)
                         wt.sendUpdate({status: "complete"})
+                        wt.focusPageAfterLoad()
                         break
                     case WebEngineView.LoadFailedStatus:
                         wt.navEvent("onErrorOccurred", {url: u, error: info.errorString})
                         wt.sendUpdate({status: "complete"})
+                        wt.focusPageAfterLoad()
                         // HTTPS-only upgraded this page and the secure version
                         // failed: offer the plain http page instead.
                         if (info.errorDomain !== WebEngineView.CertificateErrorDomain && Browser.httpsUpgradeFailed(u))

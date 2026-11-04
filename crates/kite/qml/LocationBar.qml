@@ -100,7 +100,7 @@ QQC2.TextField {
         }
         editing = false
         popup.close()
-        if (tab) tab.view.forceActiveFocus()
+        if (tab) tab.focusPage()
     }
 
     onAccepted: {
@@ -112,7 +112,7 @@ QQC2.TextField {
     Keys.onPressed: event => {
         if (event.key === Qt.Key_Down && popup.opened) { selected = Math.min(rows.length - 1, selected + 1); event.accepted = true }
         else if (event.key === Qt.Key_Up && popup.opened) { selected = Math.max(-1, selected - 1); event.accepted = true }
-        else if (event.key === Qt.Key_Escape) { editing = false; popup.close(); if (tab) tab.view.forceActiveFocus(); event.accepted = true }
+        else if (event.key === Qt.Key_Escape) { editing = false; popup.close(); if (tab) tab.focusPage(); event.accepted = true }
         else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.AltModifier)) { go(text, "tab"); event.accepted = true }
         else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ControlModifier)) {
             // Ctrl+Enter: add www. and .com like Falkon
