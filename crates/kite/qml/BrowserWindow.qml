@@ -821,14 +821,26 @@ QQC2.ApplicationWindow {
                 tab: bw.currentTab
             }
 
-            // Hovered link
+            // Hovered link: at the bottom left, or the bottom right while the
+            // pointer is where it would be on the left (so it doesn't cover
+            // what's being pointed at).
             Rectangle {
                 id: statusBubble
                 parent: bw.paneArea(bw.activePane)
                 z: 1
                 property string text: bw.currentTab ? bw.currentTab.hoveredLink : ""
                 visible: text !== "" && app.liveSettings["appearance.showStatusBar"]
-                anchors { left: parent.left; bottom: findBar.visible ? findBar.top : parent.bottom }
+                readonly property real margin: Kirigami.Units.gridUnit
+                // The pointer over the page (WebTab.pointer), in this area.
+                readonly property bool onRight: {
+                    const t = bw.currentTab
+                    if (!t || !t.pointerInside || !parent) return false
+                    const p = t.view.mapToItem(parent, t.pointer.x, t.pointer.y)
+                    const bottom = findBar.visible ? findBar.y : parent.height
+                    return p.x <= width + margin && p.y >= bottom - height - margin
+                }
+                x: onRight ? parent.width - width : 0
+                anchors.bottom: findBar.visible ? findBar.top : parent.bottom
                 width: Math.min(statusText.implicitWidth + Kirigami.Units.largeSpacing, parent.width * 0.6)
                 height: statusText.implicitHeight + Kirigami.Units.smallSpacing * 2
                 color: Kirigami.Theme.backgroundColor

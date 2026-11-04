@@ -26,6 +26,10 @@ Item {
     property int openerTabId: -1
     property bool pinned: false
     property string hoveredLink: ""
+    // Where the pointer is over the page (view coordinates), for the link
+    // preview to keep out of its way.
+    readonly property point pointer: pointerWatch.point.position
+    readonly property bool pointerInside: pointerWatch.hovered
     property string url: heldUrl !== "" ? heldUrl : pendingUrl !== "" ? pendingUrl : web.url.toString()
     // Tabs that haven't loaded yet (restored ones load when first activated)
     // show the title and icon they had before.
@@ -318,6 +322,8 @@ Item {
                 id: web
                 objectName: "kite-web-" + wt.tabId
                 anchors.fill: parent
+                // Passive: the page still gets every hover event.
+                HoverHandler { id: pointerWatch }
                 profile: wt.app.profileFor(wt.window.privateMode, wt.container)
                 // Split view: clicking into a pane makes it the active one.
                 onActiveFocusChanged: if (activeFocus && wt.window.split) wt.window.activatePane(wt.pane)
