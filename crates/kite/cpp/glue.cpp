@@ -15,6 +15,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QWebEngineCookieStore>
+#include <QWebEngineGlobalSettings>
 #include <QWebEngineUrlRequestInfo>
 #include <QWebEngineUrlRequestInterceptor>
 #include <QWebEngineUrlRequestJob>
@@ -45,8 +46,11 @@ int kite_rpc(const char *url, const char *initiator, const unsigned char *body, 
 void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
 bool kite_do_not_track();
+bool kite_gpc();
 bool kite_send_referer();
 int kite_cookie_policy();
+int kite_cookie_rule(const char *host);
+KiteBuf kite_session_cookie_hosts();
 }
 
 static QByteArray takeBuf(KiteBuf b)
@@ -167,6 +171,7 @@ public:
         const QByteArray fp = info.firstPartyUrl().toString(QUrl::FullyEncoded).toUtf8();
         const QByteArray ini = info.initiator().toString().toUtf8();
         if (kite_do_not_track()) info.setHttpHeader("DNT", "1");
+        if (kite_gpc()) info.setHttpHeader("Sec-GPC", "1");
         // An empty Referer set here removes the request's referrer.
         if (!kite_send_referer()) info.setHttpHeader("Referer", QByteArray());
         // Make addons.mozilla.org treat Kite as Firefox.
@@ -248,6 +253,42 @@ extern "C" void kite_cpp_delete_all_cookies()
     if (g_profile) g_profile->cookieStore()->deleteAllCookies();
 }
 
+// All cookies of the primary profile (for deleting a site's cookies).
+static QList<QNetworkCookie> g_cookies;
+
+// Delete the cookies of the given hosts and their subdomains (a JSON array).
+extern "C" void kite_cpp_delete_cookies_of(const char *hostsJson)
+{
+    if (!g_profile) return;
+    const auto hosts = QJsonDocument::fromJson(QByteArray(hostsJson)).array();
+    if (hosts.isEmpty()) return;
+    const QList<QNetworkCookie> all = g_cookies;
+    for (const QNetworkCookie &c : all) {
+        const QString domain = c.domain().startsWith(QLatin1Char('.')) ? c.domain().mid(1) : c.domain();
+        for (const auto &h : hosts) {
+            const QString host = h.toString();
+            if (domain == host || domain.endsWith(QLatin1Char('.') + host)) {
+                g_profile->cookieStore()->deleteCookie(c);
+                break;
+            }
+        }
+    }
+}
+
+// DNS over HTTPS ("privacy.dnsOverHttps"): 0 = system DNS, 1 = secure DNS
+// with fallback to the system's, 2 = secure DNS only. Applies at once.
+extern "C" void kite_cpp_apply_dns(int mode, const char *server)
+{
+    QWebEngineGlobalSettings::DnsMode dns;
+    const QString templ = QString::fromUtf8(server).trimmed();
+    if (mode > 0 && templ.startsWith(QLatin1String("https://"))) {
+        dns.secureMode = mode == 2 ? QWebEngineGlobalSettings::SecureDnsMode::SecureOnly : QWebEngineGlobalSettings::SecureDnsMode::SecureWithFallback;
+        dns.serverTemplates = {templ};
+    }
+    if (!QWebEngineGlobalSettings::setDnsMode(dns))
+        qWarning("Kite: DNS over HTTPS server not accepted: %s", server);
+}
+
 extern "C" void kite_cpp_clear_http_cache()
 {
     if (g_profile) g_profile->clearHttpCache();
@@ -288,7 +329,9 @@ void kite_register_schemes()
 }
 
 // Called from bootstrap once the QML profile object exists.
-void kite_install_profile_hooks(QObject *profileObject, bool isPrimary)
+// kind: 0 = the main profile, 1 = private browsing, 2 = a container (only
+// the main profile's cookies are tracked, for the extension cookies API).
+void kite_install_profile_hooks(QObject *profileObject, int kind)
 {
     auto *profile = static_cast<QQuickWebEngineProfile *>(profileObject);
     auto *schemes = new KiteSchemeHandler(profileObject);
@@ -296,21 +339,34 @@ void kite_install_profile_hooks(QObject *profileObject, bool isPrimary)
     profile->installUrlSchemeHandler("kite", schemes);
     profile->installUrlSchemeHandler("kite-res", schemes);
     profile->setUrlRequestInterceptor(new KiteInterceptor(profileObject));
-    // "privacy.cookies": 0 = all, 1 = no third-party, 2 = none.
+    // A site's own cookie rule (Site Settings, "privacy.siteCookieRules"),
+    // else "privacy.cookies": 0 = all, 1 = no third-party, 2 = none.
     profile->cookieStore()->setCookieFilter([](const QWebEngineCookieStore::FilterRequest &request) {
+        const int rule = kite_cookie_rule(request.origin.host().toUtf8().constData());
+        if (rule == 1 || rule == 3) return true;
+        if (rule == 2) return false;
         const int policy = kite_cookie_policy();
         return policy == 0 || (policy == 1 && !request.thirdParty);
     });
-    if (!isPrimary) { g_offTheRecordProfile = profileObject; return; }
+    if (kind == 1) { g_offTheRecordProfile = profileObject; return; }
+    if (kind == 2) return;
 
     g_profile = profile;
     auto *store = profile->cookieStore();
     QObject::connect(store, &QWebEngineCookieStore::cookieAdded, profileObject, [](const QNetworkCookie &c) {
+        g_cookies.removeIf([&c](const QNetworkCookie &o) { return o.hasSameIdentifier(c); });
+        g_cookies.append(c);
         kite_cookie_event(cookieJson(c).constData(), 0, g_initialCookiesDone ? 0 : 1);
     });
     QObject::connect(store, &QWebEngineCookieStore::cookieRemoved, profileObject, [](const QNetworkCookie &c) {
+        g_cookies.removeIf([&c](const QNetworkCookie &o) { return o.hasSameIdentifier(c); });
         kite_cookie_event(cookieJson(c).constData(), 1, 0);
     });
     store->loadAllCookies();
-    QTimer::singleShot(1500, profileObject, [] { g_initialCookiesDone = true; });
+    QTimer::singleShot(1500, profileObject, [] {
+        g_initialCookiesDone = true;
+        // Cookies of sites set to "until Kite closes" left over from a
+        // session that didn't end normally.
+        kite_cpp_delete_cookies_of(takeBuf(kite_session_cookie_hosts()).constData());
+    });
 }

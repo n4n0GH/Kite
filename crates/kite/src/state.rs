@@ -4,6 +4,7 @@
 use kite_core::adblock::AdBlock;
 use kite_core::shared::Shared;
 use kite_core::webext::runtime::Runtime;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 pub struct App {
@@ -19,6 +20,8 @@ pub struct App {
     pub send_referer: std::sync::atomic::AtomicBool,
     /// "privacy.cookies" as `cookie_policy()`, read by the cookie filter.
     pub cookie_policy: std::sync::atomic::AtomicU8,
+    /// The privacy settings the network layer reads ("privacy.*").
+    pub privacy: Privacy,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
     pub initial_urls: Vec<String>,
@@ -61,7 +64,12 @@ pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
         let s = shared.settings();
         (s.get_bool("web.doNotTrack").into(), s.get_bool("privacy.sendReferer").into(), cookie_policy(&s.get_str("privacy.cookies")).into())
     };
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    let privacy = Privacy::default();
+    for key in Privacy::KEYS {
+        privacy.apply(key, &shared.settings().get(key));
+    }
+    privacy.load_cookie_rules(&shared);
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }
@@ -95,5 +103,106 @@ impl App {
         };
         let ab = self.adblock.clone();
         std::thread::spawn(move || done(ab.rebuild(&subs, &rules, download)));
+    }
+}
+
+/// Privacy settings read on every request (the interceptor runs on the UI
+/// thread, so these are atomics), and HTTPS-only's session state.
+#[derive(Default)]
+pub struct Privacy {
+    /// "privacy.globalPrivacyControl": the Sec-GPC header.
+    pub gpc: AtomicBool,
+    /// "privacy.stripTrackingParams": remove click/campaign IDs from page URLs.
+    pub strip_params: AtomicBool,
+    /// "privacy.httpsOnly": upgrade page loads to https.
+    pub https_only: AtomicBool,
+    /// Hosts the user chose to visit over plain http this session.
+    pub http_allowed: Mutex<std::collections::HashSet<String>>,
+    /// Hosts recently upgraded, so a failed https load can offer the http page.
+    pub upgraded: Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    /// "privacy.siteCookieRules": the sites' cookie rules (Site Settings) apply.
+    pub site_cookie_rules: AtomicBool,
+    /// Host → rule (1 = allow, 2 = block, 3 = allow until Kite closes), read
+    /// by the cookie filter on Chromium's network thread.
+    pub cookie_rules: std::sync::RwLock<std::collections::HashMap<String, u8>>,
+}
+
+impl Privacy {
+    pub const KEYS: [&'static str; 4] = ["privacy.globalPrivacyControl", "privacy.stripTrackingParams", "privacy.httpsOnly", "privacy.siteCookieRules"];
+
+    /// Follow a setting change (unknown keys are ignored).
+    pub fn apply(&self, key: &str, v: &serde_json::Value) {
+        let on = v.as_bool().unwrap_or(false);
+        match key {
+            "privacy.globalPrivacyControl" => self.gpc.store(on, Relaxed),
+            "privacy.stripTrackingParams" => self.strip_params.store(on, Relaxed),
+            "privacy.httpsOnly" => self.https_only.store(on, Relaxed),
+            "privacy.siteCookieRules" => self.site_cookie_rules.store(on, Relaxed),
+            _ => {}
+        }
+    }
+
+    /// The https URL a page load of `url` goes to instead, if HTTPS-only
+    /// upgrades it.
+    pub fn upgrade(&self, url: &str) -> Option<String> {
+        if !self.https_only.load(Relaxed) {
+            return None;
+        }
+        let host = kite_core::util::host_of(url);
+        if self.http_allowed.lock().unwrap().contains(&host) {
+            return None;
+        }
+        let to = kite_core::privacy::https_upgrade(url)?;
+        self.upgraded.lock().unwrap().insert(host, std::time::Instant::now());
+        Some(to)
+    }
+
+    /// Whether a failed load of `url` was an HTTPS-only upgrade (in the last
+    /// minute), so the http page may be offered instead.
+    pub fn was_upgraded(&self, url: &str) -> bool {
+        let host = kite_core::util::host_of(url);
+        self.upgraded.lock().unwrap().get(&host).is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60))
+    }
+
+    /// Reload the sites' cookie rules (after a site setting changed).
+    pub fn load_cookie_rules(&self, shared: &Shared) {
+        let rules = kite_core::sitesettings::all(&shared.db())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, s)| (1..=3).contains(&s.cookies))
+            .map(|(h, s)| (h, s.cookies as u8))
+            .collect();
+        *self.cookie_rules.write().unwrap() = rules;
+    }
+
+    /// The cookie rule for `host` (or the closest parent domain with one):
+    /// 0 = none (the global policy applies).
+    pub fn cookie_rule(&self, host: &str) -> u8 {
+        if !self.site_cookie_rules.load(Relaxed) {
+            return 0;
+        }
+        let rules = self.cookie_rules.read().unwrap();
+        let mut h = host.trim_start_matches('.');
+        loop {
+            if let Some(r) = rules.get(h) {
+                return *r;
+            }
+            match h.split_once('.') {
+                Some((_, parent)) if parent.contains('.') => h = parent,
+                _ => return 0,
+            }
+        }
+    }
+
+    /// Hosts whose cookies go when Kite closes (rule 3).
+    pub fn session_cookie_hosts(&self) -> Vec<String> {
+        if !self.site_cookie_rules.load(Relaxed) {
+            return vec![];
+        }
+        self.cookie_rules.read().unwrap().iter().filter(|(_, r)| **r == 3).map(|(h, _)| h.clone()).collect()
+    }
+
+    pub fn allow_http(&self, host: &str) {
+        self.http_allowed.lock().unwrap().insert(host.to_owned());
     }
 }

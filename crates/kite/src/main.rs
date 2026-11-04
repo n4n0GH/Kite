@@ -69,15 +69,21 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Chromium flags (unless given): GPU rasterization, and overlay scrollbars
+    // Chromium flags: GPU rasterization, overlay scrollbars
     // ("appearance.overlayScrollbars"; js/scrollbars.js extends them to pages
-    // that style their own).
-    if std::env::var_os("QTWEBENGINE_CHROMIUM_FLAGS").is_none_or(|v| v.is_empty()) {
-        let mut flags = String::from("--enable-gpu-rasterization");
-        if state::app().shared.settings().get_bool("appearance.overlayScrollbars") {
-            flags.push_str(" --enable-features=FluentOverlayScrollbar");
+    // that style their own) and the proxy ("privacy.proxy"). Flags the user
+    // gives in QTWEBENGINE_CHROMIUM_FLAGS come last, so they win.
+    {
+        let s = state::app().shared.settings();
+        let mut flags = vec!["--enable-gpu-rasterization".to_owned()];
+        if s.get_bool("appearance.overlayScrollbars") {
+            flags.push("--enable-features=FluentOverlayScrollbar".into());
         }
-        std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+        flags.extend(proxy_flags(&s.get_str("privacy.proxy"), &s.get_str("privacy.proxyType"), &s.get_str("privacy.proxyHost"), s.get_i64("privacy.proxyPort")));
+        if let Ok(user) = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS") {
+            flags.push(user);
+        }
+        std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags.join(" "));
     }
 
     let args: Vec<CString> = qt_args.into_iter().map(|a| CString::new(a).unwrap_or_default()).collect();
@@ -90,4 +96,18 @@ fn main() {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }
     std::process::exit(code);
+}
+
+/// Chromium's proxy switches for "privacy.proxy": "none" connects directly,
+/// "manual" uses the given HTTP or SOCKS5 proxy (SOCKS5 also resolves host
+/// names through the proxy), "system" leaves it to the desktop settings.
+fn proxy_flags(mode: &str, kind: &str, host: &str, port: i64) -> Vec<String> {
+    match mode {
+        "none" => vec!["--no-proxy-server".into()],
+        "manual" if !host.trim().is_empty() && (1..=65535).contains(&port) => {
+            let scheme = if kind == "http" { "http" } else { "socks5" };
+            vec![format!("--proxy-server={scheme}://{}:{port}", host.trim())]
+        }
+        _ => vec![],
+    }
 }

@@ -25,6 +25,41 @@ QtObject {
     property WebEngineProfile profile: null
     property WebEngineProfile privateProfile: null
 
+    // ---- container tabs ("privacy.containers") ------------------------------
+    // Each container is a profile of its own (cookies, storage, cache,
+    // permissions), created when its first tab opens. Not in private windows.
+    readonly property bool containersEnabled: !!liveSettings["privacy.containers"] && !Browser.isPrivate()
+    readonly property var containers: liveSettings["privacy.containerList"] || []
+    function containerInfo(id) { return containers.find(c => c.id === id) || null }
+    // id → WebEngineProfile (read by bootstrap.cpp to install network hooks).
+    // Filled in place, without change notifications: tabs choose their
+    // profile in a binding, which must not depend on this.
+    readonly property var containerProfiles: ({})
+    property Component _containerProto: Component {
+        WebEngineProfilePrototype {
+            persistentCookiesPolicy: WebEngineProfile.AllowPersistentCookies
+            persistentPermissionsPolicy: WebEngineProfile.StoreOnDisk
+        }
+    }
+    function containerProfile(id) {
+        if (containerProfiles[id]) return containerProfiles[id]
+        // Next to the main profile's storage: <profile>/webengine-containers/<id>
+        const proto = _containerProto.createObject(app, {storageName: "container-" + id, persistentStoragePath: Browser.webEnginePath() + "-containers/" + id})
+        const p = proto.instance()
+        containerProfiles[id] = p
+        Browser.hookContainerProfiles()
+        configureProfile(p)
+        installUserScripts()
+        return p
+    }
+    // The profile for a tab of a window (private, a container, or the main
+    // one). Only looks it up: openTab() creates a container's profile first.
+    function profileFor(privateMode, container) {
+        if (privateMode) return privateProfile
+        return (container && containerProfiles[container]) || profile
+    }
+    function allProfiles() { return [profile, privateProfile].concat(Object.values(containerProfiles)) }
+
     property var windows: []
     property var activeWindow: null
     property int nextTabId: 1
@@ -49,8 +84,8 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle"]
-    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting"]
+    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
         target: Browser
@@ -60,8 +95,8 @@ QtObject {
                 o[key] = JSON.parse(json)
                 app.liveSettings = o
             }
-            if (app.profileKeys.includes(key)) for (const p of [app.profile, app.privateProfile]) app.applyProfileSettings(p)
-            if (key === "web.doNotTrack") app.installUserScripts()
+            if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting"].includes(key)) app.installUserScripts()
         }
     }
 
@@ -73,8 +108,11 @@ QtObject {
     // Qt's own user agent, restored when the setting is cleared.
     property string defaultUserAgent: ""
     function applyProfileSettings(p) {
+        // A user agent of the user's own, or QtWebEngine's; that one names
+        // "QtWebEngine/6.x", which few browsers send and so helps identify
+        // the user: without it, it reads like Chrome ("privacy.genericUserAgent").
         const ua = setting("web.userAgent")
-        p.httpUserAgent = ua ? ua : defaultUserAgent
+        p.httpUserAgent = ua ? ua : setting("privacy.genericUserAgent") ? defaultUserAgent.replace(/ ?QtWebEngine\/[\d.]+/, "") : defaultUserAgent
         p.downloadPath = setting("downloads.directory")
         p.spellCheckEnabled = setting("web.spellcheck")
         p.spellCheckLanguages = setting("web.spellcheckLanguages")
@@ -182,6 +220,7 @@ QtObject {
         quitting = true
         if (!sessionSaved) saveSession()
         Browser.setRunning(false)
+        Browser.deleteSessionCookies()
         if (setting("privacy.clearOnExit")) Browser.clearPrivateData(JSON.stringify({history: true, cookies: true, cache: true, downloads: true, closedTabs: true}))
         for (const w of windows.slice()) w.destroy()
         Qt.quit()
@@ -204,6 +243,13 @@ QtObject {
     // scripts limited to the site's host. CSS goes in as the document is
     // created (no unstyled flash); JavaScript runs in the page's own world
     // once the DOM is ready, like a user script.
+    // A seed per site for this session (fingerprint protection).
+    readonly property int _fingerprintSalt: Math.floor(Math.random() * 0x7fffffff)
+    function fingerprintSeed(host) {
+        let h = _fingerprintSalt
+        for (let i = 0; i < host.length; ++i) h = (Math.imul(h, 31) + host.charCodeAt(i)) >>> 0
+        return h >>> 0
+    }
     function siteScripts() {
         const out = []
         for (const e of JSON.parse(Browser.allSiteSettings())) {
@@ -214,6 +260,10 @@ QtObject {
                     + " if (document.documentElement) add(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); add() } }).observe(document, {childList: true}) })();"})
             if (e.settings.js)
                 out.push({name: "kite:site-js:" + e.host, worldId: 0, runsOnSubFrames: false, injectionPoint: 1, sourceCode: header + e.settings.js})
+            // Fingerprint protection: before the page's scripts, in all its
+            // frames; the noise differs per site and per session.
+            if (e.settings.fingerprint === 1 && setting("privacy.antiFingerprinting"))
+                out.push({name: "kite:site-fp:" + e.host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + Browser.fingerprintScript(fingerprintSeed(e.host))})
         }
         return out
     }
@@ -232,9 +282,9 @@ QtObject {
 
     function installUserScripts() {
         const sites = siteScripts()
-        for (const p of [profile, privateProfile]) {
+        for (const p of allProfiles()) {
             // Like Firefox, extensions don't run in private windows by default.
-            const wanted = JSON.parse(Extensions.userScripts(p === profile))
+            const wanted = JSON.parse(Extensions.userScripts(p !== privateProfile))
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Overlay scrollbars also for pages styling their own.
@@ -245,6 +295,16 @@ QtObject {
             if (setting("web.doNotTrack"))
                 wanted.push({name: "kite:doNotTrack", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "Object.defineProperty(Navigator.prototype, 'doNotTrack', { get() { return '1'; }, configurable: true, enumerable: true });"})
+            // Global Privacy Control (the Sec-GPC header is added by the
+            // request interceptor).
+            if (setting("privacy.globalPrivacyControl"))
+                wanted.push({name: "kite:gpc", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
+                             sourceCode: "Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get() { return true; }, configurable: true, enumerable: true });"})
+            // <a ping> beacons: the attribute is dropped as a link is clicked
+            // (blocking "ping" requests would also stop navigator.sendBeacon).
+            if (setting("privacy.blockPings"))
+                wanted.push({name: "kite:noPings", worldId: 1, runsOnSubFrames: true, injectionPoint: 0,
+                             sourceCode: "for (const t of ['click', 'auxclick']) document.addEventListener(t, e => { const a = e.target instanceof Element && e.target.closest('a[ping], area[ping]'); if (a) a.removeAttribute('ping'); }, true);"})
             for (const s of sites) wanted.push(s)
             updateScripts(p.userScripts, wanted)
         }

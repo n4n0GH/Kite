@@ -104,7 +104,10 @@ QQC2.ApplicationWindow {
         let idx = opts.index !== undefined && opts.index >= 0 ? Math.min(opts.index, tabModel.count) : tabModel.count
         if (opts.index === undefined && opts.afterCurrent && app.setting("tabs.newTabAfterActive")) idx = currentIndex + 1
         if (!opts.pinned) { let firstUnpinned = 0; while (firstUnpinned < tabModel.count && tabModel.get(firstUnpinned).pinned) ++firstUnpinned; idx = Math.max(idx, firstUnpinned) }
-        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false})
+        // A container tab ("privacy.containers"): its own cookies and storage.
+        const container = !privateMode && opts.container && app.containersEnabled && app.containerInfo(opts.container) ? opts.container : ""
+        if (container) app.containerProfile(container)
+        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container})
         const t = tabById(id)
         t.openerTabId = opts.openerTabId !== undefined ? opts.openerTabId : -1
         Extensions.browserEvent("tabCreated", JSON.stringify({tab: t.extInfo()}))
@@ -118,7 +121,7 @@ QQC2.ApplicationWindow {
     }
 
     function restoreTab(saved) {
-        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title})
+        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container})
         t.restoreLook(saved.title, saved.url)
         if (saved.zoom > 0) t.view.zoomFactor = saved.zoom
         return t
@@ -196,7 +199,7 @@ QQC2.ApplicationWindow {
 
     function reopenClosedTab(i) {
         const saved = JSON.parse(Browser.popClosedTab(i || 0))
-        if (saved && saved.url) { const t = openTab(saved.url, {background: false, pinned: saved.pinned}); return t }
+        if (saved && saved.url) { const t = openTab(saved.url, {background: false, pinned: saved.pinned, container: saved.container}); return t }
         return null
     }
 

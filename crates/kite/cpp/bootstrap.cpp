@@ -9,6 +9,7 @@
 #include <QQmlContext>
 #include <QQuickImageProvider>
 #include <QQuickWindow>
+#include <QSet>
 #include <QQuickItem>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -23,7 +24,7 @@
 namespace QtWebEngineQuick { void initialize(); }
 
 void kite_register_schemes();
-void kite_install_profile_hooks(QObject *profile, bool isPrimary);
+void kite_install_profile_hooks(QObject *profile, int kind);
 extern "C" void kite_log(int level, const char *category, const char *message);
 extern "C" void kite_favicon_ready(const char *pageUrl, const unsigned char *png, size_t len);
 
@@ -220,6 +221,24 @@ static void kiteMessageHandler(QtMsgType type, const QMessageLogContext &context
     kite_log(level, context.category ? context.category : "default", text.constData());
 }
 
+// Container tabs' profiles are created later (Main.qml containerProfile()):
+// hook the ones not hooked yet.
+extern "C" void kite_cpp_hook_container_profiles()
+{
+    static QSet<QObject *> hooked;
+    if (!g_engine || g_engine->rootObjects().isEmpty()) return;
+    const QVariantMap profiles = g_engine->rootObjects().first()->property("containerProfiles").toMap();
+    for (const QVariant &v : profiles) {
+        QObject *p = v.value<QObject *>();
+        if (p && !hooked.contains(p)) {
+            hooked.insert(p);
+            kite_install_profile_hooks(p, 2);
+        }
+    }
+}
+
+extern "C" void kite_init_dns();
+
 extern "C" int kite_bootstrap(int argc, char **argv)
 {
     qInstallMessageHandler(kiteMessageHandler);
@@ -250,14 +269,15 @@ extern "C" int kite_bootstrap(int argc, char **argv)
 
     QQmlApplicationEngine engine;
     g_engine = &engine;
+    kite_init_dns();
     app.installEventFilter(new KiteInputFilter(&app));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &app, [](QObject *obj, const QUrl &) {
         if (!obj) return;
-        if (auto *p = obj->property("profile").value<QObject *>()) kite_install_profile_hooks(p, true);
-        if (auto *p = obj->property("privateProfile").value<QObject *>()) kite_install_profile_hooks(p, false);
+        if (auto *p = obj->property("profile").value<QObject *>()) kite_install_profile_hooks(p, 0);
+        if (auto *p = obj->property("privateProfile").value<QObject *>()) kite_install_profile_hooks(p, 1);
         QMetaObject::invokeMethod(obj, "start", Qt::QueuedConnection);
     });
     engine.loadFromModule("org.kde.kite", "Main");

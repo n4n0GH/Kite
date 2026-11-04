@@ -16,6 +16,9 @@ Item {
     required property bool pinned
     required property bool audible
     required property bool muted
+    // Container tab id ("privacy.containers"), and its name and colour.
+    required property string container
+    readonly property var containerInfo: container ? browser.app.containerInfo(container) : null
     property var browser
     property var tabList
     // Where the strip is: "top" / "bottom" (horizontal, the current tab
@@ -84,14 +87,17 @@ Item {
             height: parent.border.width
             color: parent.color
         }
+        // The current tab's marker; container tabs always show theirs, in
+        // the container's colour.
         Rectangle {
-            visible: root.current
+            visible: root.current || !!root.containerInfo
+            opacity: root.current ? 1 : 0.75
             x: root.vertical ? 0 : 0
             y: root.vertical ? 0 : root.placement === "bottom" ? parent.height - 2 : 0
             width: root.vertical ? 3 : parent.width
             height: root.vertical ? parent.height : 2
             radius: 1
-            color: Kirigami.Theme.highlightColor
+            color: root.containerInfo ? root.containerInfo.color : Kirigami.Theme.highlightColor
         }
 
         RowLayout {
@@ -163,7 +169,7 @@ Item {
     }
 
     HoverHandler { id: hover }
-    QQC2.ToolTip.text: root.title
+    QQC2.ToolTip.text: root.containerInfo ? root.title + "\n" + root.containerInfo.name + " container" : root.title
     QQC2.ToolTip.visible: hover.hovered && !dragHandler.active
     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay * 2
 
@@ -237,7 +243,15 @@ Item {
         QQC2.MenuItem { text: "New Tab"; icon.name: "list-add"; onTriggered: root.browser.openTab(root.browser.app.newTabUrl(), {index: root.index + 1}) }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Reload Tab"; icon.name: "view-refresh"; onTriggered: root.browser.tabById(root.tabId).view.reload() }
-        QQC2.MenuItem { text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {index: root.index + 1}) } }
+        QQC2.MenuItem { id: duplicateItem; text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: t.container, index: root.index + 1}) } }
+        // (A property: a Menu declared inside a Menu is always added to it.)
+        property ContainerMenu _containerMenu: ContainerMenu {
+            title: "Reopen in Container"
+            app: root.browser.privateMode ? null : root.browser.app
+            parentMenu: menu
+            after: duplicateItem
+            onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
+        }
         QQC2.MenuItem { text: root.pinned ? "Unpin Tab" : "Pin Tab"; icon.name: "window-pin"; onTriggered: root.browser.tabById(root.tabId).setPinned(!root.pinned) }
         QQC2.MenuItem { text: root.muted ? "Unmute Tab" : "Mute Tab"; icon.name: root.muted ? "audio-volume-high" : "audio-volume-muted"; onTriggered: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted } }
         QQC2.MenuItem { text: "Move to New Window"; icon.name: "window-new"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.app.newWindow({urls: [t.url]}); root.browser.closeTab(root.index) } }

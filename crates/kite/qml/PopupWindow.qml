@@ -39,7 +39,7 @@ Window {
             Layout.fillHeight: true
             profile: w.profile
             onWindowCloseRequested: w.close()
-            onNewWindowRequested: request => w.opener.window.openTab("", {request: request, background: false})
+            onNewWindowRequested: request => w.opener.window.openTab("", {request: request, background: false, container: w.opener.container})
             onGeometryChangeRequested: geometry => { w.x = geometry.x; w.y = geometry.y; w.width = geometry.width; w.height = geometry.height + bar.height }
             Component.onCompleted: w.request.openIn(view)
         }

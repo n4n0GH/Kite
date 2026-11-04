@@ -17,7 +17,15 @@ QQC2.Menu {
 
     QQC2.MenuItem { text: "New Tab"; icon.name: "tab-new"; onTriggered: win.openTab(app.newTabUrl(), {background: false}).focusLocationBar() }
     QQC2.MenuItem { text: "New Window"; icon.name: "window-new"; onTriggered: app.newWindow() }
-    QQC2.MenuItem { text: "New Private Window"; icon.name: "view-private"; onTriggered: app.newWindow({privateMode: true}) }
+    QQC2.MenuItem { id: newPrivateWindow; text: "New Private Window"; icon.name: "view-private"; onTriggered: app.newWindow({privateMode: true}) }
+    // (A property: a Menu declared inside a Menu is always added to it.)
+    property ContainerMenu _containerMenu: ContainerMenu {
+        title: "New Container Tab"
+        app: menu.app
+        parentMenu: menu
+        after: newPrivateWindow
+        onChosen: c => menu.win.openTab(menu.app.newTabUrl(), {background: false, container: c}).focusLocationBar()
+    }
     QQC2.MenuItem { text: "Open File…"; icon.name: "document-open"; onTriggered: win.openFile() }
     QQC2.MenuItem { text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: win.savePage() }
     QQC2.MenuItem { text: "Print to PDF…"; icon.name: "document-print"; onTriggered: win.printTab() }

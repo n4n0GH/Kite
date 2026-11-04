@@ -53,9 +53,9 @@ fn upgrade(conn: &Connection) -> anyhow::Result<()> {
         let names: Vec<String> = stmt.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
         Ok(names.iter().any(|n| n == col))
     };
-    for col in ["kite_css", "kite_js"] {
+    for (col, kind) in [("kite_css", "TEXT DEFAULT ''"), ("kite_js", "TEXT DEFAULT ''"), ("kite_fp", "INTEGER DEFAULT 0")] {
         if !has("site_settings", col)? {
-            conn.execute_batch(&format!("ALTER TABLE site_settings ADD COLUMN {col} TEXT DEFAULT ''"))?;
+            conn.execute_batch(&format!("ALTER TABLE site_settings ADD COLUMN {col} {kind}"))?;
         }
     }
     Ok(())

@@ -21,6 +21,8 @@ pub struct SiteSettings {
     pub css: String,
     /// Script run in the site's pages (page world, once the DOM is ready).
     pub js: String,
+    /// 1 = fingerprint protection on ("privacy.antiFingerprinting").
+    pub fingerprint: i64,
 }
 
 impl SiteSettings {
@@ -34,7 +36,7 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
     Ok(db
         .query_row(
             "SELECT zoom_level, allow_cookies, wa_js_enabled, wa_autoload_images, f_notifications, f_geolocation,
-                    wa_force_dark_mode, kite_css, kite_js
+                    wa_force_dark_mode, kite_css, kite_js, kite_fp
              FROM site_settings WHERE server = ?1",
             [host],
             |r| {
@@ -48,6 +50,7 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
                     dark_mode: r.get(6)?,
                     css: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
                     js: r.get::<_, Option<String>>(8)?.unwrap_or_default(),
+                    fingerprint: r.get::<_, Option<i64>>(9)?.unwrap_or_default(),
                 })
             },
         )
@@ -63,6 +66,7 @@ const COLUMNS: &[(&str, &str)] = &[
     ("notifications", "f_notifications"),
     ("geolocation", "f_geolocation"),
     ("darkMode", "wa_force_dark_mode"),
+    ("fingerprint", "kite_fp"),
 ];
 
 const TEXT_COLUMNS: &[(&str, &str)] = &[("css", "kite_css"), ("js", "kite_js")];
@@ -92,8 +96,8 @@ pub fn clear(db: &Connection, host: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Back to the defaults, except for custom CSS and JavaScript (written by
-/// the user, not picked up while browsing).
+/// Back to the defaults, except for custom CSS and JavaScript and fingerprint
+/// protection (chosen by the user, not picked up while browsing).
 pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
     let s = get(db, host)?;
     clear(db, host)?;
@@ -102,6 +106,9 @@ pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
     }
     if !s.js.is_empty() {
         set_text(db, host, "js", &s.js)?;
+    }
+    if s.fingerprint != 0 {
+        set(db, host, "fingerprint", s.fingerprint)?;
     }
     Ok(())
 }

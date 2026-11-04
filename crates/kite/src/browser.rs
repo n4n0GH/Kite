@@ -205,6 +205,27 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "clearSiteSettings"]
         fn clear_site_settings(self: Pin<&mut Browser>, host: &QString);
+        /// Whether a failed page load of `url` was an HTTPS-only upgrade.
+        #[qinvokable]
+        #[cxx_name = "httpsUpgradeFailed"]
+        fn https_upgrade_failed(self: &Browser, url: &QString) -> bool;
+        /// Fingerprint protection for a site (js/fingerprint.js), with its
+        /// noise seed.
+        #[qinvokable]
+        #[cxx_name = "fingerprintScript"]
+        fn fingerprint_script(self: &Browser, seed: u32) -> QString;
+        /// Install the network hooks on new container profiles (Main.qml).
+        #[qinvokable]
+        #[cxx_name = "hookContainerProfiles"]
+        fn hook_container_profiles(self: &Browser);
+        /// Delete the cookies of sites set to "until Kite closes" (at quit).
+        #[qinvokable]
+        #[cxx_name = "deleteSessionCookies"]
+        fn delete_session_cookies(self: &Browser);
+        /// Visit `host` over plain http this session (HTTPS-only exception).
+        #[qinvokable]
+        #[cxx_name = "allowHttp"]
+        fn allow_http(self: &Browser, host: &QString);
         /// Text settings: "css" or "js".
         #[qinvokable]
         #[cxx_name = "setSiteText"]
@@ -328,6 +349,8 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         "web.doNotTrack" => a.do_not_track.store(v.as_bool().unwrap_or(false), std::sync::atomic::Ordering::Relaxed),
         "privacy.sendReferer" => a.send_referer.store(v.as_bool().unwrap_or(true), std::sync::atomic::Ordering::Relaxed),
         "privacy.cookies" => a.cookie_policy.store(crate::state::cookie_policy(v.as_str().unwrap_or("all")), std::sync::atomic::Ordering::Relaxed),
+        "privacy.dnsOverHttps" | "privacy.dnsServer" => crate::ffi::apply_dns(),
+        k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
 }
@@ -769,6 +792,7 @@ impl qobject::Browser {
             return;
         }
         let _ = kite_core::sitesettings::set(&a.shared.db(), &host.to_string(), &key.to_string(), value as i64);
+        app().privacy.load_cookie_rules(&app().shared);
     }
     fn all_site_settings(&self) -> QString {
         let list = kite_core::sitesettings::all(&app().shared.db()).unwrap_or_default();
@@ -776,12 +800,30 @@ impl qobject::Browser {
     }
     fn clear_site_settings(self: Pin<&mut Self>, host: &QString) {
         let _ = kite_core::sitesettings::clear(&app().shared.db(), &host.to_string());
+        app().privacy.load_cookie_rules(&app().shared);
+    }
+    fn https_upgrade_failed(&self, url: &QString) -> bool {
+        let url = url.to_string();
+        url.starts_with("https:") && app().privacy.was_upgraded(&url)
+    }
+    fn fingerprint_script(&self, seed: u32) -> QString {
+        q(&include_str!("js/fingerprint.js").replace("__KITE_SEED__", &seed.to_string()))
+    }
+    fn hook_container_profiles(&self) {
+        crate::ffi::hook_container_profiles();
+    }
+    fn delete_session_cookies(&self) {
+        crate::ffi::delete_session_cookies();
+    }
+    fn allow_http(&self, host: &QString) {
+        app().privacy.allow_http(&host.to_string());
     }
     fn set_site_text(self: Pin<&mut Self>, host: &QString, key: &QString, value: &QString) {
         let _ = kite_core::sitesettings::set_text(&app().shared.db(), &host.to_string(), &key.to_string(), &value.to_string());
     }
     fn reset_site_settings(self: Pin<&mut Self>, host: &QString) {
         let _ = kite_core::sitesettings::reset(&app().shared.db(), &host.to_string());
+        app().privacy.load_cookie_rules(&app().shared);
     }
 
     // ---- content blocking ---------------------------------------------------

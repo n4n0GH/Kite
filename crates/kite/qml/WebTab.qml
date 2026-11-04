@@ -12,6 +12,8 @@ Item {
     id: wt
 
     required property int tabId
+    // Container tab id ("" = none); fixed for the tab's life (its profile).
+    required property string container
     property int tabIndex: 0
     property var window
     property var app
@@ -129,7 +131,7 @@ Item {
     }
 
     function saveState() {
-        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0}
+        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container}
     }
 
     function extInfo() {
@@ -140,6 +142,7 @@ Item {
             status: status, incognito: window.privateMode, audible: web.recentlyAudible, discarded: pendingUrl !== "",
             mutedInfo: {muted: web.audioMuted}, width: web.width, height: web.height, lastAccessed: lastAccessed,
             openerTabId: openerTabId >= 0 ? openerTabId : undefined, hidden: false, isArticle: false, isInReaderMode: false,
+            cookieStoreId: window.privateMode ? "firefox-private" : container ? "firefox-container-" + container : "firefox-default",
         }
     }
 
@@ -209,7 +212,7 @@ Item {
             WebEngineView {
                 id: web
                 anchors.fill: parent
-                profile: wt.window.privateMode ? wt.app.privateProfile : wt.app.profile
+                profile: wt.app.profileFor(wt.window.privateMode, wt.container)
                 webChannel: channel
                 webChannelWorld: wt.isExtensionPage ? 0 : 1
                 lifecycleState: WebEngineView.LifecycleState.Active
@@ -223,6 +226,8 @@ Item {
                 // Animated (smooth) scrolling with the mouse wheel and keys.
                 settings.scrollAnimatorEnabled: wt.app.liveSettings["web.smoothScrolling"]
                 settings.dnsPrefetchEnabled: wt.app.liveSettings["web.dnsPrefetch"]
+                // WebRTC only uses (and so reveals) public network addresses.
+                settings.webRTCPublicInterfacesOnly: !!wt.app.liveSettings["privacy.webrtcPublicOnly"]
                 settings.printElementBackgrounds: wt.app.liveSettings["web.printBackgrounds"]
                 settings.fullScreenSupportEnabled: true
                 settings.focusOnNavigationEnabled: true
@@ -284,6 +289,10 @@ Item {
                     case WebEngineView.LoadFailedStatus:
                         wt.navEvent("onErrorOccurred", {url: u, error: info.errorString})
                         wt.sendUpdate({status: "complete"})
+                        // HTTPS-only upgraded this page and the secure version
+                        // failed: offer the plain http page instead.
+                        if (info.errorDomain !== WebEngineView.CertificateErrorDomain && Browser.httpsUpgradeFailed(u))
+                            web.url = "kite:https-only?url=" + encodeURIComponent(u.replace(/^https:/, "http:"))
                         break
                     case WebEngineView.LoadStoppedStatus:
                         wt.sendUpdate({status: "complete"})
@@ -293,6 +302,20 @@ Item {
 
                 onLinkHovered: hoveredUrl => wt.hoveredLink = hoveredUrl.toString()
 
+                // "Continue to the HTTP site" on the HTTPS-only page: allowed
+                // for this session, then loaded (Chromium won't redirect from
+                // a kite: page to plain http).
+                onNavigationRequested: request => {
+                    const u = request.url.toString()
+                    if (!u.startsWith("kite:https-allow?")) return
+                    request.reject()
+                    const target = decodeURIComponent((u.match(/[?&]url=([^&]*)/) || [])[1] || "")
+                    if (!target.startsWith("http:")) return
+                    Browser.allowHttp(Browser.hostOf(target))
+                    // Not from inside this handler (that re-enters Chromium).
+                    Qt.callLater(() => { web.url = target })
+                }
+
                 onNewWindowRequested: request => {
                     const dest = request.destination
                     const popup = dest === WebEngineNewWindowRequest.InNewDialog || dest === WebEngineNewWindowRequest.InNewWindow
@@ -301,7 +324,7 @@ Item {
                         return
                     }
                     const bg = dest === WebEngineNewWindowRequest.InNewBackgroundTab
-                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.indexOfTab(wt.tabId) + 1, openerTabId: wt.tabId})
+                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.indexOfTab(wt.tabId) + 1, openerTabId: wt.tabId, container: wt.container})
                 }
 
                 onWindowCloseRequested: wt.close()

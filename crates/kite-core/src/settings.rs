@@ -47,7 +47,7 @@ pub fn defaults() -> Map<String, Value> {
         "web.pluginsEnabled": false,
         "web.spatialNavigation": false,
         "web.smoothScrolling": true,
-        "web.dnsPrefetch": true,
+        "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
         "web.printBackgrounds": true,
         "web.userAgent": "",
         "web.doNotTrack": false,
@@ -55,9 +55,31 @@ pub fn defaults() -> Map<String, Value> {
         "web.spellcheckLanguages": ["en-US"],
         // Privacy
         "privacy.saveHistory": true,
-        "privacy.cookies": "all",             // "all" | "noThirdParty" | "none"
+        "privacy.cookies": "noThirdParty",    // "all" | "noThirdParty" | "none"
         "privacy.clearOnExit": false,
         "privacy.sendReferer": true,
+        // Tracking protection (Settings → Privacy)
+        "privacy.globalPrivacyControl": true,  // Sec-GPC header, navigator.globalPrivacyControl
+        "privacy.stripTrackingParams": true,   // fbclid, gclid, utm_* … removed from page URLs
+        "privacy.blockPings": true,            // <a ping> click beacons
+        "privacy.httpsOnly": false,            // upgrade page loads to https
+        "privacy.genericUserAgent": true,      // no "QtWebEngine/x.y" in the user agent
+        "privacy.webrtcPublicOnly": true,      // WebRTC doesn't reveal local network addresses
+        "privacy.dnsOverHttps": "off",         // "off" | "auto" (fall back to system DNS) | "secure"
+        "privacy.dnsServer": "https://cloudflare-dns.com/dns-query",
+        "privacy.proxy": "system",             // "system" | "none" | "manual" (restart)
+        "privacy.proxyType": "socks5",         // "socks5" | "http"
+        "privacy.proxyHost": "",
+        "privacy.proxyPort": 1080,
+        "privacy.siteCookieRules": false,      // sites' own cookie rules (Site Settings)
+        "privacy.containers": false,           // container tabs: separate cookies and storage
+        "privacy.antiFingerprinting": false,   // fingerprint protection, turned on per site
+        "privacy.containerList": [
+            {"id": "personal", "name": "Personal", "color": "#3daee9"},
+            {"id": "work", "name": "Work", "color": "#f67400"},
+            {"id": "banking", "name": "Banking", "color": "#27ae60"},
+            {"id": "shopping", "name": "Shopping", "color": "#da4453"}
+        ],
         // Passwords
         "passwords.save": true,
         "passwords.autofill": true,

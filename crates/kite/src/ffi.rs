@@ -42,6 +42,9 @@ extern "C" {
     fn kite_cpp_delete_cookie(json: *const c_char);
     fn kite_cpp_delete_all_cookies();
     fn kite_cpp_clear_http_cache();
+    fn kite_cpp_apply_dns(mode: std::ffi::c_int, server: *const c_char);
+    fn kite_cpp_delete_cookies_of(hosts_json: *const c_char);
+    fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
     fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char);
 }
@@ -125,6 +128,8 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
                     _ => (404, "text/plain".into(), vec![]),
                 }
             }
+            // HTTPS-only: the site has no working https version.
+            "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),
         };
     }
@@ -279,6 +284,19 @@ pub unsafe extern "C" fn kite_intercept(
         if kite_core::webext::amo::is_amo_download(url) {
             return String::new();
         }
+        // Page loads: without tracking parameters, over https (privacy.*).
+        if rtype == "mainFrame" {
+            if a.privacy.strip_params.load(std::sync::atomic::Ordering::Relaxed) {
+                if let Some(clean) = kite_core::privacy::strip_tracking_params(url) {
+                    log::debug!("privacy: removed tracking parameters from {url}");
+                    return format!("redirect:{clean}");
+                }
+            }
+            if let Some(secure) = a.privacy.upgrade(url) {
+                log::debug!("privacy: upgraded {url} to https");
+                return format!("redirect:{secure}");
+            }
+        }
         let mut rt = a.runtime();
         // webRequest listeners
         if rt.has_web_request_listeners() {
@@ -370,6 +388,55 @@ pub unsafe extern "C" fn kite_cookie_event(json: *const c_char, removed: i32, in
     crate::extensions::apply_effects_async(fx);
 }
 
+/// DNS over HTTPS from the settings ("privacy.dnsOverHttps", "privacy.dnsServer").
+pub fn apply_dns() {
+    let s = app().shared.settings();
+    let mode = match s.get_str("privacy.dnsOverHttps").as_str() {
+        "auto" => 1,
+        "secure" => 2,
+        _ => 0,
+    };
+    let server = CString::new(s.get_str("privacy.dnsServer")).unwrap_or_default();
+    drop(s);
+    unsafe { kite_cpp_apply_dns(mode, server.as_ptr()) }
+}
+
+/// At startup (bootstrap.cpp, once Qt WebEngine is up).
+#[no_mangle]
+pub extern "C" fn kite_init_dns() {
+    apply_dns();
+}
+
+/// The site cookie rule for a cookie's host (glue.cpp's cookie filter):
+/// 0 = none, 1 = allow, 2 = block, 3 = allow until Kite closes.
+#[no_mangle]
+pub unsafe extern "C" fn kite_cookie_rule(host: *const c_char) -> std::ffi::c_int {
+    app().privacy.cookie_rule(s(host)) as std::ffi::c_int
+}
+
+/// Hosts whose cookies go when Kite closes, as a JSON array.
+#[no_mangle]
+pub extern "C" fn kite_session_cookie_hosts() -> KiteBuf {
+    KiteBuf::from_vec(serde_json::to_vec(&app().privacy.session_cookie_hosts()).unwrap_or_default())
+}
+
+pub fn hook_container_profiles() {
+    unsafe { kite_cpp_hook_container_profiles() }
+}
+
+/// Delete the cookies of the sites set to "until Kite closes".
+pub fn delete_session_cookies() {
+    let hosts = serde_json::to_string(&app().privacy.session_cookie_hosts()).unwrap_or_default();
+    let c = CString::new(hosts).unwrap_or_default();
+    unsafe { kite_cpp_delete_cookies_of(c.as_ptr()) }
+}
+
+/// Send the Global Privacy Control header ("privacy.globalPrivacyControl").
+#[no_mangle]
+pub extern "C" fn kite_gpc() -> bool {
+    app().privacy.gpc.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Send the Do Not Track header ("web.doNotTrack").
 #[no_mangle]
 pub extern "C" fn kite_do_not_track() -> bool {
@@ -398,4 +465,36 @@ pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
         return KiteBuf::from_vec(kite_core::webext::amo::USER_AGENT.as_bytes().to_vec());
     }
     KiteBuf::empty()
+}
+
+fn query_param(url: &str, name: &str) -> String {
+    url::Url::parse(url).ok().and_then(|u| u.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned())).unwrap_or_default()
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// The page shown when HTTPS-only couldn't load a site over https.
+fn https_only_page(http_url: &str) -> String {
+    let host = html_escape(&kite_core::util::host_of(http_url));
+    let allow = format!("kite:https-allow?url={}", url::form_urlencoded::byte_serialize(http_url.as_bytes()).collect::<String>());
+    format!(
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Secure connection not available</title>
+<meta name="color-scheme" content="light dark">
+<style>
+body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
+h1 {{ font-size: 1.5em; font-weight: 600; }}
+.host {{ font-weight: 600; }}
+.buttons {{ margin-top: 2em; display: flex; gap: .75em; flex-wrap: wrap; }}
+a.button {{ padding: .5em 1.1em; border-radius: 4px; text-decoration: none; border: 1px solid #888; color: inherit; }}
+a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
+</style></head><body>
+<h1>Secure connection not available</h1>
+<p>HTTPS-only mode is on, but <span class="host">{host}</span> could not be loaded over a secure connection.</p>
+<p>The site may not support HTTPS. If you continue, the page is loaded without encryption: others on your network could see or change what you send and receive.</p>
+<div class="buttons"><a class="button primary" href="javascript:history.back()">Go back</a><a class="button" href="{allow}">Continue to the HTTP site</a></div>
+</body></html>"#,
+        allow = html_escape(&allow)
+    )
 }

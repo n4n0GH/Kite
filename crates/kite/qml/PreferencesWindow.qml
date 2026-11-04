@@ -141,7 +141,6 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { text: "Enable plugins (PDF viewer is always on)"; checked: w.get("web.pluginsEnabled"); onToggled: w.set("web.pluginsEnabled", checked) }
             QQC2.CheckBox { text: "Smooth scrolling"; checked: w.get("web.smoothScrolling"); onToggled: w.set("web.smoothScrolling", checked) }
             QQC2.CheckBox { text: "Spatial navigation (arrow keys between links)"; checked: w.get("web.spatialNavigation"); onToggled: w.set("web.spatialNavigation", checked) }
-            QQC2.CheckBox { text: "Prefetch DNS"; checked: w.get("web.dnsPrefetch"); onToggled: w.set("web.dnsPrefetch", checked) }
             QQC2.CheckBox { text: "Print backgrounds"; checked: w.get("web.printBackgrounds"); onToggled: w.set("web.printBackgrounds", checked) }
             QQC2.CheckBox { Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; checked: w.get("web.spellcheck"); onToggled: w.set("web.spellcheck", checked) }
             QQC2.TextField { Kirigami.FormData.label: "Languages:"; text: w.get("web.spellcheckLanguages").join(", "); onEditingFinished: w.set("web.spellcheckLanguages", text.split(",").map(s => s.trim()).filter(s => s)) }
@@ -176,10 +175,23 @@ Kirigami.ApplicationWindow {
     Component {
         id: privacy
         ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            component Hint: QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                font: Kirigami.Theme.smallFont
+            }
+            component Check: QQC2.CheckBox {
+                property string key
+                checked: !!w.get(key)
+                onToggled: w.set(key, checked)
+            }
+
             Kirigami.FormLayout {
                 Layout.fillWidth: true
-                QQC2.CheckBox { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; checked: w.get("privacy.saveHistory"); onToggled: w.set("privacy.saveHistory", checked) }
-                QQC2.CheckBox { text: "Clear history, cookies and cache when Kite closes"; checked: w.get("privacy.clearOnExit"); onToggled: w.set("privacy.clearOnExit", checked) }
+                Check { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; key: "privacy.saveHistory" }
+                Check { text: "Clear history, cookies and cache when Kite closes"; key: "privacy.clearOnExit" }
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "Cookies:"
                     model: [{k: "all", t: "Allow all cookies"}, {k: "noThirdParty", t: "Block third-party cookies"}, {k: "none", t: "Block all cookies (many sites won't work)"}]
@@ -187,12 +199,132 @@ Kirigami.ApplicationWindow {
                     currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("privacy.cookies")))
                     onActivated: i => w.set("privacy.cookies", model[i].k)
                 }
-                QQC2.CheckBox { Kirigami.FormData.label: "Tracking:"; text: "Send “Do Not Track” requests"; checked: w.get("web.doNotTrack"); onToggled: w.set("web.doNotTrack", checked) }
-                QQC2.CheckBox { text: "Tell sites which page linked to them (referrer)"; checked: w.get("privacy.sendReferer"); onToggled: w.set("privacy.sendReferer", checked) }
-            }
-            Kirigami.Heading { level: 3; text: "Clear Recent History" }
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
+                Check { id: siteCookies; text: "Use per-site cookie rules"; key: "privacy.siteCookieRules" }
+                Hint { text: "Allow, block, or keep until Kite closes the cookies of single sites, in Site Settings." }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tracking" }
+                Check { Kirigami.FormData.label: "Ask sites:"; text: "Send Global Privacy Control"; key: "privacy.globalPrivacyControl" }
+                Hint { text: "Asks sites not to sell or share your data. Legally binding in some places, such as California." }
+                Check { text: "Send “Do Not Track”"; key: "web.doNotTrack" }
+                Hint { text: "Few sites honour it, and as few people send it, it makes you easier to recognise." }
+                Check { Kirigami.FormData.label: "Links:"; text: "Remove tracking parameters from addresses"; key: "privacy.stripTrackingParams" }
+                Hint { text: "Click and campaign identifiers such as fbclid, gclid and utm_… are removed before a page loads." }
+                Check { text: "Block link click pings"; key: "privacy.blockPings" }
+                Check { text: "Tell sites which page linked to them (referrer)"; key: "privacy.sendReferer" }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Fingerprinting" }
+                Check { Kirigami.FormData.label: "Identity:"; text: "Use a common user agent"; key: "privacy.genericUserAgent" }
+                Hint { text: "Leaves out “QtWebEngine” from what Kite tells sites about itself, so it reads like Chrome." }
+                Check { text: "Hide local network addresses from WebRTC"; key: "privacy.webrtcPublicOnly" }
+                Check { text: "Allow fingerprint protection"; key: "privacy.antiFingerprinting" }
+                Hint { text: "Turn it on for single sites in Site Settings: canvas, WebGL and audio readouts are blurred and the hardware reported is generic. Some sites may misbehave." }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Connections" }
+                Check { Kirigami.FormData.label: "Encryption:"; text: "HTTPS-only mode"; key: "privacy.httpsOnly" }
+                Hint { text: "Pages load over a secure connection. Sites without one show a warning first. Local addresses are left alone." }
+                QQC2.ComboBox {
+                    id: doh
+                    Kirigami.FormData.label: "Secure DNS:"
+                    model: [{k: "off", t: "Off (system DNS)"}, {k: "auto", t: "On, with system DNS as fallback"}, {k: "secure", t: "On, secure DNS only"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("privacy.dnsOverHttps")))
+                    onActivated: i => w.set("privacy.dnsOverHttps", model[i].k)
+                }
+                QQC2.ComboBox {
+                    Kirigami.FormData.label: "DNS server:"
+                    enabled: doh.currentIndex > 0
+                    editable: true
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 20
+                    model: ["https://cloudflare-dns.com/dns-query", "https://dns.quad9.net/dns-query", "https://dns.mullvad.net/dns-query", "https://dns.google/dns-query"]
+                    Component.onCompleted: editText = w.get("privacy.dnsServer")
+                    onAccepted: w.set("privacy.dnsServer", editText.trim())
+                    onActivated: i => w.set("privacy.dnsServer", model[i])
+                }
+                Check { text: "Look up the addresses of links in advance (DNS prefetching)"; key: "web.dnsPrefetch" }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Proxy" }
+                QQC2.ComboBox {
+                    id: proxyMode
+                    Kirigami.FormData.label: "Proxy:"
+                    model: [{k: "system", t: "Use system settings"}, {k: "none", t: "No proxy"}, {k: "manual", t: "Manual"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("privacy.proxy")))
+                    onActivated: i => w.set("privacy.proxy", model[i].k)
+                }
+                RowLayout {
+                    Kirigami.FormData.label: "Server:"
+                    enabled: proxyMode.currentIndex === 2
+                    QQC2.ComboBox {
+                        model: [{k: "socks5", t: "SOCKS5"}, {k: "http", t: "HTTP"}]
+                        textRole: "t"
+                        currentIndex: w.get("privacy.proxyType") === "http" ? 1 : 0
+                        onActivated: i => w.set("privacy.proxyType", model[i].k)
+                    }
+                    QQC2.TextField { placeholderText: "host"; text: w.get("privacy.proxyHost"); Layout.preferredWidth: Kirigami.Units.gridUnit * 11; onEditingFinished: w.set("privacy.proxyHost", text.trim()) }
+                    QQC2.SpinBox { from: 1; to: 65535; editable: true; value: w.get("privacy.proxyPort"); textFromValue: v => String(v); valueFromText: t => parseInt(t) || 1; onValueModified: w.set("privacy.proxyPort", value) }
+                }
+                Hint { text: "Proxy changes apply after restarting Kite. With SOCKS5 (e.g. Tor on port 9050), host names are looked up through the proxy too." }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Container tabs" }
+                Check { id: containersOn; Kirigami.FormData.label: "Containers:"; text: "Use container tabs"; key: "privacy.containers" }
+                Hint { text: "Each container keeps its own cookies, site data and logins: sites in one container can't see what you do in another. Open them from the menu, the tab bar or a link's context menu." }
+                // ---- containers ------------------------------------------------
+                ColumnLayout {
+                    id: containerEditor
+                    visible: containersOn.checked
+                    property var list: w.get("privacy.containerList")
+                    readonly property var swatches: ["#3daee9", "#f67400", "#27ae60", "#da4453", "#9b59b6", "#fdbc4b", "#1abc9c", "#7f8c8d"]
+                    function save(l) { list = l; w.set("privacy.containerList", l) }
+                    Repeater {
+                        model: containerEditor.list
+                        delegate: RowLayout {
+                            required property var modelData
+                            required property int index
+                            QQC2.ToolButton {
+                                text: "Colour"
+                                display: QQC2.AbstractButton.IconOnly
+                                contentItem: Rectangle { implicitWidth: Kirigami.Units.iconSizes.small; implicitHeight: implicitWidth; radius: width / 2; color: modelData.color }
+                                onClicked: {
+                                    const p = containerEditor.swatches
+                                    const l = containerEditor.list.slice()
+                                    l[index] = Object.assign({}, modelData, {color: p[(p.indexOf(modelData.color) + 1) % p.length]})
+                                    containerEditor.save(l)
+                                }
+                                QQC2.ToolTip.text: "Change colour"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                            QQC2.TextField {
+                                text: modelData.name
+                                Layout.preferredWidth: Kirigami.Units.gridUnit * 14
+                                onEditingFinished: {
+                                    if (text.trim() === "" || text.trim() === modelData.name) return
+                                    const l = containerEditor.list.slice()
+                                    l[index] = Object.assign({}, modelData, {name: text.trim()})
+                                    containerEditor.save(l)
+                                }
+                            }
+                            QQC2.ToolButton {
+                                icon.name: "edit-delete"
+                                text: "Remove container"
+                                display: QQC2.AbstractButton.IconOnly
+                                onClicked: containerEditor.save(containerEditor.list.filter((_, i) => i !== index))
+                                QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                        }
+                    }
+                    QQC2.Button {
+                        text: "Add Container"
+                        icon.name: "list-add"
+                        onClicked: {
+                            const l = containerEditor.list.slice()
+                            const id = "c" + Date.now().toString(36)
+                            l.push({id: id, name: "Container " + (l.length + 1), color: containerEditor.swatches[l.length % containerEditor.swatches.length]})
+                            containerEditor.save(l)
+                        }
+                    }
+                    Hint { text: "Removing a container closes nothing: its open tabs act as normal tabs after Kite restarts." }
+                }
+
+                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Clear Recent History" }
                 QQC2.ComboBox { id: since; Kirigami.FormData.label: "Time range:"; model: ["Last hour", "Today", "Last 7 days", "Everything"] }
                 QQC2.CheckBox { id: cHistory; Kirigami.FormData.label: "Clear:"; text: "Browsing history"; checked: true }
                 QQC2.CheckBox { id: cCookies; text: "Cookies and site data"; checked: true }
@@ -505,9 +637,13 @@ Kirigami.ApplicationWindow {
                 if (s.zoom > 0) parts.push("Zoom " + s.zoom + "%")
                 if (s.dark_mode === 1) parts.push("Always dark")
                 if (s.dark_mode === 2) parts.push("Never dark")
+                if (s.cookies === 1) parts.push("Cookies allowed")
+                if (s.cookies === 2) parts.push("Cookies blocked")
+                if (s.cookies === 3) parts.push("Cookies until Kite closes")
+                if (s.fingerprint === 1) parts.push("Fingerprint protection")
                 if (s.css) parts.push("Custom CSS")
                 if (s.js) parts.push("Custom JavaScript")
-                if (!parts.length && (s.cookies || s.javascript || s.images || s.notifications || s.geolocation)) parts.push("Permissions")
+                if (!parts.length && (s.javascript || s.images || s.notifications || s.geolocation)) parts.push("Permissions")
                 return parts.join(" · ") || "Nothing set"
             }
 
@@ -581,15 +717,19 @@ Kirigami.ApplicationWindow {
                     zoomCustom.checked = site.zoom > 0
                     zoomValue.value = site.zoom > 0 ? site.zoom : w.get("appearance.defaultZoom")
                     darkMode.currentIndex = site.dark_mode || 0
+                    cookieRule.currentIndex = site.cookies || 0
+                    fingerprint.checked = site.fingerprint === 1
                     css.text = site.css || ""
                     js.text = site.js || ""
                 }
                 readonly property bool changed: (zoomCustom.checked ? zoomValue.value : -1) !== (site.zoom > 0 ? site.zoom : -1)
-                    || darkMode.currentIndex !== (site.dark_mode || 0) || css.text !== (site.css || "") || js.text !== (site.js || "")
+                    || darkMode.currentIndex !== (site.dark_mode || 0) || cookieRule.currentIndex !== (site.cookies || 0) || fingerprint.checked !== (site.fingerprint === 1) || css.text !== (site.css || "") || js.text !== (site.js || "")
                 function save() {
                     const h = w.editSite
                     Browser.setSiteSetting(h, "zoom", zoomCustom.checked ? zoomValue.value : -1)
                     Browser.setSiteSetting(h, "darkMode", darkMode.currentIndex)
+                    Browser.setSiteSetting(h, "cookies", cookieRule.currentIndex)
+                    Browser.setSiteSetting(h, "fingerprint", fingerprint.checked ? 1 : 0)
                     Browser.setSiteText(h, "css", css.text)
                     Browser.setSiteText(h, "js", js.text)
                     w.app.siteSettingsChanged(h)
@@ -614,6 +754,39 @@ Kirigami.ApplicationWindow {
                         id: darkMode
                         Kirigami.FormData.label: "Dark mode:"
                         model: [(w.get("appearance.forceDarkMode") ? "Like other sites (forced dark)" : "Like other sites (as designed)"), "Always force dark", "Never force dark"]
+                    }
+                    // Per-site cookie rules ("privacy.siteCookieRules").
+                    QQC2.ComboBox {
+                        id: cookieRule
+                        Kirigami.FormData.label: "Cookies:"
+                        enabled: w.get("privacy.siteCookieRules")
+                        model: ["Like other sites", "Always allow", "Block", "Allow until Kite closes"]
+                        QQC2.ToolTip.text: enabled ? "Cookies of this site and its subdomains, also when embedded in other sites." : "Turn on per-site cookie rules in Settings → Privacy to use this."
+                        QQC2.ToolTip.visible: hovered
+                        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        // (A disabled control gets no hover: the hint is shown below.)
+                    }
+                    QQC2.Label {
+                        visible: !cookieRule.enabled
+                        text: "Turn on per-site cookie rules in Privacy settings to use this."
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                    }
+                    // Fingerprint protection ("privacy.antiFingerprinting").
+                    QQC2.CheckBox {
+                        id: fingerprint
+                        Kirigami.FormData.label: "Fingerprinting:"
+                        enabled: w.get("privacy.antiFingerprinting")
+                        text: "Protect against fingerprinting"
+                    }
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+                        wrapMode: Text.Wrap
+                        text: fingerprint.enabled
+                            ? "Blurs canvas, WebGL and audio readouts and reports generic hardware, so this site can't recognise you by them. Some sites (drawing tools, maps, captchas) may misbehave."
+                            : "Turn on fingerprint protection in Privacy settings to use this."
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
                     }
                 }
                 Kirigami.Heading { level: 4; text: "Custom CSS" }

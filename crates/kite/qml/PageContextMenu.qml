@@ -50,7 +50,15 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: menu.tab.window.savePage() }
 
     // Links
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink") && menu.tab.app.setting("tabs.openNewTabsInBackground"), index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, openerTabId: menu.tab.tabId}) }
+    QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink") && menu.tab.app.setting("tabs.openNewTabsInBackground"), index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, openerTabId: menu.tab.tabId, container: menu.tab.container}) }
+    // (A property: a Menu declared inside a Menu is always added to it.)
+    property ContainerMenu _containerMenu: ContainerMenu {
+        title: "Open Link in Container Tab"
+        app: menu.linkUrl && !menu.tab.window.privateMode ? menu.tab.app : null
+        parentMenu: menu
+        after: openLinkInTab
+        onChosen: c => menu.tab.window.openTab(menu.linkUrl, {background: true, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, container: c})
+    }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl]}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark Link"; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
@@ -58,7 +66,7 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
 
     // Media
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadImageToDisk) }
@@ -78,7 +86,7 @@ QQC2.Menu {
         visible: !!menu.selection; height: visible ? implicitHeight : 0
         text: "Search " + menu.tab.app.setting("general.searchEngine") + " for “" + (menu.selection.length > 24 ? menu.selection.substring(0, 24) + "…" : menu.selection) + "”"
         icon.name: "search"
-        onTriggered: menu.tab.window.openTab(Browser.searchUrl(menu.tab.app.setting("general.searchEngine"), menu.selection), {background: false, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1})
+        onTriggered: menu.tab.window.openTab(Browser.searchUrl(menu.tab.app.setting("general.searchEngine"), menu.selection), {background: false, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, container: menu.tab.container})
     }
 
     // Extension items
@@ -137,6 +145,6 @@ QQC2.Menu {
     property Component sepComp: Component { QQC2.MenuSeparator {} }
 
     QQC2.MenuSeparator {}
-    QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1}) }
+    QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.indexOfTab(menu.tab.tabId) + 1, container: menu.tab.container}) }
     QQC2.MenuItem { text: "Inspect"; icon.name: "utilities-terminal"; onTriggered: { menu.act(WebEngineView.InspectElement); menu.tab.showDevTools() } }
 }

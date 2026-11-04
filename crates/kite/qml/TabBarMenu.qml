@@ -26,11 +26,20 @@ QQC2.Menu {
     }
 
     QQC2.MenuItem {
+        id: newTabItem
         visible: menu.withTabActions
         height: visible ? implicitHeight : 0
         text: "New Tab"
         icon.name: "list-add"
         onTriggered: menu.browser.openTab(menu.browser.app.newTabUrl(), {background: false}).focusLocationBar()
+    }
+    // (A property: a Menu declared inside a Menu is always added to it.)
+    property ContainerMenu _containerMenu: ContainerMenu {
+        title: "New Container Tab"
+        app: menu.withTabActions && !menu.browser.privateMode ? menu.browser.app : null
+        parentMenu: menu
+        after: newTabItem
+        onChosen: c => menu.browser.openTab(menu.browser.app.newTabUrl(), {background: false, container: c}).focusLocationBar()
     }
     QQC2.MenuItem {
         visible: menu.withTabActions

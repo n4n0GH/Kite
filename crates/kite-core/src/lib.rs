@@ -14,6 +14,7 @@ pub mod favicons;
 pub mod history;
 pub mod kwallet;
 pub mod passwords;
+pub mod privacy;
 pub mod paths;
 pub mod screensaver;
 pub mod search;
