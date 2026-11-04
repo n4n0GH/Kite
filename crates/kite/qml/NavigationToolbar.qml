@@ -132,9 +132,11 @@ QQC2.ToolBar {
         Button {
             id: bookmarksButton
             icon.name: "bookmarks"; tip: "Bookmarks"
-            onClicked: bookmarksMenu.popup(bookmarksButton, 0, bookmarksButton.height)
+            onClicked: bookmarksMenu.opened ? bookmarksMenu.close() : bookmarksMenu.popup(bookmarksButton, 0, bookmarksButton.height)
             QQC2.Menu {
                 id: bookmarksMenu
+                // The button toggles the menu.
+                closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
                 QQC2.MenuItem { text: "Bookmark This Page"; icon.name: "bookmark-new"; onTriggered: toolbar.win.toggleBookmarkFromMenu() }
                 QQC2.MenuItem { text: "Manage Bookmarks"; icon.name: "bookmarks-organize"; onTriggered: toolbar.win.app.showLibrary("bookmarks") }
                 QQC2.MenuSeparator {}

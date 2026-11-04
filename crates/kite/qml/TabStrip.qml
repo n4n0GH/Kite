@@ -236,9 +236,12 @@ Rectangle {
             display: QQC2.AbstractButton.IconOnly
             text: "List all tabs"
             Layout.alignment: Qt.AlignCenter
-            onClicked: tabListMenu.popup()
+            id: tabListButton
+            onClicked: tabListMenu.opened ? tabListMenu.close() : tabListMenu.popup(tabListButton, 0, tabListButton.height)
             QQC2.Menu {
                 id: tabListMenu
+                // The button toggles the menu.
+                closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
                 Instantiator {
                     model: stripRoot.browser.tabs
                     delegate: QQC2.MenuItem {

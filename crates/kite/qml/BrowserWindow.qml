@@ -57,7 +57,12 @@ QQC2.ApplicationWindow {
     property var downloadsButton: null
     readonly property ToolbarItems toolbarCatalog: ToolbarItems {}
     function showHistoryMenu(back, item) { historyMenu.showFor(back, item) }
-    function openMainMenu(item) { mainMenu.popup(item, 0, item.height) }
+    // The menu button toggles the menu: presses on it don't close the menu
+    // (MainMenu's closePolicy), so they'd otherwise close and reopen it.
+    function openMainMenu(item) {
+        if (mainMenu.opened && mainMenu.parent === item) mainMenu.close()
+        else mainMenu.popup(item, 0, item.height)
+    }
     function customizeToolbar() { customizeDialog.open() }
     function showAbout() { mainMenu.aboutDialog.open() }
 

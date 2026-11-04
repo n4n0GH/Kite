@@ -11,6 +11,8 @@ QQC2.Menu {
     property var app
     property var closedTabs: []
     property var closedWindows: []
+    // Not closed by presses on the menu button, which toggles it.
+    closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
     onAboutToShow: { closedTabs = JSON.parse(Browser.closedTabs()); closedWindows = JSON.parse(Browser.closedWindows()) }
 
     QQC2.MenuItem { text: "New Tab"; icon.name: "tab-new"; onTriggered: win.openTab(app.newTabUrl(), {background: false}).focusLocationBar() }
