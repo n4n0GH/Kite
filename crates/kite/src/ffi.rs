@@ -128,6 +128,17 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
                     _ => (404, "text/plain".into(), vec![]),
                 }
             }
+            // The custom start page copied into the profile, and its files.
+            p if p == "startpage" || p.starts_with("startpage/") => {
+                let rel = rest.strip_prefix("startpage").unwrap_or("");
+                match kite_core::startpage::resolve(app().shared.profile.root(), rel) {
+                    Some(file) => match std::fs::read(&file) {
+                        Ok(body) => (200, mime_guess::from_path(&file).first_or_octet_stream().essence_str().to_owned(), body),
+                        Err(_) => (404, "text/plain".into(), vec![]),
+                    },
+                    None => (404, "text/html".into(), b"<h1>Not found</h1><p>The start page copy has no such file.</p>".to_vec()),
+                }
+            }
             // HTTPS-only: the site has no working https version.
             "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),

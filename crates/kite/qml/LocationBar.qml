@@ -21,7 +21,7 @@ QQC2.TextField {
     readonly property string extName: tab ? Extensions.extensionNameForUrl(tab.url) : ""
 
     function displayUrl(u) {
-        if (!u || u === "about:blank" || u === win.app.newTabUrl() || u === "kite:start") return ""
+        if (!u || u === "about:blank" || u === win.app.newTabUrl() || u === "kite:start" || win.app.isStartPage(u)) return ""
         return u
     }
 

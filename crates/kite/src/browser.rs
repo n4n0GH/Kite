@@ -222,6 +222,24 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "deleteSessionCookies"]
         fn delete_session_cookies(self: &Browser);
+        /// Custom start page ("home" or "newtab"): copy `path` into the
+        /// profile (kite:startpage/<target>/).
+        #[qinvokable]
+        #[cxx_name = "startPageImport"]
+        fn start_page_import(self: &Browser, target: &QString, path: &QString) -> bool;
+        /// Custom start page: a starter page as the target's copy (unless it
+        /// has one); its path.
+        #[qinvokable]
+        #[cxx_name = "startPageCreate"]
+        fn start_page_create(self: &Browser, target: &QString) -> QString;
+        /// The path of a target's copy in the profile.
+        #[qinvokable]
+        #[cxx_name = "startPageCopyPath"]
+        fn start_page_copy_path(self: &Browser, target: &QString) -> QString;
+        /// A file's modification time in ms (0 if it doesn't exist).
+        #[qinvokable]
+        #[cxx_name = "fileModified"]
+        fn file_modified(self: &Browser, path: &QString) -> f64;
         /// Visit `host` over plain http this session (HTTPS-only exception).
         #[qinvokable]
         #[cxx_name = "allowHttp"]
@@ -814,6 +832,31 @@ impl qobject::Browser {
     }
     fn delete_session_cookies(&self) {
         crate::ffi::delete_session_cookies();
+    }
+    fn start_page_import(&self, target: &QString, path: &QString) -> bool {
+        let root = app().shared.profile.root().to_owned();
+        match kite_core::startpage::import(&root, &target.to_string(), std::path::Path::new(&path.to_string())) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("start page: cannot copy {path}: {e}");
+                false
+            }
+        }
+    }
+    fn start_page_create(&self, target: &QString) -> QString {
+        let root = app().shared.profile.root().to_owned();
+        q(&kite_core::startpage::create(&root, &target.to_string()).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+    }
+    fn start_page_copy_path(&self, target: &QString) -> QString {
+        q(&kite_core::startpage::index(app().shared.profile.root(), &target.to_string()).to_string_lossy())
+    }
+    fn file_modified(&self, path: &QString) -> f64 {
+        std::fs::metadata(path.to_string())
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as f64)
+            .unwrap_or(0.0)
     }
     fn allow_http(&self, host: &QString) {
         app().privacy.allow_http(&host.to_string());

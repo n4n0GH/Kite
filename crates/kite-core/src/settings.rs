@@ -18,6 +18,14 @@ pub fn defaults() -> Map<String, Value> {
         "general.homepage": "kite:start",
         "general.newTabPage": "kite:start",
         "general.startup": "restore",          // "homepage" | "blank" | "restore" | "speeddial"
+        // Home and new tab page: an address ("url") or a local HTML file
+        // ("file"), used in place or copied into the profile (startpage.rs).
+        "general.homepageMode": "url",
+        "general.newTabPageMode": "url",
+        "startpage.home.file": "",
+        "startpage.home.copy": false,
+        "startpage.newtab.file": "",
+        "startpage.newtab.copy": false,
         "general.searchEngine": "DuckDuckGo",
         "general.searchFromLocationBar": true,
         "general.showSearchSuggestions": true,

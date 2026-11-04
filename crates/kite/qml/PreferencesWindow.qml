@@ -38,6 +38,13 @@ Kirigami.ApplicationWindow {
     }
     Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: iconName; checked: w.page === key; onTriggered: w.page = key } }
 
+    // Submenus (a start page file, a site's settings) are pages pushed on
+    // the stack: they slide in, one at a time, with a back arrow in the
+    // header (like Discover).
+    pageStack.columnView.columnResizeMode: Kirigami.ColumnView.SingleColumn
+    pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.ToolBar
+    pageStack.globalToolBar.showNavigationButtons: Kirigami.ApplicationHeaderStyle.ShowBackButton
+
     pageStack.initialPage: Kirigami.ScrollablePage {
         id: sp
         title: (w.pages.find(p => p.key === w.page) || {}).title || ""
@@ -61,30 +68,188 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Open the page of the home or new tab page's file ("home" | "newtab").
+    function openStartPageFile(target) { pageStack.push(startPageFilePage, {target: target}) }
+
+    // A home / new tab page file (General → "Manage…").
+    Component {
+        id: startPageFilePage
+        Kirigami.ScrollablePage {
+            id: page
+            property string target   // "home" | "newtab"
+            title: target === "home" ? "Home Page File" : "New Tab Page File"
+            // ---- a home / new tab page file -------------------------------------
+            ColumnLayout {
+                id: spm
+                width: page.width - Kirigami.Units.gridUnit * 2
+                readonly property string target: page.target
+                readonly property string fileKey: "startpage." + target + ".file"
+                readonly property string copyKey: "startpage." + target + ".copy"
+                Component.onCompleted: {
+                    spFile.text = w.get(fileKey)
+                    spCopy.checked = w.get(copyKey)
+                }
+                function edit() { Qt.openUrlExternally("file://" + encodeURI(w.app.startPageFile(target))) }
+                Kirigami.FormLayout {
+                    Layout.fillWidth: true
+                    RowLayout {
+                        Kirigami.FormData.label: "HTML file:"
+                        Layout.fillWidth: true
+                        QQC2.TextField {
+                            id: spFile
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: Kirigami.Units.gridUnit * 16
+                            placeholderText: "No file chosen"
+                            onEditingFinished: if (text.trim() !== w.get(spm.fileKey)) w.set(spm.fileKey, text.trim())
+                        }
+                        QQC2.Button { text: "Choose…"; icon.name: "document-open"; onClicked: spDialog.open() }
+                        FileDialog {
+                            id: spDialog
+                            nameFilters: ["Web pages (*.html *.htm *.xhtml)", "All files (*)"]
+                            onAccepted: {
+                                const path = decodeURIComponent(selectedFile.toString().replace(/^file:\/\//, ""))
+                                spFile.text = path
+                                w.set(spm.fileKey, path)
+                                // A new file replaces the copy too.
+                                if (w.get(spm.copyKey)) Browser.startPageImport(spm.target, path)
+                            }
+                        }
+                    }
+                    QQC2.CheckBox {
+                        id: spCopy
+                        text: "Keep a copy inside Kite"
+                        onToggled: {
+                            // The chosen file is copied, or a starter page made.
+                            if (checked && !(spFile.text && Browser.startPageImport(spm.target, spFile.text))) spFile.text = Browser.startPageCreate(spm.target)
+                            if (checked && !w.get(spm.fileKey)) w.set(spm.fileKey, spFile.text)
+                            w.set(spm.copyKey, checked)
+                        }
+                    }
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        text: spCopy.checked
+                            ? "Kite uses its own copy (kite:startpage/" + spm.target + "/), so the original file can move or go. Images and style sheets can go in its folder."
+                            : "Kite loads the file where it is, with the images and style sheets next to it."
+                    }
+                    RowLayout {
+                        QQC2.Button {
+                            text: "Create New Page"
+                            icon.name: "document-new"
+                            onClicked: {
+                                // A starter page kept inside Kite; it becomes the file.
+                                const path = Browser.startPageCreate(spm.target)
+                                if (!path) return
+                                spFile.text = path
+                                w.set(spm.fileKey, path)
+                                w.set(spm.copyKey, true)
+                                spCopy.checked = true
+                            }
+                            QQC2.ToolTip.text: "A simple start page with a clock, a search box and links, kept inside Kite"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                        QQC2.Button {
+                            text: "Edit"
+                            icon.name: "document-edit"
+                            enabled: w.app.startPageUrl(spm.target) !== ""
+                            onClicked: spm.edit()
+                            QQC2.ToolTip.text: "Open the page with the app your system uses for HTML files"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                        QQC2.Button {
+                            text: "Open Folder"
+                            icon.name: "document-open-folder"
+                            enabled: w.app.startPageUrl(spm.target) !== ""
+                            onClicked: Qt.openUrlExternally("file://" + encodeURI(w.app.startPageFile(spm.target).replace(/\/[^/]*$/, "")))
+                        }
+                        QQC2.Button {
+                            text: "Update Copy"
+                            icon.name: "view-refresh"
+                            visible: spCopy.checked && spFile.text !== "" && spFile.text !== Browser.startPageCopyPath(spm.target)
+                            onClicked: { if (Browser.startPageImport(spm.target, spFile.text)) w.app.toast("Copied again from the file", "view-refresh") }
+                            QQC2.ToolTip.text: "Copy the chosen file into Kite again (replaces the copy's edits)"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                    }
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        text: "Saving the file reloads the page in Kite."
+                    }
+                }
+            }
+        }
+    }
+
     Component {
         id: general
-        Kirigami.FormLayout {
-            QQC2.ComboBox {
-                Kirigami.FormData.label: "When Kite starts:"
-                model: [{k: "restore", t: "Restore previous session"}, {k: "homepage", t: "Open home page"}, {k: "speeddial", t: "Open start page"}, {k: "blank", t: "Open blank page"}]
-                textRole: "t"
-                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("general.startup")))
-                onActivated: i => w.set("general.startup", model[i].k)
+        ColumnLayout {
+            // Home page / new tab page: an address or a file (managed below).
+            component PageChoice: ColumnLayout {
+                id: pc
+                property string target        // "home" | "newtab"
+                property string modeKey
+                property string urlKey
+                property string placeholder: ""
+                readonly property bool file: mode === "file"
+                property string mode: w.get(modeKey)
+                spacing: Kirigami.Units.smallSpacing
+                RowLayout {
+                    QQC2.RadioButton { text: "Address"; checked: !pc.file; onToggled: if (checked) { pc.mode = "url"; w.set(pc.modeKey, "url") } }
+                    QQC2.RadioButton { text: "File"; checked: pc.file; onToggled: if (checked) { pc.mode = "file"; w.set(pc.modeKey, "file") } }
+                }
+                QQC2.TextField {
+                    visible: !pc.file
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: Kirigami.Units.gridUnit * 18
+                    text: w.get(pc.urlKey)
+                    placeholderText: pc.placeholder
+                    onEditingFinished: w.set(pc.urlKey, text)
+                }
+                RowLayout {
+                    visible: pc.file
+                    QQC2.Button { text: "Manage…"; icon.name: "document-edit"; onClicked: w.openStartPageFile(pc.target) }
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        elide: Text.ElideMiddle
+                        opacity: 0.7
+                        readonly property string f: w.app.startPageFile(pc.target)
+                        text: w.app.startPageUrl(pc.target) === "" ? "No file chosen yet" : (w.app.liveSettings["startpage." + pc.target + ".copy"] ? "Kept inside Kite" : f.replace(/^.*\//, ""))
+                    }
+                }
             }
-            QQC2.TextField { Kirigami.FormData.label: "Home page:"; Layout.fillWidth: true; text: w.get("general.homepage"); onEditingFinished: w.set("general.homepage", text) }
-            QQC2.TextField { Kirigami.FormData.label: "New tab page:"; Layout.fillWidth: true; text: w.get("general.newTabPage"); onEditingFinished: w.set("general.newTabPage", text); placeholderText: "kite:start" }
-            QQC2.Button { text: "Use Current Page as Home Page"; enabled: !!w.app.activeWindow && !!w.app.activeWindow.currentTab; onClicked: w.set("general.homepage", w.app.activeWindow.currentTab.url) }
-            Item { Kirigami.FormData.isSection: true }
-            QQC2.ComboBox {
-                Kirigami.FormData.label: "Default search engine:"
-                model: JSON.parse(Browser.engines()).map(e => e.name)
-                currentIndex: Math.max(0, model.indexOf(w.get("general.searchEngine")))
-                onActivated: i => w.set("general.searchEngine", model[i])
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                QQC2.ComboBox {
+                    Kirigami.FormData.label: "When Kite starts:"
+                    model: [{k: "restore", t: "Restore previous session"}, {k: "homepage", t: "Open home page"}, {k: "speeddial", t: "Open start page"}, {k: "blank", t: "Open blank page"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("general.startup")))
+                    onActivated: i => w.set("general.startup", model[i].k)
+                }
+                PageChoice { id: homeChoice; Kirigami.FormData.label: "Home page:"; Kirigami.FormData.labelAlignment: Qt.AlignTop; target: "home"; modeKey: "general.homepageMode"; urlKey: "general.homepage" }
+                QQC2.Button {
+                    visible: !homeChoice.file
+                    text: "Use Current Page as Home Page"
+                    enabled: !!w.app.activeWindow && !!w.app.activeWindow.currentTab
+                    onClicked: { w.set("general.homepage", w.app.activeWindow.currentTab.url); homeChoice.mode = ""; homeChoice.mode = "url" }
+                }
+                PageChoice { Kirigami.FormData.label: "New tab page:"; Kirigami.FormData.labelAlignment: Qt.AlignTop; target: "newtab"; modeKey: "general.newTabPageMode"; urlKey: "general.newTabPage"; placeholder: "kite:start" }
+                Item { Kirigami.FormData.isSection: true }
+                QQC2.ComboBox {
+                    Kirigami.FormData.label: "Default search engine:"
+                    model: JSON.parse(Browser.engines()).map(e => e.name)
+                    currentIndex: Math.max(0, model.indexOf(w.get("general.searchEngine")))
+                    onActivated: i => w.set("general.searchEngine", model[i])
+                }
+                QQC2.CheckBox { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; checked: w.get("general.searchFromLocationBar"); onToggled: w.set("general.searchFromLocationBar", checked) }
+                QQC2.CheckBox { text: "Show search suggestions"; checked: w.get("general.showSearchSuggestions"); onToggled: w.set("general.showSearchSuggestions", checked) }
+                Item { Kirigami.FormData.isSection: true }
+                QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
-            QQC2.CheckBox { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; checked: w.get("general.searchFromLocationBar"); onToggled: w.set("general.searchFromLocationBar", checked) }
-            QQC2.CheckBox { text: "Show search suggestions"; checked: w.get("general.showSearchSuggestions"); onToggled: w.set("general.showSearchSuggestions", checked) }
-            Item { Kirigami.FormData.isSection: true }
-            QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+
         }
     }
 
@@ -606,11 +771,16 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Leaving a page closes its submenus (a site, a start page file).
+    onPageChanged: if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+
     // Site Settings: sites with their own zoom, dark mode, CSS or JavaScript
-    // (stored per host; see sitesettings.rs). The list, or the editor of one
-    // site (`editSite`; also opened from the address bar's site info popup).
-    property string editSite: ""
-    onPageChanged: if (page !== "sites") editSite = ""
+    // (stored per host; see sitesettings.rs). The list; a site's settings are
+    // a page of their own (also opened from the address bar's site info popup).
+    function openSite(host) {
+        if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+        pageStack.push(siteEditorPage, {host: host})
+    }
     Component {
         id: sites
         ColumnLayout {
@@ -623,7 +793,7 @@ Kirigami.ApplicationWindow {
             // (Replaces an earlier suggestion, not what the user typed.)
             property string suggested: ""
             function suggest() {
-                if (w.editSite !== "" || newHost.text !== suggested) return
+                if (newHost.text !== suggested) return
                 const win = w.app.activeWindow
                 const url = win && win.currentTab ? win.currentTab.url : ""
                 const host = /^https?:/i.test(url) ? Browser.hostOf(url) : ""
@@ -647,9 +817,10 @@ Kirigami.ApplicationWindow {
                 return parts.join(" · ") || "Nothing set"
             }
 
-            // ---- list ---------------------------------------------------
+            // The list follows changes (a site page, the site info popup).
+            Connections { target: w.app; function onSiteSettingsEdited() { ss.reload() } }
+
             ColumnLayout {
-                visible: w.editSite === ""
                 Layout.fillWidth: true
                 QQC2.Label {
                     Layout.fillWidth: true
@@ -674,7 +845,7 @@ Kirigami.ApplicationWindow {
                             const host = Browser.hostOf(t.includes("://") ? t : "https://" + t)
                             if (!host) return
                             newHost.text = ""
-                            w.editSite = host
+                            w.openSite(host)
                         }
                     }
                 }
@@ -684,7 +855,7 @@ Kirigami.ApplicationWindow {
                     delegate: QQC2.ItemDelegate {
                         required property var modelData
                         Layout.fillWidth: true
-                        onClicked: w.editSite = modelData.host
+                        onClicked: w.openSite(modelData.host)
                         contentItem: RowLayout {
                             ColumnLayout {
                                 Layout.fillWidth: true
@@ -703,17 +874,23 @@ Kirigami.ApplicationWindow {
                     }
                 }
             }
+        }
+    }
 
-            // ---- editor -------------------------------------------------
+    // A site's settings (Site Settings → a site).
+    Component {
+        id: siteEditorPage
+        Kirigami.ScrollablePage {
+            id: sitePage
+            property string host
+            title: host
             ColumnLayout {
                 id: editor
-                visible: w.editSite !== ""
-                Layout.fillWidth: true
+                width: sitePage.width - Kirigami.Units.gridUnit * 2
                 spacing: Kirigami.Units.largeSpacing
                 property var site: ({})
                 function load() {
-                    if (w.editSite === "") return
-                    site = JSON.parse(Browser.siteSettings(w.editSite))
+                    site = JSON.parse(Browser.siteSettings(sitePage.host))
                     zoomCustom.checked = site.zoom > 0
                     zoomValue.value = site.zoom > 0 ? site.zoom : w.get("appearance.defaultZoom")
                     darkMode.currentIndex = site.dark_mode || 0
@@ -725,7 +902,7 @@ Kirigami.ApplicationWindow {
                 readonly property bool changed: (zoomCustom.checked ? zoomValue.value : -1) !== (site.zoom > 0 ? site.zoom : -1)
                     || darkMode.currentIndex !== (site.dark_mode || 0) || cookieRule.currentIndex !== (site.cookies || 0) || fingerprint.checked !== (site.fingerprint === 1) || css.text !== (site.css || "") || js.text !== (site.js || "")
                 function save() {
-                    const h = w.editSite
+                    const h = sitePage.host
                     Browser.setSiteSetting(h, "zoom", zoomCustom.checked ? zoomValue.value : -1)
                     Browser.setSiteSetting(h, "darkMode", darkMode.currentIndex)
                     Browser.setSiteSetting(h, "cookies", cookieRule.currentIndex)
@@ -734,15 +911,9 @@ Kirigami.ApplicationWindow {
                     Browser.setSiteText(h, "js", js.text)
                     w.app.siteSettingsChanged(h)
                     load()
-                    ss.reload()
                 }
-                Connections { target: w; function onEditSiteChanged() { editor.load() } }
                 Component.onCompleted: load()
 
-                RowLayout {
-                    QQC2.ToolButton { icon.name: "go-previous"; text: "All Sites"; onClicked: { w.editSite = ""; ss.reload() } }
-                    Kirigami.Heading { level: 3; text: w.editSite; Layout.fillWidth: true; elide: Text.ElideRight }
-                }
                 Kirigami.FormLayout {
                     Layout.fillWidth: true
                     RowLayout {
@@ -811,7 +982,7 @@ Kirigami.ApplicationWindow {
                     QQC2.Button {
                         text: "Remove Site"
                         icon.name: "edit-delete"
-                        onClicked: { Browser.clearSiteSettings(w.editSite); w.app.siteSettingsChanged(w.editSite); w.editSite = ""; ss.reload() }
+                        onClicked: { Browser.clearSiteSettings(sitePage.host); w.app.siteSettingsChanged(sitePage.host); w.pageStack.pop() }
                     }
                 }
             }

@@ -84,7 +84,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
@@ -138,7 +138,7 @@ QtObject {
             for (const w of session) restoreWindow(w)
             if (urls.length) for (const u of urls) activeWindow.openTab(u, {background: false})
         } else {
-            const first = urls.length ? urls : [startup === "blank" ? "about:blank" : setting("general.homepage")]
+            const first = urls.length ? urls : [startup === "blank" ? "about:blank" : homeUrl()]
             newWindow({urls: first})
         }
         backgroundHost.reload()
@@ -192,9 +192,58 @@ QtObject {
         Extensions.browserEvent("windowFocused", JSON.stringify({windowId: w.windowId}))
     }
 
+    // ---- home and new tab page ----------------------------------------------
+    // Each is an address or a local HTML file ("general.homepageMode",
+    // "general.newTabPageMode": "url" | "file"). A file is used in place
+    // (file:) or as its copy in the profile (kite:startpage/<target>/);
+    // targets are "home" and "newtab".
+    function startPageUrl(target) {
+        if (liveSettings["startpage." + target + ".copy"]) return "kite:startpage/" + target + "/"
+        const f = liveSettings["startpage." + target + ".file"] || ""
+        return f ? "file://" + encodeURI(f) : ""
+    }
+    function startPageFile(target) {
+        return liveSettings["startpage." + target + ".copy"] ? Browser.startPageCopyPath(target) : (liveSettings["startpage." + target + ".file"] || "")
+    }
+    function usesFile(target) {
+        return liveSettings[target === "home" ? "general.homepageMode" : "general.newTabPageMode"] === "file" && startPageUrl(target) !== ""
+    }
+    function homeUrl() {
+        return usesFile("home") ? startPageUrl("home") : setting("general.homepage")
+    }
     function newTabUrl() {
         const o = Extensions.newTabOverride()
-        return o !== "" ? o : setting("general.newTabPage")
+        if (o !== "") return o
+        return usesFile("newtab") ? startPageUrl("newtab") : setting("general.newTabPage")
+    }
+    // Whether `url` is a custom start page in use (tabs report file: URLs
+    // decoded).
+    function isStartPage(url) {
+        if (!url) return false
+        const plain = u => { try { return decodeURI(u.split("#")[0]) } catch (e) { return u.split("#")[0] } }
+        return ["home", "newtab"].some(t => usesFile(t) && plain(url) === plain(startPageUrl(t)))
+    }
+    // Saving a start page file (e.g. in an editor) reloads the tabs showing it.
+    property var _startPageModified: ({})
+    property Timer _startPageWatch: Timer {
+        interval: 1500
+        repeat: true
+        running: app.usesFile("home") || app.usesFile("newtab")
+        onTriggered: {
+            for (const target of ["home", "newtab"]) {
+                if (!app.usesFile(target)) continue
+                const m = Browser.fileModified(app.startPageFile(target))
+                const before = app._startPageModified[target]
+                app._startPageModified[target] = m
+                if (before === undefined || m === before) continue
+                const url = app.startPageUrl(target)
+                const plain = u => { try { return decodeURI(u.split("#")[0]) } catch (e) { return u } }
+                for (const w of app.windows) for (let i = 0; i < w.count; ++i) {
+                    const t = w.tabAt(i)
+                    if (t && t.pendingUrl === "" && plain(t.url) === plain(url)) t.view.reload()
+                }
+            }
+        }
     }
 
     function findTab(tabId) {
@@ -276,7 +325,7 @@ QtObject {
     }
     function showSiteSettings(host) {
         const w = showPreferences("sites")
-        w.editSite = host
+        w.openSite(host)
         return w
     }
 

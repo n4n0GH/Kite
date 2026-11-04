@@ -275,7 +275,7 @@ QQC2.ApplicationWindow {
     Shortcut { sequence: "Esc"; enabled: findBar.visible; onActivated: findBar.close() }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (bw.currentTab) bw.currentTab.view.goBack() }
     Shortcut { sequences: [StandardKey.Forward, "Alt+Right"]; onActivated: if (bw.currentTab) bw.currentTab.view.goForward() }
-    Shortcut { sequence: "Alt+Home"; onActivated: if (bw.currentTab) bw.currentTab.load(app.setting("general.homepage")) }
+    Shortcut { sequence: "Alt+Home"; onActivated: if (bw.currentTab) bw.currentTab.load(app.homeUrl()) }
     Shortcut { sequences: [StandardKey.Find]; onActivated: findBar.open() }
     Shortcut { sequences: [StandardKey.FindNext, "F3"]; onActivated: findBar.find(false) }
     Shortcut { sequences: [StandardKey.FindPrevious, "Shift+F3"]; onActivated: findBar.find(true) }

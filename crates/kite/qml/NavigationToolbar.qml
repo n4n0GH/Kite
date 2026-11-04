@@ -77,7 +77,7 @@ QQC2.ToolBar {
     }
     Component {
         id: homeItem
-        Button { icon.name: "go-home"; tip: "Home"; onClicked: toolbar.tab.load(toolbar.win.app.setting("general.homepage")) }
+        Button { icon.name: "go-home"; tip: "Home"; onClicked: toolbar.tab.load(toolbar.win.app.homeUrl()) }
     }
     Component {
         id: urlbarItem

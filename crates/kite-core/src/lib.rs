@@ -23,6 +23,7 @@ pub mod settings;
 pub mod shared;
 pub mod sitesettings;
 pub mod standin;
+pub mod startpage;
 pub mod util;
 pub mod webext;
 
