@@ -32,14 +32,97 @@ Item {
     // The tab its pane shows (the active pane's is the window's current tab).
     readonly property bool current: browser.paneTab[pane] === tabId
     readonly property bool activePane: !browser.split || browser.activePane === pane
-    visible: inStrip
+    // Selected with Ctrl/Shift+click (BrowserWindow.selectedTabs).
+    readonly property bool selected: browser.selectedTabs.includes(tabId)
 
-    width: !inStrip ? 0 : vertical ? tabList.itemWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth
-    height: !inStrip ? 0 : vertical ? Kirigami.Units.gridUnit * 2 : tabList.height
+    // Tab groups: the group, whether this is its first tab (showing the
+    // group's chip, its tree header, or the group itself when collapsed).
+    required property string group
+    readonly property var groupInfo: group && browser.tabGroups[group] ? browser.tabGroups[group] : null
+    readonly property bool groupFirst: !!groupInfo && browser.isGroupFirst(tabId)
+    readonly property bool groupCollapsed: !!groupInfo && groupInfo.collapsed
+    readonly property bool hiddenInGroup: groupCollapsed && !groupFirst
+    readonly property bool collapsedTab: groupFirst && groupCollapsed
+    readonly property int groupSize: { browser.groupsVersion; return groupInfo ? browser.groupTabs(group).length : 0 }
+    // Horizontal: the group's own tab in front of its tabs (all that is left
+    // of it when collapsed); vertical: the tree header above it, and the
+    // group's tabs indented under it.
+    readonly property real groupTabWidth: groupFirst && !vertical ? Kirigami.Units.gridUnit * 8 : 0
+    readonly property real headerHeight: groupFirst && vertical ? Kirigami.Units.gridUnit * 1.8 : 0
+    readonly property real indent: groupInfo && vertical ? Kirigami.Units.gridUnit * 1.4 : 0
+    visible: inStrip && !hiddenInGroup
+
+    width: !inStrip || hiddenInGroup ? 0 : vertical ? tabList.itemWidth : collapsedTab ? groupTabWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth + groupTabWidth
+    height: !inStrip || hiddenInGroup ? 0 : vertical ? (collapsedTab ? headerHeight : Kirigami.Units.gridUnit * 2 + headerHeight) : tabList.height
     z: dragHandler.active ? 10 : 0
 
-    // The tab's face fills its slot (the strip has no inner padding).
-    readonly property rect face: Qt.rect(0, 0, width, height)
+    // The tab's face: its slot, after the group's chip or header.
+    readonly property rect face: vertical ? Qt.rect(indent, headerHeight, width - indent, Kirigami.Units.gridUnit * 2) : Qt.rect(groupTabWidth, 0, width - groupTabWidth, height)
+
+    function toggleGroup() { browser.setGroupCollapsed(group, !groupCollapsed) }
+
+    // ---- the group's tab (horizontal): folder, name, arrow (down: collapsed,
+    // right: expanded) and count; clicking it collapses or expands the group.
+    Rectangle {
+        visible: root.groupTabWidth > 0
+        x: 1; y: 1
+        width: root.groupTabWidth - 2
+        height: parent.height - 2
+        radius: Kirigami.Units.cornerRadius
+        color: groupTabHover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Kirigami.Units.smallSpacing * 2
+            anchors.rightMargin: Kirigami.Units.smallSpacing * 2
+            spacing: Kirigami.Units.smallSpacing
+            Kirigami.Icon { source: "folder"; isMask: true; color: root.groupInfo ? root.groupInfo.color : Kirigami.Theme.textColor; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+            QQC2.Label { text: root.groupInfo ? root.groupInfo.name : ""; Layout.fillWidth: true; elide: Text.ElideRight }
+            Kirigami.Icon { source: root.groupCollapsed ? "arrow-down" : "arrow-right"; opacity: 0.7; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+            QQC2.Label { text: root.groupSize; opacity: 0.6; font: Kirigami.Theme.smallFont }
+        }
+        Rectangle {
+            anchors { left: parent.left; right: parent.right }
+            y: root.placement === "bottom" ? 0 : parent.height - height
+            height: 2
+            color: root.groupInfo ? root.groupInfo.color : "transparent"
+        }
+        // Exclusive, so the group's first tab isn't selected too.
+        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.toggleGroup() }
+        TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.browser.openGroupMenu(root.group, parent) }
+        HoverHandler { id: groupTabHover }
+        QQC2.ToolTip.text: (root.groupInfo ? root.groupInfo.name : "") + (root.groupCollapsed ? ": click to expand" : ": click to collapse")
+        QQC2.ToolTip.visible: groupTabHover.hovered
+        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+    }
+
+    // ---- tree header and guide line (vertical) ----------------------------
+    Item {
+        visible: root.groupFirst && root.vertical
+        width: parent.width
+        height: root.headerHeight
+        Rectangle { anchors.fill: parent; anchors.margins: 1; radius: Kirigami.Units.cornerRadius; visible: headerHover.hovered; color: Qt.lighter(Kirigami.Theme.backgroundColor, 1.06) }
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Kirigami.Units.smallSpacing
+            anchors.rightMargin: Kirigami.Units.smallSpacing * 2
+            spacing: Kirigami.Units.smallSpacing
+            Kirigami.Icon { source: root.groupCollapsed ? "arrow-right" : "arrow-down"; opacity: 0.7; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+            Kirigami.Icon { source: root.groupCollapsed ? "folder" : "folder-open"; isMask: true; color: root.groupInfo ? root.groupInfo.color : Kirigami.Theme.textColor; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+            QQC2.Label { text: root.groupInfo ? root.groupInfo.name : ""; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
+            QQC2.Label { text: root.groupSize; opacity: 0.6; font: Kirigami.Theme.smallFont }
+        }
+        HoverHandler { id: headerHover }
+        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.toggleGroup() }
+        TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.browser.openGroupMenu(root.group, parent) }
+    }
+    Rectangle {
+        visible: !!root.groupInfo && root.vertical && !root.groupCollapsed
+        x: root.placement === "verticalRight" ? parent.width - Kirigami.Units.gridUnit * 0.7 : Kirigami.Units.gridUnit * 0.7
+        y: root.headerHeight
+        width: 1
+        height: parent.height - root.headerHeight
+        color: root.groupInfo ? root.groupInfo.color : "transparent"
+    }
 
     // Drop slot: while a tab is dragged, its place in the strip (which moves
     // as the other tabs slide aside) shows where it will land.
@@ -54,6 +137,7 @@ Item {
 
     Kirigami.ShadowedRectangle {
         id: bg
+        visible: !root.collapsedTab
         // While dragging, the tab is lifted and follows the pointer even as
         // the strip moves it to a new index underneath; on release it
         // settles into its slot.
@@ -81,9 +165,11 @@ Item {
         corners.bottomLeftRadius: merged && root.placement !== "bottom" ? 0 : -1
         corners.bottomRightRadius: merged && root.placement !== "bottom" ? 0 : -1
         color: lifted || root.current ? Kirigami.Theme.backgroundColor
+             : root.selected ? Qt.alpha(Kirigami.Theme.highlightColor, hover.hovered ? 0.36 : 0.28)
              : hover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
         border.width: 1
-        border.color: lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
+        border.color: root.selected ? Qt.alpha(Kirigami.Theme.highlightColor, 0.7)
+                    : lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
         // ...and has no border line on that edge (only between its side
         // borders); it is marked on the opposite edge.
         Rectangle {
@@ -107,6 +193,15 @@ Item {
             height: root.vertical ? parent.height : 2
             radius: 1
             color: root.containerInfo ? root.containerInfo.color : Kirigami.Theme.highlightColor
+        }
+
+        // A grouped tab's bar in the group's colour, on the side facing the page.
+        Rectangle {
+            visible: !!root.groupInfo && !root.vertical
+            anchors { left: parent.left; right: parent.right }
+            y: root.placement === "bottom" ? 0 : parent.height - height
+            height: 2
+            color: root.groupInfo ? root.groupInfo.color : "transparent"
         }
 
         RowLayout {
@@ -182,14 +277,18 @@ Item {
     QQC2.ToolTip.visible: hover.hovered && !dragHandler.active
     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay * 2
 
+    // A click selects the tab; with Ctrl or Shift it selects several.
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        onTapped: root.browser.setCurrentIndex(root.index)
+        acceptedModifiers: Qt.NoModifier
+        onTapped: root.collapsedTab ? root.toggleGroup() : root.browser.clickTab(root.index, Qt.NoModifier)
         onDoubleTapped: {}
     }
-    TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: root.browser.closeTab(root.index) }
+    TapHandler { acceptedButtons: Qt.LeftButton; acceptedModifiers: Qt.ControlModifier; onTapped: if (!root.collapsedTab) root.browser.clickTab(root.index, Qt.ControlModifier) }
+    TapHandler { acceptedButtons: Qt.LeftButton; acceptedModifiers: Qt.ShiftModifier; onTapped: if (!root.collapsedTab) root.browser.clickTab(root.index, Qt.ShiftModifier) }
+    TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: if (!root.collapsedTab) root.browser.closeTab(root.index) }
     // Exclusive, so the tab bar's own menu doesn't open as well.
-    TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: menu.popup() }
+    TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.collapsedTab ? root.browser.openGroupMenu(root.group, root) : menu.popup() }
 
     Connections {
         target: root.tabList
@@ -214,6 +313,9 @@ Item {
         property real startPos: 0
         property real startScroll: 0
         property real pos: 0
+        // Dragging the whole group: a collapsed group, or an open one by its
+        // chip or tree header.
+        property bool wholeGroup: false
         readonly property real along: root.vertical ? activeTranslation.y : activeTranslation.x
         readonly property real size: root.vertical ? root.height : root.width
         onActiveChanged: {
@@ -221,9 +323,12 @@ Item {
                 startPos = root.vertical ? root.y : root.x
                 startScroll = root.tabList.scrollPos
                 pos = startPos
-                root.browser.setCurrentIndex(root.index)
+                const p = centroid.pressPosition
+                wholeGroup = root.collapsedTab || (root.groupFirst && (root.vertical ? p.y < root.headerHeight : p.x < root.groupTabWidth))
+                if (!wholeGroup) root.browser.setCurrentIndex(root.index)
             } else {
                 root.tabList.autoScroll = 0
+                root.browser.finishTabDrag(wholeGroup ? -1 : root.tabId)
             }
         }
         onAlongChanged: if (active) Qt.callLater(update)
@@ -234,7 +339,16 @@ Item {
             let to = root.vertical ? root.tabList.indexAt(root.width / 2, centre) : root.tabList.indexAt(centre, root.height / 2)
             if (to < 0) to = centre < 0 ? 0 : root.browser.count - 1
             to = root.browser.clampToSection(root.index, to)
-            if (to !== root.index) root.browser.moveTab(root.index, to)
+            if (wholeGroup) {
+                const members = root.browser.groupTabs(root.group)
+                const first = root.browser.indexOfTab(members[0]), last = root.browser.indexOfTab(members[members.length - 1])
+                to = root.browser.dragTarget(first, last, to)
+                if (to >= 0) root.browser.moveGroupTo(root.group, to)
+            } else {
+                to = root.browser.dragTarget(root.index, root.index, to)
+                // (Group membership follows when the drag ends.)
+                if (to >= 0) root.browser.moveTab(root.index, to, true)
+            }
             // Near an end of a crowded strip, scroll it (faster the further
             // the tab is pulled past the edge).
             const view = pos - root.tabList.scrollPos
@@ -249,16 +363,53 @@ Item {
 
     QQC2.Menu {
         id: menu
+        // The tabs it acts on: the selection, if this tab is in it.
+        property var targets: [root.tabId]
+        readonly property int n: targets.length
+        readonly property string tabsWord: n > 1 ? n + " Tabs" : "Tab"
+        onAboutToShow: targets = root.browser.actionTabs(root.tabId)
+        function inGroup() { return targets.some(id => root.browser.groupOf(id) !== "") }
         QQC2.MenuItem { text: "New Tab"; icon.name: "list-add"; onTriggered: root.browser.openTab(root.browser.app.newTabUrl(), {index: root.index + 1}) }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Reload Tab"; icon.name: "view-refresh"; onTriggered: root.browser.tabById(root.tabId).view.reload() }
         QQC2.MenuItem { id: duplicateItem; text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: t.container, index: root.index + 1}) } }
         // Split view: the tab to the other pane (starting split view).
         QQC2.MenuItem {
-            text: root.browser.split ? "Move to Other Side" : "Open in Split View"
+            text: root.browser.split ? (menu.n > 1 ? "Move " + menu.n + " Tabs to Other Side" : "Move to Other Side") : (menu.n > 1 ? "Open " + menu.n + " Tabs in Split View" : "Open in Split View")
             icon.name: "view-split-left-right"
-            enabled: root.browser.split || root.browser.count > 1
-            onTriggered: root.browser.moveToOtherPane(root.tabId)
+            enabled: root.browser.split || root.browser.count > menu.n
+            onTriggered: root.browser.moveTabsToOtherPane(menu.targets)
+        }
+        // Tab groups.
+        QQC2.MenuSeparator {}
+        QQC2.MenuItem {
+            id: newGroupItem
+            visible: !root.pinned && (menu.n > 1 || !root.group)
+            height: visible ? implicitHeight : 0
+            text: "Add " + menu.tabsWord + " to New Group"
+            icon.name: "folder-new"
+            onTriggered: { const gid = root.browser.newGroupFor(menu.targets); if (gid) root.browser.renameGroup(gid) }
+        }
+        Instantiator {
+            // The other groups of the tab's pane.
+            // (The groups not holding all of the tabs already.)
+            model: { root.browser.groupsVersion; menu.targets; return root.pinned ? [] : Object.keys(root.browser.tabGroups).filter(g => root.browser.paneOf(root.browser.groupTabs(g)[0]) === root.pane && menu.targets.some(id => root.browser.groupOf(id) !== g)) }
+            delegate: QQC2.MenuItem {
+                required property string modelData
+                text: (menu.n > 1 ? "Add " + menu.n + " Tabs to “" : "Add to “") + (root.browser.tabGroups[modelData] || {}).name + "”"
+                icon.name: "tag"
+                icon.color: (root.browser.tabGroups[modelData] || {}).color
+                onTriggered: root.browser.addTabsToGroup(menu.targets, modelData)
+            }
+            onObjectAdded: (i, o) => { let at = 0; for (let j = 0; j < menu.count; ++j) if (menu.itemAt(j) === newGroupItem) at = j + 1; menu.insertItem(at + i, o) }
+            onObjectRemoved: (i, o) => menu.removeItem(o)
+        }
+        QQC2.MenuItem {
+            visible: { root.browser.groupsVersion; return menu.inGroup() }
+            height: visible ? implicitHeight : 0
+            text: menu.n > 1 ? "Remove " + menu.n + " Tabs from Group" : "Remove from Group"
+            icon.name: "edit-delete-remove"
+            onTriggered: root.browser.removeTabsFromGroup(menu.targets)
         }
         // (A property: a Menu declared inside a Menu is always added to it.)
         property ContainerMenu _containerMenu: ContainerMenu {
@@ -278,7 +429,7 @@ Item {
         QQC2.MenuItem { text: "Close Tabs to the Right"; onTriggered: root.browser.closeTabsToRight(root.index) }
         QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: root.browser.reopenClosedTab(0) }
         QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "Close Tab"; icon.name: "tab-close"; onTriggered: root.browser.closeTab(root.index) }
+        QQC2.MenuItem { text: "Close " + menu.tabsWord; icon.name: "tab-close"; onTriggered: root.browser.closeTabs(menu.targets) }
         QQC2.MenuSeparator {}
         TabBarMenu { browser: root.browser }
     }

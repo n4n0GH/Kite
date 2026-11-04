@@ -92,6 +92,8 @@ Item {
     function focusLocationBar() { Qt.callLater(() => { if (window.currentTab === wt) window.focusLocationBarNow() }) }
 
     function setPinned(p) {
+        // Pinned tabs aren't in groups (leaving one can move the tab).
+        if (p) window.removeFromGroup(tabId)
         const i = window.indexOfTab(tabId)
         pinned = p
         window.setTabProperty(tabId, "pinned", p)
@@ -133,7 +135,7 @@ Item {
     }
 
     function saveState() {
-        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container, pane: pane}
+        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container, pane: pane, group: window.groupOf(tabId)}
     }
 
     function extInfo() {

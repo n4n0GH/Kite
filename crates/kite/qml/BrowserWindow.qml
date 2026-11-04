@@ -21,6 +21,197 @@ QQC2.ApplicationWindow {
     property int currentIndex: 0
     property var currentTab: null
 
+    // ---- selecting several tabs ------------------------------------------------
+    // Ctrl+click adds or removes a tab, Shift+click selects the tabs from the
+    // active one to the clicked one (in its pane); a plain click ends the
+    // selection. The tab menu then acts on all of them.
+    property var selectedTabs: []
+    function clickTab(index, modifiers) {
+        const id = tabModel.get(index).tabId
+        const active = currentTab ? currentTab.tabId : -1
+        if (modifiers & Qt.ControlModifier) {
+            let sel = selectedTabs.length ? selectedTabs.slice() : [active]
+            if (sel.includes(id)) { if (id !== active) sel = sel.filter(x => x !== id) }
+            else sel.push(id)
+            selectedTabs = sel.length > 1 ? sel : []
+        } else if (modifiers & Qt.ShiftModifier) {
+            const pane = tabModel.get(index).pane
+            const from = Math.min(currentIndex, index), to = Math.max(currentIndex, index)
+            const sel = []
+            for (let i = from; i <= to; ++i) if (tabModel.get(i).pane === pane) sel.push(tabModel.get(i).tabId)
+            selectedTabs = sel.length > 1 ? sel : []
+        } else {
+            selectedTabs = []
+            setCurrentIndex(index)
+        }
+    }
+    // The tabs a tab's menu acts on: the selection if the tab is in it.
+    function actionTabs(id) {
+        if (!selectedTabs.includes(id)) return [id]
+        const ids = []
+        for (let i = 0; i < tabModel.count; ++i) if (selectedTabs.includes(tabModel.get(i).tabId)) ids.push(tabModel.get(i).tabId)
+        return ids
+    }
+    // Group actions for several tabs.
+    function newGroupFor(ids) {
+        const gid = newGroup(ids[0])
+        if (gid) for (const id of ids.slice(1)) addToGroup(id, gid)
+        selectedTabs = []
+        return gid
+    }
+    function addTabsToGroup(ids, gid) { for (const id of ids) addToGroup(id, gid); selectedTabs = [] }
+    function removeTabsFromGroup(ids) { for (const id of ids.slice().reverse()) removeFromGroup(id); selectedTabs = [] }
+    function closeTabs(ids) { selectedTabs = []; for (const id of ids.slice().reverse()) closeTab(indexOfTab(id)) }
+    function moveTabsToOtherPane(ids) { selectedTabs = []; for (const id of ids) moveToOtherPane(id) }
+
+    // ---- tab groups --------------------------------------------------------------
+    // A tab's "group" role names its group ("" = none); the groups' name,
+    // colour and collapsed state are here. A group's tabs are next to each
+    // other, in one pane, and not pinned.
+    property var tabGroups: ({})            // id → {name, color, collapsed}
+    property int groupsVersion: 0           // bumped when membership or order changes
+    readonly property var groupColors: ["#3daee9", "#da4453", "#fdbc4b", "#27ae60", "#e93a9a", "#9b59b6", "#1abc9c", "#f67400", "#7f8c8d"]
+    function groupOf(id) { const i = indexOfTab(id); return i >= 0 ? tabModel.get(i).group : "" }
+    function groupTabs(gid) { const ids = []; for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).group === gid) ids.push(tabModel.get(i).tabId); return ids }
+    // Whether the tab is its group's first (which shows the group's chip or
+    // header, and stands for the group when it is collapsed).
+    function isGroupFirst(id) {
+        groupsVersion
+        const i = indexOfTab(id)
+        if (i < 0) return false
+        const g = tabModel.get(i).group
+        return g !== "" && (i === 0 || tabModel.get(i - 1).group !== g)
+    }
+    function updateGroup(gid, change) {
+        if (!tabGroups[gid]) return
+        const all = Object.assign({}, tabGroups)
+        all[gid] = Object.assign({}, all[gid], change)
+        tabGroups = all
+    }
+    function dropEmptyGroups() {
+        const all = {}
+        for (const gid in tabGroups) if (groupTabs(gid).length) all[gid] = tabGroups[gid]
+        tabGroups = all
+        groupsVersion++
+    }
+    // A new group holding the tab; its id.
+    function newGroup(tabId) {
+        const i = indexOfTab(tabId)
+        if (i < 0 || tabModel.get(i).pinned) return ""
+        const used = Object.values(tabGroups).map(g => g.color)
+        const color = groupColors.find(c => !used.includes(c)) || groupColors[Object.keys(tabGroups).length % groupColors.length]
+        const gid = "g" + Date.now().toString(36) + Math.floor(Math.random() * 1000)
+        const all = Object.assign({}, tabGroups)
+        all[gid] = {name: "Group " + (Object.keys(all).length + 1), color: color, collapsed: false}
+        tabGroups = all
+        removeFromGroup(tabId)
+        tabModel.setProperty(indexOfTab(tabId), "group", gid)
+        groupsVersion++
+        return gid
+    }
+    // Into a group: the tab moves after the group's last tab (and to its pane).
+    function addToGroup(tabId, gid) {
+        const members = groupTabs(gid)
+        if (!members.length || members.includes(tabId) || tabModel.get(indexOfTab(tabId)).pinned) return
+        removeFromGroup(tabId)
+        const from = indexOfTab(tabId)
+        const pane = tabModel.get(indexOfTab(members[0])).pane
+        if (tabModel.get(from).pane !== pane) { tabModel.setProperty(from, "pane", pane); countPane1() }
+        let to = indexOfTab(members[members.length - 1])
+        if (from > to) to++
+        moveTab(from, to, true)
+        tabModel.setProperty(indexOfTab(tabId), "group", gid)
+        if (tabGroups[gid].collapsed) updateGroup(gid, {collapsed: false})
+        groupsVersion++
+    }
+    // Out of its group: a tab in the middle moves after the group's end.
+    function removeFromGroup(tabId) {
+        const i = indexOfTab(tabId)
+        if (i < 0) return
+        const gid = tabModel.get(i).group
+        if (!gid) return
+        const members = groupTabs(gid)
+        const last = indexOfTab(members[members.length - 1])
+        tabModel.setProperty(i, "group", "")
+        if (i !== last && members.indexOf(tabId) !== 0) moveTab(i, last, true)
+        dropEmptyGroups()
+    }
+    function ungroup(gid) {
+        for (const id of groupTabs(gid)) tabModel.setProperty(indexOfTab(id), "group", "")
+        dropEmptyGroups()
+    }
+    function closeGroup(gid) { for (const id of groupTabs(gid).reverse()) closeTab(indexOfTab(id)) }
+    // Collapsing a group showing a pane's tab first shows another tab of
+    // that pane (if there is none, the group stays open).
+    function setGroupCollapsed(gid, collapsed) {
+        if (!tabGroups[gid]) return
+        if (collapsed) {
+            const members = groupTabs(gid)
+            for (const pane of [0, 1]) {
+                if (!members.includes(paneTab[pane])) continue
+                const other = paneTabs(pane).filter(id => !members.includes(id))
+                if (!other.length) { toast("The group holds this side's only tabs", "dialog-information"); return }
+                const at = paneTabs(pane).indexOf(paneTab[pane])
+                const after = paneTabs(pane).slice(at).find(id => !members.includes(id))
+                const next = after !== undefined ? after : other[other.length - 1]
+                if (pane === activePane) setCurrentIndex(indexOfTab(next))
+                else setPaneTab(pane, next)
+            }
+        }
+        updateGroup(gid, {collapsed: collapsed})
+    }
+    // After tabs move (dragging): a tab left apart from its group leaves it;
+    // an ungrouped tab between two tabs of a group joins it.
+    function normalizeGroups() {
+        const groupAt = i => i >= 0 && i < tabModel.count ? tabModel.get(i).group : ""
+        // First the tabs dropped inside a group join it (so its tabs on
+        // either side don't look separated)...
+        for (let i = 0; i < tabModel.count; ++i)
+            if (!tabModel.get(i).group && groupAt(i - 1) && groupAt(i - 1) === groupAt(i + 1) && !tabModel.get(i).pinned) tabModel.setProperty(i, "group", groupAt(i - 1))
+        // ...then tabs apart from the rest of their group leave it.
+        for (let i = 0; i < tabModel.count; ++i) {
+            const g = tabModel.get(i).group
+            if (g && groupAt(i - 1) !== g && groupAt(i + 1) !== g && groupTabs(g).length > 1) tabModel.setProperty(i, "group", "")
+        }
+        dropEmptyGroups()
+    }
+    // Dragging: where a tab (or a group, the range `first`..`last`) dragged
+    // towards index `to` goes. A collapsed group in the way is passed as a
+    // whole, never entered. -1: nowhere new.
+    function dragTarget(first, last, to) {
+        if (to >= first && to <= last) return -1
+        const g = tabModel.get(to).group
+        if (g && tabGroups[g] && tabGroups[g].collapsed && g !== tabModel.get(first).group) {
+            const members = groupTabs(g)
+            to = indexOfTab(members[to > last ? members.length - 1 : 0])
+        }
+        return to
+    }
+    // Move a group's tabs as one, its first tab to `to` (dragging left) or
+    // its last one (dragging right).
+    function moveGroupTo(gid, to) {
+        let members = groupTabs(gid)
+        let first = indexOfTab(members[0]), last = indexOfTab(members[members.length - 1])
+        // The neighbours in the way go to the group's other side, one by one.
+        while (to > last) { moveTab(last + 1, first, true); first++; last++ }
+        while (to < first) { moveTab(first - 1, last, true); first--; last-- }
+    }
+    // A drag ended: groups follow where the tab (id, or -1 for a group) was
+    // dropped. A tab dragged away from its group leaves it (not the ones
+    // left behind); one dropped between two tabs of a group joins it.
+    function finishTabDrag(id) {
+        const i = indexOfTab(id)
+        if (i >= 0) {
+            const g = tabModel.get(i).group
+            const prev = i > 0 ? tabModel.get(i - 1).group : "", next = i < tabModel.count - 1 ? tabModel.get(i + 1).group : ""
+            if (g && prev !== g && next !== g && groupTabs(g).length > 1) tabModel.setProperty(i, "group", "")
+        }
+        normalizeGroups()
+    }
+
+    function openGroupMenu(gid, item) { groupMenu.gid = gid; groupMenu.popup(item, 0, item.height) }
+    function renameGroup(gid) { groupRename.gid = gid; groupRename.open() }
+
     // ---- split view ------------------------------------------------------------
     // Each tab is in a pane ("pane" role): 0 = left, 1 = right. With tabs in
     // both, the window shows them side by side, each pane its own current
@@ -52,7 +243,9 @@ QQC2.ApplicationWindow {
         if (i < 0) return
         const from = tabModel.get(i).pane, to = 1 - from
         if (from === 0 && paneTabs(0).length === 1 && !split) return   // nothing would be left
-        tabModel.setProperty(i, "pane", to)
+        // Groups aren't split: the tab leaves its group.
+        removeFromGroup(id)
+        tabModel.setProperty(indexOfTab(id), "pane", to)
         countPane1()
         // The pane it left shows its next tab, or ends.
         const rest = paneTabs(from)
@@ -178,7 +371,14 @@ QQC2.ApplicationWindow {
         if (container) app.containerProfile(container)
         // Its pane: as asked, its opener's, or the active one.
         const pane = opts.pane !== undefined ? opts.pane : opts.openerTabId !== undefined && opts.openerTabId >= 0 ? paneOf(opts.openerTabId) : activePane
-        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container, pane: pane})
+        // Its group: as asked (a restored session), or its opener's when it
+        // opens right after it (links from a grouped tab).
+        let group = opts.group || ""
+        if (!group && opts.openerTabId !== undefined && opts.openerTabId >= 0 && idx === indexOfTab(opts.openerTabId) + 1 && paneOf(opts.openerTabId) === pane) group = groupOf(opts.openerTabId)
+        if (opts.pinned) group = ""
+        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, container: container, pane: pane, group: group})
+        if (group && tabGroups[group] && tabGroups[group].collapsed) updateGroup(group, {collapsed: false})
+        groupsVersion++
         countPane1()
         // (showInPane: its pane shows it, even in the background.)
         if (paneTab[pane] < 0 || opts.showInPane) setPaneTab(pane, id)
@@ -195,7 +395,7 @@ QQC2.ApplicationWindow {
     }
 
     function restoreTab(saved) {
-        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container, pane: saved.pane === 1 ? 1 : 0})
+        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container, pane: saved.pane === 1 ? 1 : 0, group: saved.group || ""})
         t.restoreLook(saved.title, saved.url)
         if (saved.zoom > 0) t.view.zoomFactor = saved.zoom
         return t
@@ -217,6 +417,8 @@ QQC2.ApplicationWindow {
         if (t && t.openerTabId >= 0 && before.includes(t.openerTabId)) next = t.openerTabId
         tabModel.remove(index)
         countPane1()
+        dropEmptyGroups()
+        if (selectedTabs.includes(id)) selectedTabs = selectedTabs.filter(x => x !== id)
         Extensions.browserEvent("tabRemoved", JSON.stringify({tabId: id, windowId: windowId, windowClosing: false}))
         if (tabModel.count === 0) {
             if (app.setting("tabs.closeWindowWithLastTab") || app.windows.length > 1) { bw.close(); return }
@@ -238,13 +440,17 @@ QQC2.ApplicationWindow {
 
     function closeTabById(id) { closeTab(indexOfTab(id)) }
 
-    function moveTab(from, to) {
+    // (`internal`: a move by the group logic itself, which keeps groups as
+    // they are; other moves, e.g. dragging, update group membership.)
+    function moveTab(from, to, internal) {
         if (from === to || from < 0 || to < 0 || to >= tabModel.count) return
         const cur = tabModel.get(currentIndex).tabId
         const id = tabModel.get(from).tabId
         tabModel.move(from, to, 1)
         currentIndex = indexOfTab(cur)
         Extensions.browserEvent("tabMoved", JSON.stringify({tabId: id, windowId: windowId, fromIndex: from, toIndex: to}))
+        if (!internal) normalizeGroups()
+        groupsVersion++
         reindex()
     }
 
@@ -258,6 +464,8 @@ QQC2.ApplicationWindow {
         if (i < 0 || i >= tabModel.count) return
         const prev = currentTab ? currentTab.tabId : -1
         const row = tabModel.get(i)
+        // A tab in a collapsed group opens the group.
+        if (row.group && tabGroups[row.group] && tabGroups[row.group].collapsed) updateGroup(row.group, {collapsed: false})
         // The tab's pane shows it and becomes the active one.
         setPaneTab(row.pane, row.tabId)
         activePane = row.pane
@@ -276,6 +484,7 @@ QQC2.ApplicationWindow {
     // After a session's tabs are back: each pane's current tab.
     function restorePanes(saved) {
         if (saved.splitWidth > 0) rightPaneWidth = saved.splitWidth
+        if (saved.groups) { tabGroups = saved.groups; dropEmptyGroups() }
         const pc = saved.paneCurrent || []
         for (const pane of [0, 1]) {
             const t = tabAt(pc[pane])
@@ -317,7 +526,7 @@ QQC2.ApplicationWindow {
         const tabs = []
         for (let i = 0; i < tabModel.count; ++i) { const t = tabAt(i); if (t) tabs.push(t.saveState()) }
         // (Split view: each pane's current tab, and the right pane's width.)
-        return {tabs: tabs, current: currentIndex, paneCurrent: [indexOfTab(paneTab[0]), indexOfTab(paneTab[1])], splitWidth: rightPaneWidth,
+        return {tabs: tabs, current: currentIndex, paneCurrent: [indexOfTab(paneTab[0]), indexOfTab(paneTab[1])], splitWidth: rightPaneWidth, groups: tabGroups,
                 geometry: [x, y, width, height], maximized: visibility === Window.Maximized}
     }
 
@@ -663,6 +872,56 @@ QQC2.ApplicationWindow {
     }
 
     MainMenu { id: mainMenu; win: bw; app: bw.app }
+
+    // A tab group's menu (its chip or header).
+    QQC2.Menu {
+        id: groupMenu
+        property string gid
+        readonly property var info: bw.tabGroups[gid] || ({})
+        QQC2.MenuItem { text: "Rename Group…"; icon.name: "edit-rename"; onTriggered: bw.renameGroup(groupMenu.gid) }
+        QQC2.Menu {
+            id: colorMenu
+            title: "Colour"
+            Instantiator {
+                model: bw.groupColors
+                delegate: QQC2.MenuItem {
+                    required property string modelData
+                    icon.name: "tag"
+                    icon.color: modelData
+                    text: ["Blue", "Red", "Yellow", "Green", "Pink", "Purple", "Cyan", "Orange", "Grey"][bw.groupColors.indexOf(modelData)]
+                    checkable: true
+                    checked: groupMenu.info.color === modelData
+                    onTriggered: bw.updateGroup(groupMenu.gid, {color: modelData})
+                }
+                onObjectAdded: (i, o) => colorMenu.insertItem(i, o)
+                onObjectRemoved: (i, o) => colorMenu.removeItem(o)
+            }
+        }
+        QQC2.MenuItem { text: groupMenu.info.collapsed ? "Expand Group" : "Collapse Group"; icon.name: groupMenu.info.collapsed ? "arrow-down" : "arrow-right"; onTriggered: bw.setGroupCollapsed(groupMenu.gid, !groupMenu.info.collapsed) }
+        QQC2.MenuItem {
+            text: "New Tab in Group"
+            icon.name: "tab-new"
+            onTriggered: {
+                const members = bw.groupTabs(groupMenu.gid)
+                const last = bw.indexOfTab(members[members.length - 1])
+                bw.openTab(bw.app.newTabUrl(), {background: false, index: last + 1, pane: bw.paneOf(members[0]), group: groupMenu.gid}).focusLocationBar()
+            }
+        }
+        QQC2.MenuSeparator {}
+        QQC2.MenuItem { text: "Ungroup"; icon.name: "object-ungroup"; onTriggered: bw.ungroup(groupMenu.gid) }
+        QQC2.MenuItem { text: "Close Group"; icon.name: "tab-close"; onTriggered: bw.closeGroup(groupMenu.gid) }
+    }
+    Kirigami.PromptDialog {
+        id: groupRename
+        property string gid
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        title: "Rename Group"
+        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+        onOpened: { groupName.text = (bw.tabGroups[gid] || {}).name || ""; groupName.selectAll(); groupName.forceActiveFocus() }
+        onAccepted: if (groupName.text.trim() !== "") bw.updateGroup(gid, {name: groupName.text.trim()})
+        QQC2.TextField { id: groupName; onAccepted: groupRename.accept() }
+    }
     CustomizeToolbarDialog { id: customizeDialog; win: bw; catalog: bw.toolbarCatalog }
 
     FileDialog {

@@ -162,8 +162,11 @@ Rectangle {
                 stripRoot.browser.rightPaneCount   // (tabs changing pane)
                 let pinned = 0
                 let shown = 0
+                stripRoot.browser.tabGroups; stripRoot.browser.groupsVersion   // (collapsed groups)
                 for (let i = 0; i < m.count; ++i) {
                     if (stripRoot.pane >= 0 && m.get(i).pane !== stripRoot.pane) continue
+                    const g = m.get(i).group, info = g ? stripRoot.browser.tabGroups[g] : null
+                    if (info && info.collapsed && !stripRoot.browser.isGroupFirst(m.get(i).tabId)) continue
                     shown++
                     if (m.get(i).pinned) pinned++
                 }
