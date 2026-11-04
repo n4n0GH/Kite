@@ -427,8 +427,8 @@ Item {
 
                 onFullScreenRequested: request => {
                     request.accept()
-                    wt.window.contentFullScreen = request.toggleOn
-                    if (request.toggleOn) wt.window.showFullScreen(); else wt.window.showNormal()
+                    if (request.toggleOn) wt.window.enterContentFullScreen(wt)
+                    else wt.window.exitContentFullScreen(true)
                 }
 
                 onPermissionRequested: permission => {

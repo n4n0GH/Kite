@@ -282,7 +282,28 @@ QQC2.ApplicationWindow {
     property string sidebar: ""            // "", "bookmarks", "history", "ext:<id>"
     readonly property string sidebarExtension: sidebar.startsWith("ext:") ? sidebar.substring(4) : ""
     readonly property bool showBookmarksBar: app.liveSettings["appearance.showBookmarksToolbar"]
+    // A page's own fullscreen (a video's fullscreen button): the tab that
+    // asked, and whether the window was fullscreen before (F11).
     property bool contentFullScreen: false
+    property var fullScreenTab: null
+    property bool wasFullScreen: false
+    function enterContentFullScreen(tab) {
+        if (!contentFullScreen) wasFullScreen = visibility === Window.FullScreen
+        fullScreenTab = tab
+        contentFullScreen = true
+        showFullScreen()
+    }
+    // The page left fullscreen itself (`fromPage`), or Kite makes it leave
+    // (Escape, the window leaving fullscreen).
+    function exitContentFullScreen(fromPage) {
+        if (!contentFullScreen) return
+        const t = fullScreenTab
+        contentFullScreen = false
+        fullScreenTab = null
+        if (!fromPage && t) t.view.fullScreenCancelled()
+        if (!wasFullScreen && visibility === Window.FullScreen) showNormal()
+    }
+    onVisibilityChanged: if (contentFullScreen && visibility !== Window.FullScreen) exitContentFullScreen(false)
     property var toolbarActions: []
     property int downloadsActive: 0
 
@@ -590,7 +611,9 @@ QQC2.ApplicationWindow {
     Shortcut { sequences: ["Ctrl+Shift+R", "Ctrl+F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reloadAndBypassCache() }
     // Only while the find bar is open: otherwise Escape must reach the page
     // (web apps and extensions such as Vimium rely on it).
-    Shortcut { sequence: "Esc"; enabled: findBar.visible; onActivated: findBar.close() }
+    Shortcut { sequence: "Esc"; enabled: findBar.visible && !bw.contentFullScreen; onActivated: findBar.close() }
+    // Escape leaves a page's fullscreen (as in other browsers).
+    Shortcut { sequence: "Esc"; enabled: bw.contentFullScreen; onActivated: bw.exitContentFullScreen(false) }
     Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (bw.currentTab) bw.currentTab.view.goBack() }
     Shortcut { sequences: [StandardKey.Forward, "Alt+Right"]; onActivated: if (bw.currentTab) bw.currentTab.view.goForward() }
     Shortcut { sequence: "Alt+Home"; onActivated: if (bw.currentTab) bw.currentTab.load(app.homeUrl()) }
