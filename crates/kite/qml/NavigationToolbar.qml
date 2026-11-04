@@ -181,7 +181,7 @@ QQC2.ToolBar {
     }
     Component {
         id: addonsItem
-        Button { icon.name: "preferences-plugin"; tip: "Add-ons"; onClicked: toolbar.win.app.showAddons() }
+        Button { icon.name: "kite-extension"; tip: "Add-ons"; onClicked: toolbar.win.app.showAddons() }
     }
     Component {
         id: settingsItem

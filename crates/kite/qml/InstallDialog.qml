@@ -28,7 +28,7 @@ Window {
         spacing: Kirigami.Units.largeSpacing
         RowLayout {
             spacing: Kirigami.Units.largeSpacing
-            Kirigami.Icon { source: "preferences-plugin"; Layout.preferredWidth: Kirigami.Units.iconSizes.large; Layout.preferredHeight: Layout.preferredWidth }
+            Kirigami.Icon { source: "kite-extension"; Layout.preferredWidth: Kirigami.Units.iconSizes.large; Layout.preferredHeight: Layout.preferredWidth }
             Kirigami.Heading {
                 level: 3
                 Layout.fillWidth: true

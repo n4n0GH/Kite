@@ -46,7 +46,7 @@ RowLayout {
             required property var modelData
             enabled: modelData.enabled !== false
             icon.source: modelData.icon || ""
-            icon.name: modelData.icon ? "" : "preferences-plugin"
+            icon.name: modelData.icon ? "" : "kite-extension"
             icon.color: "transparent"
             display: QQC2.AbstractButton.IconOnly
             text: modelData.title
@@ -61,7 +61,7 @@ RowLayout {
 
     QQC2.ToolButton {
         id: puzzle
-        icon.name: "preferences-plugin"
+        icon.name: "kite-extension"
         display: QQC2.AbstractButton.IconOnly
         text: "Extensions"
         checkable: true
@@ -125,7 +125,7 @@ RowLayout {
                             Layout.preferredHeight: Layout.preferredWidth
                             Kirigami.Icon {
                                 anchors.fill: parent
-                                source: row.act && row.act.icon ? row.act.icon : row.modelData.icon || "preferences-plugin"
+                                source: row.act && row.act.icon ? row.act.icon : row.modelData.icon || "kite-extension"
                             }
                             Badge { action: row.act }
                         }

@@ -28,7 +28,7 @@ Kirigami.ApplicationWindow {
         {key: "adblock", title: "Content Blocking", icon: "security-high"},
         {key: "downloads", title: "Downloads", icon: "download"},
         {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
-        {key: "extensions", title: "Extensions", icon: "preferences-plugin"},
+        {key: "extensions", title: "Extensions", icon: "kite-extension"},
     ]
 
     globalDrawer: Kirigami.GlobalDrawer {
@@ -651,7 +651,7 @@ Kirigami.ApplicationWindow {
             QQC2.CheckBox { Kirigami.FormData.label: "Extensions:"; text: "Enable extensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
             QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
             QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
-            QQC2.Button { text: "Manage Add-ons…"; icon.name: "preferences-plugin"; onClicked: w.app.showAddons() }
+            QQC2.Button { text: "Manage Add-ons…"; icon.name: "kite-extension"; onClicked: w.app.showAddons() }
         }
     }
 }

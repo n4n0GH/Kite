@@ -14,12 +14,18 @@ fn main() {
         println!("cargo::rerun-if-changed={f}");
     }
     println!("cargo::rerun-if-changed=qml");
-    // Icons Kite ships itself (qrc:/qt/qml/org/kde/kite/icons/…).
-    let icons: Vec<String> = std::fs::read_dir("icons")
-        .expect("icons dir")
-        .filter_map(|e| e.ok())
-        .map(|e| e.path().to_string_lossy().into_owned())
-        .collect();
+    // Icons Kite ships itself (qrc:/qt/qml/org/kde/kite/icons/…), including
+    // its fallback icon theme (icons/kite/, see bootstrap.cpp).
+    fn files(dir: &std::path::Path, out: &mut Vec<String>) {
+        for e in std::fs::read_dir(dir).expect("icons dir").filter_map(|e| e.ok()) {
+            let p = e.path();
+            if p.is_dir() { files(&p, out) } else { out.push(p.to_string_lossy().into_owned()) }
+        }
+    }
+    let mut icons = Vec::new();
+    files(std::path::Path::new("icons"), &mut icons);
+    icons.sort();
+    println!("cargo::rerun-if-changed=icons");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml))
         .qrc_resources(icons)

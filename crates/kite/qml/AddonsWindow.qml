@@ -21,7 +21,7 @@ Kirigami.ApplicationWindow {
         collapsed: false
         width: Kirigami.Units.gridUnit * 11
         actions: [
-            Kirigami.Action { text: "Extensions"; icon.name: "preferences-plugin"; checked: w.page === "installed"; onTriggered: w.page = "installed" },
+            Kirigami.Action { text: "Extensions"; icon.name: "kite-extension"; checked: w.page === "installed"; onTriggered: w.page = "installed" },
             Kirigami.Action { text: "Find Add-ons"; icon.name: "get-hot-new-stuff"; checked: w.page === "browse"; onTriggered: w.page = "browse" }
         ]
     }
@@ -75,7 +75,7 @@ Kirigami.ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.topMargin: Kirigami.Units.gridUnit * 4
                     visible: ip.exts.length === 0
-                    icon.name: "preferences-plugin"
+                    icon.name: "kite-extension"
                     text: "No extensions installed"
                     explanation: "Kite runs Firefox extensions. Find some on addons.mozilla.org."
                     helpfulAction: Kirigami.Action { text: "Find Add-ons"; icon.name: "get-hot-new-stuff"; onTriggered: w.page = "browse" }
@@ -91,8 +91,8 @@ Kirigami.ApplicationWindow {
                             RowLayout {
                                 spacing: Kirigami.Units.largeSpacing
                                 Kirigami.Icon {
-                                    source: card.modelData.icon || "preferences-plugin"
-                                    fallback: "preferences-plugin"
+                                    source: card.modelData.icon || "kite-extension"
+                                    fallback: "kite-extension"
                                     Layout.preferredWidth: Kirigami.Units.iconSizes.large
                                     Layout.preferredHeight: Layout.preferredWidth
                                     opacity: card.modelData.enabled ? 1 : 0.5

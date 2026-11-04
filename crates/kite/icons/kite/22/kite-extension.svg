@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+  <!-- Breeze "extension-symbolic" redrawn on the 22 px grid in Breeze's style
+       (1 px outline, solid tabs), after the 16 px original (LGPL-3.0-or-later). -->
+  <defs id="defs3051">
+    <style type="text/css" id="current-color-scheme">
+      .ColorScheme-Text {
+        color:#232629;
+      }
+      </style>
+  </defs>
+  <path style="fill:currentColor;fill-opacity:1;stroke:none" fill-rule="evenodd" d="M5 5h4v2h4v-2h4v2h2v12h-16v-12h2z M4 8v10h14v-10z" class="ColorScheme-Text"/>
+</svg>

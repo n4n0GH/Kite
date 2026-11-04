@@ -12,7 +12,7 @@ QtObject {
         {id: "reload", name: "Reload / Stop", icon: "view-refresh"},
         {id: "home", name: "Home", icon: "go-home"},
         {id: "urlbar", name: "Address Bar", icon: "globe", required: true},
-        {id: "extensions", name: "Extensions", icon: "preferences-plugin"},
+        {id: "extensions", name: "Extensions", icon: "kite-extension"},
         {id: "downloads", name: "Downloads", icon: "download"},
         {id: "menu", name: "Menu", icon: "application-menu", required: true},
         {id: "newTab", name: "New Tab", icon: "tab-new"},
@@ -25,7 +25,7 @@ QtObject {
         {id: "find", name: "Find in Page", icon: "edit-find"},
         {id: "zoom", name: "Zoom Controls", icon: "zoom-in"},
         {id: "fullScreen", name: "Full Screen", icon: "view-fullscreen"},
-        {id: "addons", name: "Add-ons", icon: "preferences-plugin"},
+        {id: "addons", name: "Add-ons", icon: "kite-extension"},
         {id: "settings", name: "Settings", icon: "settings-configure"},
         {id: "flexibleSpace", name: "Flexible Space", icon: "distribute-horizontal-x", repeatable: true},
     ]

@@ -127,7 +127,7 @@ QQC2.TextField {
         height: parent.height - 4; width: height
         padding: 0
         flat: true
-        icon.name: !field.tab ? "globe" : field.extName !== "" ? "preferences-plugin" : field.tab.isSecure ? "security-high" : field.tab.url.startsWith("http:") ? "security-low" : "globe"
+        icon.name: !field.tab ? "globe" : field.extName !== "" ? "kite-extension" : field.tab.isSecure ? "security-high" : field.tab.url.startsWith("http:") ? "security-low" : "globe"
         onClicked: siteInfo.open()
         QQC2.ToolTip.text: field.extName !== "" ? "Extension (" + field.extName + ")" : field.tab && field.tab.isSecure ? "Connection is secure" : "Connection is not secure"
         QQC2.ToolTip.visible: hovered
@@ -147,7 +147,7 @@ QQC2.TextField {
                 Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
                 padding: 2
                 icon.source: modelData.icon || ""
-                icon.name: modelData.icon ? "" : "preferences-plugin"
+                icon.name: modelData.icon ? "" : "kite-extension"
                 onClicked: modelData.popup ? field.win.openPageActionPopup(modelData, this) : Extensions.actionClicked(modelData.ext, "pageAction", field.tab.tabId)
                 QQC2.ToolTip.text: modelData.title; QQC2.ToolTip.visible: hovered
             }
