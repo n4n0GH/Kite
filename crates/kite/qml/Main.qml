@@ -200,7 +200,38 @@ QtObject {
     // removing everything and inserting it again (on every extension script
     // change, e.g. uBlock Origin registering scriptlets while a page loads)
     // left a moment in which a page being created got no scripts at all.
+    // Custom CSS and JavaScript of sites (Settings → Site Settings), as
+    // scripts limited to the site's host. CSS goes in as the document is
+    // created (no unstyled flash); JavaScript runs in the page's own world
+    // once the DOM is ready, like a user script.
+    function siteScripts() {
+        const out = []
+        for (const e of JSON.parse(Browser.allSiteSettings())) {
+            const header = "// ==UserScript==\n// @match *://" + e.host + "/*\n// ==/UserScript==\n"
+            if (e.settings.css)
+                out.push({name: "kite:site-css:" + e.host, worldId: 1, runsOnSubFrames: false, injectionPoint: 0, sourceCode: header
+                    + "(() => { const add = () => { const s = document.createElement('style'); s.dataset.kite = 'site-css'; s.textContent = " + JSON.stringify(e.settings.css) + "; document.documentElement.appendChild(s) };"
+                    + " if (document.documentElement) add(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); add() } }).observe(document, {childList: true}) })();"})
+            if (e.settings.js)
+                out.push({name: "kite:site-js:" + e.host, worldId: 0, runsOnSubFrames: false, injectionPoint: 1, sourceCode: header + e.settings.js})
+        }
+        return out
+    }
+    // A site's settings were changed (Settings, the site info popup): scripts
+    // are rebuilt, open tabs of the site pick up zoom and dark mode.
+    signal siteSettingsEdited(string host)
+    function siteSettingsChanged(host) {
+        installUserScripts()
+        siteSettingsEdited(host)
+    }
+    function showSiteSettings(host) {
+        const w = showPreferences("sites")
+        w.editSite = host
+        return w
+    }
+
     function installUserScripts() {
+        const sites = siteScripts()
         for (const p of [profile, privateProfile]) {
             // Like Firefox, extensions don't run in private windows by default.
             const wanted = JSON.parse(Extensions.userScripts(p === profile))
@@ -214,6 +245,7 @@ QtObject {
             if (setting("web.doNotTrack"))
                 wanted.push({name: "kite:doNotTrack", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "Object.defineProperty(Navigator.prototype, 'doNotTrack', { get() { return '1'; }, configurable: true, enumerable: true });"})
+            for (const s of sites) wanted.push(s)
             updateScripts(p.userScripts, wanted)
         }
     }

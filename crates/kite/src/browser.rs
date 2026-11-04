@@ -205,6 +205,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "clearSiteSettings"]
         fn clear_site_settings(self: Pin<&mut Browser>, host: &QString);
+        /// Text settings: "css" or "js".
+        #[qinvokable]
+        #[cxx_name = "setSiteText"]
+        fn set_site_text(self: Pin<&mut Browser>, host: &QString, key: &QString, value: &QString);
+        /// Back to the defaults, keeping custom CSS and JavaScript.
+        #[qinvokable]
+        #[cxx_name = "resetSiteSettings"]
+        fn reset_site_settings(self: Pin<&mut Browser>, host: &QString);
 
         // content blocking
         #[qinvokable]
@@ -768,6 +776,12 @@ impl qobject::Browser {
     }
     fn clear_site_settings(self: Pin<&mut Self>, host: &QString) {
         let _ = kite_core::sitesettings::clear(&app().shared.db(), &host.to_string());
+    }
+    fn set_site_text(self: Pin<&mut Self>, host: &QString, key: &QString, value: &QString) {
+        let _ = kite_core::sitesettings::set_text(&app().shared.db(), &host.to_string(), &key.to_string(), &value.to_string());
+    }
+    fn reset_site_settings(self: Pin<&mut Self>, host: &QString) {
+        let _ = kite_core::sitesettings::reset(&app().shared.db(), &host.to_string());
     }
 
     // ---- content blocking ---------------------------------------------------

@@ -371,8 +371,16 @@ QQC2.TextField {
                 }
             }
             Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.permissions.length > 0 }
-            QQC2.Button { text: "Clear zoom setting"; visible: siteInfo.site.zoom > 0; onClicked: { Browser.setSiteSetting(Browser.hostOf(field.tab.url), "zoom", -1); field.tab.view.zoomFactor = 1.0; siteInfo.close() } }
-            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { Browser.clearSiteSettings(Browser.hostOf(field.tab.url)); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
+            QQC2.Button { text: "Clear zoom setting"; visible: siteInfo.site.zoom > 0; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.setSiteSetting(h, "zoom", -1); field.win.app.siteSettingsChanged(h); siteInfo.close() } }
+            // Zoom, dark mode, CSS and JavaScript of the site (Settings).
+            QQC2.Button {
+                text: "Site Settings…"
+                icon.name: "configure"
+                visible: field.extName === "" && Browser.hostOf(field.tab ? field.tab.url : "") !== ""
+                onClicked: { field.win.app.showSiteSettings(Browser.hostOf(field.tab.url)); siteInfo.close() }
+            }
+            // Keeps the site's custom CSS and JavaScript (written by the user).
+            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.resetSiteSettings(h); field.win.app.siteSettingsChanged(h); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
         }
     }
 }

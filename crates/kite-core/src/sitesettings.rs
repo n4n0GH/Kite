@@ -1,5 +1,6 @@
-//! Per-site settings (Falkon `site_settings` table). Kite currently uses the
-//! zoom level and the cookie / JavaScript / image overrides.
+//! Per-site settings (Falkon `site_settings` table). Kite uses the zoom level,
+//! forced dark mode, the cookie / JavaScript / image overrides, and its own
+//! custom CSS and JavaScript (`kite_css`, `kite_js`; see db.rs).
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -14,12 +15,26 @@ pub struct SiteSettings {
     pub images: i64,
     pub notifications: i64,
     pub geolocation: i64,
+    /// 0 = the global setting, 1 = force dark, 2 = never.
+    pub dark_mode: i64,
+    /// Style sheet added to the site's pages.
+    pub css: String,
+    /// Script run in the site's pages (page world, once the DOM is ready).
+    pub js: String,
+}
+
+impl SiteSettings {
+    /// Whether anything differs from the defaults.
+    pub fn is_empty(&self) -> bool {
+        *self == SiteSettings { zoom: -1, ..Default::default() } || *self == SiteSettings::default()
+    }
 }
 
 pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
     Ok(db
         .query_row(
-            "SELECT zoom_level, allow_cookies, wa_js_enabled, wa_autoload_images, f_notifications, f_geolocation
+            "SELECT zoom_level, allow_cookies, wa_js_enabled, wa_autoload_images, f_notifications, f_geolocation,
+                    wa_force_dark_mode, kite_css, kite_js
              FROM site_settings WHERE server = ?1",
             [host],
             |r| {
@@ -30,6 +45,9 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
                     images: r.get(3)?,
                     notifications: r.get(4)?,
                     geolocation: r.get(5)?,
+                    dark_mode: r.get(6)?,
+                    css: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
+                    js: r.get::<_, Option<String>>(8)?.unwrap_or_default(),
                 })
             },
         )
@@ -44,10 +62,20 @@ const COLUMNS: &[(&str, &str)] = &[
     ("images", "wa_autoload_images"),
     ("notifications", "f_notifications"),
     ("geolocation", "f_geolocation"),
+    ("darkMode", "wa_force_dark_mode"),
 ];
+
+const TEXT_COLUMNS: &[(&str, &str)] = &[("css", "kite_css"), ("js", "kite_js")];
 
 pub fn set(db: &Connection, host: &str, key: &str, value: i64) -> anyhow::Result<()> {
     let col = COLUMNS.iter().find(|(k, _)| *k == key).map(|(_, c)| *c).ok_or_else(|| anyhow::anyhow!("unknown site setting {key}"))?;
+    db.execute("INSERT OR IGNORE INTO site_settings (server) VALUES (?1)", [host])?;
+    db.execute(&format!("UPDATE site_settings SET {col} = ?2 WHERE server = ?1"), params![host, value])?;
+    Ok(())
+}
+
+pub fn set_text(db: &Connection, host: &str, key: &str, value: &str) -> anyhow::Result<()> {
+    let col = TEXT_COLUMNS.iter().find(|(k, _)| *k == key).map(|(_, c)| *c).ok_or_else(|| anyhow::anyhow!("unknown site setting {key}"))?;
     db.execute("INSERT OR IGNORE INTO site_settings (server) VALUES (?1)", [host])?;
     db.execute(&format!("UPDATE site_settings SET {col} = ?2 WHERE server = ?1"), params![host, value])?;
     Ok(())
@@ -62,4 +90,43 @@ pub fn all(db: &Connection) -> anyhow::Result<Vec<(String, SiteSettings)>> {
 pub fn clear(db: &Connection, host: &str) -> anyhow::Result<()> {
     db.execute("DELETE FROM site_settings WHERE server = ?1", [host])?;
     Ok(())
+}
+
+/// Back to the defaults, except for custom CSS and JavaScript (written by
+/// the user, not picked up while browsing).
+pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
+    let s = get(db, host)?;
+    clear(db, host)?;
+    if !s.css.is_empty() {
+        set_text(db, host, "css", &s.css)?;
+    }
+    if !s.js.is_empty() {
+        set_text(db, host, "js", &s.js)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dark_mode_css_js() {
+        let db = crate::db::open_in_memory().unwrap();
+        assert_eq!(get(&db, "a.org").unwrap(), SiteSettings { zoom: -1, ..Default::default() });
+        set(&db, "a.org", "darkMode", 1).unwrap();
+        set_text(&db, "a.org", "css", "body { color: red }").unwrap();
+        set_text(&db, "a.org", "js", "console.log(1)").unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!((s.dark_mode, s.css.as_str(), s.js.as_str(), s.zoom), (1, "body { color: red }", "console.log(1)", -1));
+        assert!(!s.is_empty());
+        assert!(set_text(&db, "a.org", "zoom", "x").is_err());
+        assert_eq!(all(&db).unwrap().len(), 1);
+        set(&db, "a.org", "zoom", 150).unwrap();
+        reset(&db, "a.org").unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!((s.zoom, s.dark_mode, s.css.as_str()), (-1, 0, "body { color: red }"));
+        clear(&db, "a.org").unwrap();
+        assert!(all(&db).unwrap().is_empty());
+    }
 }

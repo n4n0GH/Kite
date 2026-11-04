@@ -42,11 +42,28 @@ pub fn open(path: &Path) -> anyhow::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.execute_batch(SCHEMA)?;
+    upgrade(&conn)?;
     Ok(conn)
+}
+
+/// Columns Kite added to Falkon's schema, for databases created before them.
+fn upgrade(conn: &Connection) -> anyhow::Result<()> {
+    let has = |table: &str, col: &str| -> anyhow::Result<bool> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let names: Vec<String> = stmt.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
+        Ok(names.iter().any(|n| n == col))
+    };
+    for col in ["kite_css", "kite_js"] {
+        if !has("site_settings", col)? {
+            conn.execute_batch(&format!("ALTER TABLE site_settings ADD COLUMN {col} TEXT DEFAULT ''"))?;
+        }
+    }
+    Ok(())
 }
 
 pub fn open_in_memory() -> anyhow::Result<Connection> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(SCHEMA)?;
+    upgrade(&conn)?;
     Ok(conn)
 }

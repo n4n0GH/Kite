@@ -474,20 +474,160 @@ Kirigami.ApplicationWindow {
         }
     }
 
+    // Site Settings: sites with their own zoom, dark mode, CSS or JavaScript
+    // (stored per host; see sitesettings.rs). The list, or the editor of one
+    // site (`editSite`; also opened from the address bar's site info popup).
+    property string editSite: ""
+    onPageChanged: if (page !== "sites") editSite = ""
     Component {
         id: sites
         ColumnLayout {
             id: ss
-            property var list: JSON.parse(Browser.allSiteSettings())
-            QQC2.Label { visible: ss.list.length === 0; text: "No site-specific settings yet. Zoom levels you set are remembered per site." }
-            Repeater {
-                model: ss.list
-                delegate: RowLayout {
-                    required property var modelData
+            spacing: Kirigami.Units.largeSpacing
+            property var list: []
+            function reload() { list = JSON.parse(Browser.allSiteSettings()) }
+            Component.onCompleted: reload()
+            // A short description of what is set for a site.
+            function summary(s) {
+                const parts = []
+                if (s.zoom > 0) parts.push("Zoom " + s.zoom + "%")
+                if (s.dark_mode === 1) parts.push("Always dark")
+                if (s.dark_mode === 2) parts.push("Never dark")
+                if (s.css) parts.push("Custom CSS")
+                if (s.js) parts.push("Custom JavaScript")
+                if (!parts.length && (s.cookies || s.javascript || s.images || s.notifications || s.geolocation)) parts.push("Permissions")
+                return parts.join(" · ") || "Nothing set"
+            }
+
+            // ---- list ---------------------------------------------------
+            ColumnLayout {
+                visible: w.editSite === ""
+                Layout.fillWidth: true
+                QQC2.Label {
                     Layout.fillWidth: true
-                    QQC2.Label { text: modelData.host; Layout.fillWidth: true; font.bold: true }
-                    QQC2.Label { text: modelData.settings.zoom > 0 ? "Zoom " + modelData.settings.zoom + "%" : "" }
-                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { Browser.clearSiteSettings(modelData.host); ss.list = JSON.parse(Browser.allSiteSettings()) } }
+                    wrapMode: Text.Wrap
+                    text: "Sites can have their own zoom level, dark mode, style sheet and script. Zoom levels you set while browsing are remembered here too."
+                }
+                RowLayout {
+                    QQC2.TextField {
+                        id: newHost
+                        placeholderText: "example.com"
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 16
+                        onAccepted: addButton.clicked()
+                    }
+                    QQC2.Button {
+                        id: addButton
+                        text: "Add Site"
+                        icon.name: "list-add"
+                        enabled: newHost.text.trim() !== ""
+                        onClicked: {
+                            // A URL or a bare host name.
+                            const t = newHost.text.trim()
+                            const host = Browser.hostOf(t.includes("://") ? t : "https://" + t)
+                            if (!host) return
+                            newHost.text = ""
+                            w.editSite = host
+                        }
+                    }
+                }
+                QQC2.Label { visible: ss.list.length === 0; text: "No site-specific settings yet."; opacity: 0.7 }
+                Repeater {
+                    model: ss.list
+                    delegate: QQC2.ItemDelegate {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        onClicked: w.editSite = modelData.host
+                        contentItem: RowLayout {
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                QQC2.Label { text: modelData.host; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
+                                QQC2.Label { text: ss.summary(modelData.settings); opacity: 0.7; font: Kirigami.Theme.smallFont; Layout.fillWidth: true; elide: Text.ElideRight }
+                            }
+                            QQC2.ToolButton {
+                                icon.name: "edit-delete"
+                                text: "Remove all settings of this site"
+                                display: QQC2.AbstractButton.IconOnly
+                                onClicked: { Browser.clearSiteSettings(modelData.host); w.app.siteSettingsChanged(modelData.host); ss.reload() }
+                                QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- editor -------------------------------------------------
+            ColumnLayout {
+                id: editor
+                visible: w.editSite !== ""
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.largeSpacing
+                property var site: ({})
+                function load() {
+                    if (w.editSite === "") return
+                    site = JSON.parse(Browser.siteSettings(w.editSite))
+                    zoomCustom.checked = site.zoom > 0
+                    zoomValue.value = site.zoom > 0 ? site.zoom : w.get("appearance.defaultZoom")
+                    darkMode.currentIndex = site.dark_mode || 0
+                    css.text = site.css || ""
+                    js.text = site.js || ""
+                }
+                readonly property bool changed: (zoomCustom.checked ? zoomValue.value : -1) !== (site.zoom > 0 ? site.zoom : -1)
+                    || darkMode.currentIndex !== (site.dark_mode || 0) || css.text !== (site.css || "") || js.text !== (site.js || "")
+                function save() {
+                    const h = w.editSite
+                    Browser.setSiteSetting(h, "zoom", zoomCustom.checked ? zoomValue.value : -1)
+                    Browser.setSiteSetting(h, "darkMode", darkMode.currentIndex)
+                    Browser.setSiteText(h, "css", css.text)
+                    Browser.setSiteText(h, "js", js.text)
+                    w.app.siteSettingsChanged(h)
+                    load()
+                    ss.reload()
+                }
+                Connections { target: w; function onEditSiteChanged() { editor.load() } }
+                Component.onCompleted: load()
+
+                RowLayout {
+                    QQC2.ToolButton { icon.name: "go-previous"; text: "All Sites"; onClicked: { w.editSite = ""; ss.reload() } }
+                    Kirigami.Heading { level: 3; text: w.editSite; Layout.fillWidth: true; elide: Text.ElideRight }
+                }
+                Kirigami.FormLayout {
+                    Layout.fillWidth: true
+                    RowLayout {
+                        Kirigami.FormData.label: "Zoom:"
+                        QQC2.CheckBox { id: zoomCustom; text: "Own zoom level" }
+                        QQC2.SpinBox { id: zoomValue; enabled: zoomCustom.checked; from: 30; to: 300; stepSize: 10; textFromValue: v => v + "%"; valueFromText: t => parseInt(t) }
+                    }
+                    QQC2.ComboBox {
+                        id: darkMode
+                        Kirigami.FormData.label: "Dark mode:"
+                        model: [(w.get("appearance.forceDarkMode") ? "Like other sites (forced dark)" : "Like other sites (as designed)"), "Always force dark", "Never force dark"]
+                    }
+                }
+                Kirigami.Heading { level: 4; text: "Custom CSS" }
+                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Added to every page of this site. Use !important to override the site's own styles." }
+                QQC2.ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Kirigami.Units.gridUnit * 9
+                    QQC2.TextArea { id: css; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "body { font-size: 110% !important; }" }
+                }
+                Kirigami.Heading { level: 4; text: "Custom JavaScript" }
+                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Runs in every page of this site once it has loaded, with the same access as the site's own scripts. Only add code you trust." }
+                QQC2.ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Kirigami.Units.gridUnit * 9
+                    QQC2.TextArea { id: js; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "document.querySelector('#banner')?.remove()" }
+                }
+                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and dark mode apply to open tabs right away; CSS and JavaScript when the site's pages are next loaded." }
+                RowLayout {
+                    QQC2.Button { text: "Save"; icon.name: "document-save"; enabled: editor.changed; onClicked: editor.save() }
+                    QQC2.Button { text: "Revert"; icon.name: "edit-undo"; enabled: editor.changed; onClicked: editor.load() }
+                    Item { Layout.fillWidth: true }
+                    QQC2.Button {
+                        text: "Remove Site"
+                        icon.name: "edit-delete"
+                        onClicked: { Browser.clearSiteSettings(w.editSite); w.app.siteSettingsChanged(w.editSite); w.editSite = ""; ss.reload() }
+                    }
                 }
             }
         }

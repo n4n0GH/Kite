@@ -99,6 +99,18 @@ Item {
         sendUpdate({pinned: p})
     }
 
+    // Per-site zoom and dark mode (Site Settings) for the current host.
+    property int siteDarkMode: 0
+    function applySiteSettings() {
+        const s = JSON.parse(Browser.siteSettings(lastHost))
+        siteDarkMode = s.dark_mode || 0
+        web.zoomFactor = s.zoom > 0 ? s.zoom / 100 : app.setting("appearance.defaultZoom") / 100
+    }
+    Connections {
+        target: wt.app
+        function onSiteSettingsEdited(host) { if (host === wt.lastHost) wt.applySiteSettings() }
+    }
+
     function zoomStep(dir) {
         const steps = [0.3, 0.5, 0.67, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
         let i = steps.findIndex(s => s >= web.zoomFactor - 0.001)
@@ -211,7 +223,8 @@ Item {
                 settings.focusOnNavigationEnabled: true
                 settings.screenCaptureEnabled: true
                 settings.javascriptCanOpenWindows: true
-                settings.forceDarkMode: wt.app.liveSettings["appearance.forceDarkMode"]
+                // The site's own choice (Site Settings), else the global one.
+                settings.forceDarkMode: wt.siteDarkMode === 1 || (wt.siteDarkMode === 0 && wt.app.liveSettings["appearance.forceDarkMode"])
                 settings.pdfViewerEnabled: true
                 settings.localContentCanAccessRemoteUrls: wt.isExtensionPage
 
@@ -220,8 +233,7 @@ Item {
                     const host = Browser.hostOf(u)
                     if (host !== wt.lastHost) {
                         wt.lastHost = host
-                        const s = JSON.parse(Browser.siteSettings(host))
-                        zoomFactor = s.zoom > 0 ? s.zoom / 100 : wt.app.setting("appearance.defaultZoom") / 100
+                        wt.applySiteSettings()
                     }
                     if (!loading) {
                         // same-document navigation (pushState / fragment)
