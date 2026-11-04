@@ -28,6 +28,7 @@ Kirigami.ApplicationWindow {
         {key: "downloads", title: "Downloads", icon: "download"},
         {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
         {key: "extensions", title: "Extensions", icon: "kite-extension"},
+        {key: "shortcuts", title: "Shortcuts", icon: "preferences-desktop-keyboard-shortcut"},
     ]
 
     globalDrawer: Kirigami.GlobalDrawer {
@@ -60,7 +61,207 @@ Kirigami.ApplicationWindow {
                 case "downloads": return downloads
                 case "sites": return sites
                 case "extensions": return extensions
+                case "shortcuts": return shortcuts
                 default: return general
+                }
+            }
+        }
+    }
+
+    // ---- keyboard shortcuts ("shortcuts"; the actions are app.shortcutActions) ----
+    Component {
+        id: shortcuts
+        ColumnLayout {
+            id: sc
+            spacing: Kirigami.Units.smallSpacing
+            readonly property var overrides: w.app.liveSettings["shortcuts"] || {}
+            property var actions: w.app.shortcutActions.concat(w.app.extensionShortcutActions())
+            Connections { target: Extensions; function onRevisionChanged() { sc.actions = w.app.shortcutActions.concat(w.app.extensionShortcutActions()) } }
+            readonly property var groups: actions.reduce((g, a) => g.includes(a.group) ? g : g.concat([a.group]), [])
+            property string filter: ""
+            function keys(a) { return sc.overrides[a.id] !== undefined ? sc.overrides[a.id] : a.keys }
+            function same(x, y) { return x.length === y.length && x.every((k, i) => k === y[i]) }
+            function setKeys(a, list) {
+                const o = Object.assign({}, sc.overrides)
+                if (sc.same(list, a.keys)) delete o[a.id]; else o[a.id] = list
+                w.set("shortcuts", o)
+            }
+            function reset(a) { const o = Object.assign({}, sc.overrides); delete o[a.id]; w.set("shortcuts", o) }
+            function matches(a) {
+                const f = sc.filter.trim().toLowerCase()
+                return f === "" || a.name.toLowerCase().includes(f) || a.group.toLowerCase().includes(f)
+                    || sc.keys(a).some(k => k.toLowerCase().includes(f) || Browser.keySequenceDisplay(k).toLowerCase().includes(f))
+            }
+            // The action already using `seq`, other than `except`.
+            function owner(seq, except) { return sc.actions.find(a => a.id !== except.id && sc.keys(a).includes(seq)) }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Kirigami.SearchField { Layout.fillWidth: true; placeholderText: "Search actions or keys…"; onTextChanged: sc.filter = text }
+                QQC2.Button {
+                    text: "Reset All"
+                    icon.name: "edit-undo"
+                    enabled: Object.keys(sc.overrides).length > 0
+                    onClicked: resetAllDlg.open()
+                }
+            }
+            QQC2.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                font: Kirigami.Theme.smallFont
+                text: "Click a shortcut to change it, or + to add another one. Shortcuts need Ctrl, Alt or Meta (or a function key), so typing on web pages keeps working."
+            }
+            Repeater {
+                model: sc.groups
+                delegate: ColumnLayout {
+                    id: grp
+                    required property string modelData
+                    readonly property var items: sc.actions.filter(a => a.group === grp.modelData && sc.matches(a))
+                    Layout.fillWidth: true
+                    visible: items.length > 0
+                    spacing: 0
+                    Kirigami.Heading { level: 4; text: grp.modelData; Layout.topMargin: Kirigami.Units.largeSpacing; Layout.bottomMargin: Kirigami.Units.smallSpacing }
+                    Repeater {
+                        model: grp.items
+                        delegate: RowLayout {
+                            id: row
+                            required property var modelData
+                            readonly property var current: sc.keys(modelData)
+                            readonly property bool changed: sc.overrides[modelData.id] !== undefined
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: Kirigami.Units.gridUnit * 1.8
+                            spacing: Kirigami.Units.smallSpacing
+                            QQC2.Label { text: row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: row.changed }
+                            QQC2.Label { visible: row.current.length === 0; text: "None"; opacity: 0.5 }
+                            Repeater {
+                                model: row.current
+                                delegate: QQC2.Button {
+                                    required property string modelData
+                                    required property int index
+                                    text: Browser.keySequenceDisplay(modelData)
+                                    font.family: "monospace"
+                                    onClicked: recorder.record(row.modelData, index)
+                                    QQC2.ToolTip.text: "Change, or remove with the button in the dialog"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                }
+                            }
+                            QQC2.ToolButton {
+                                icon.name: "list-add"
+                                onClicked: recorder.record(row.modelData, -1)
+                                QQC2.ToolTip.text: "Add a shortcut"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                            QQC2.ToolButton {
+                                icon.name: "edit-undo"
+                                enabled: row.changed
+                                opacity: row.changed ? 1 : 0
+                                onClicked: sc.reset(row.modelData)
+                                QQC2.ToolTip.text: "Reset to " + (row.modelData.keys.length ? row.modelData.keys.map(k => Browser.keySequenceDisplay(k)).join(", ") : "none"); QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                        }
+                    }
+                }
+            }
+
+            Kirigami.PromptDialog {
+                id: resetAllDlg
+                parent: QQC2.Overlay.overlay; anchors.centerIn: parent
+                title: "Reset All Shortcuts?"
+                subtitle: "Every action gets its default keys back."
+                standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                onAccepted: w.set("shortcuts", {})
+            }
+
+            // Records a key combination for an action: replaces shortcut
+            // `index`, or adds one (index -1).
+            Kirigami.Dialog {
+                id: recorder
+                parent: QQC2.Overlay.overlay; anchors.centerIn: parent
+                property var action: null
+                property int index: -1
+                property string seq: ""
+                property string error: ""
+                property var conflict: null
+                title: action ? action.name : ""
+                padding: Kirigami.Units.largeSpacing
+                standardButtons: Kirigami.Dialog.NoButton
+                function record(a, i) { action = a; index = i; seq = ""; error = ""; conflict = null; open(); grab.forceActiveFocus() }
+                function assign() {
+                    if (conflict) { const other = conflict; sc.setKeys(other, sc.keys(other).filter(k => k !== seq)) }
+                    const list = sc.keys(action).slice()
+                    if (index >= 0) list[index] = seq; else list.push(seq)
+                    sc.setKeys(action, list.filter((k, i) => list.indexOf(k) === i))
+                    close()
+                }
+                function removeCurrent() {
+                    const list = sc.keys(action).slice()
+                    list.splice(index, 1)
+                    sc.setKeys(action, list)
+                    close()
+                }
+                onOpened: grab.forceActiveFocus()
+                customFooterActions: [
+                    Kirigami.Action { text: "Remove Shortcut"; icon.name: "edit-delete-remove"; visible: recorder.index >= 0; onTriggered: recorder.removeCurrent() },
+                    Kirigami.Action { text: recorder.conflict ? "Reassign" : "Assign"; icon.name: "dialog-ok-apply"; enabled: recorder.seq !== "" && recorder.error === ""; onTriggered: recorder.assign() },
+                    Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: recorder.close() }
+                ]
+                ColumnLayout {
+                    spacing: Kirigami.Units.largeSpacing
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 22
+                    QQC2.Label { text: recorder.index >= 0 ? "Press the new keys for this action:" : "Press the keys to add:" }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Kirigami.Units.gridUnit * 3
+                        radius: Kirigami.Units.cornerRadius
+                        color: Kirigami.Theme.alternateBackgroundColor
+                        border.width: grab.activeFocus ? 2 : 1
+                        border.color: grab.activeFocus ? Kirigami.Theme.highlightColor : Qt.alpha(Kirigami.Theme.textColor, 0.2)
+                        QQC2.Label {
+                            anchors.centerIn: parent
+                            text: recorder.seq !== "" ? Browser.keySequenceDisplay(recorder.seq) : "…"
+                            font.family: "monospace"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.4
+                        }
+                        Item {
+                            id: grab
+                            anchors.fill: parent
+                            focus: true
+                            // Take every key, also ones that are shortcuts elsewhere.
+                            Keys.onShortcutOverride: event => event.accepted = true
+                            Keys.onPressed: event => {
+                                event.accepted = true
+                                const k = event.key
+                                if ([Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_AltGr, Qt.Key_Super_L, Qt.Key_Super_R, Qt.Key_Hyper_L, Qt.Key_Hyper_R, Qt.Key_CapsLock, Qt.Key_NumLock].includes(k)) return
+                                if (k === Qt.Key_Escape && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) { recorder.close(); return }
+                                const key = k === Qt.Key_Backtab ? Qt.Key_Tab : k
+                                const mods = event.modifiers & (Qt.ControlModifier | Qt.ShiftModifier | Qt.AltModifier | Qt.MetaModifier)
+                                const seq = Browser.keySequenceText(key, mods)
+                                recorder.seq = seq
+                                const fkey = key >= Qt.Key_F1 && key <= Qt.Key_F35
+                                const media = [Qt.Key_Back, Qt.Key_Forward, Qt.Key_Refresh, Qt.Key_HomePage, Qt.Key_Search, Qt.Key_Favorites, Qt.Key_Print].includes(key)
+                                recorder.error = (mods & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) || fkey || media ? ""
+                                    : "Add Ctrl, Alt or Meta: keys without them are left to web pages."
+                                const other = recorder.error === "" ? sc.owner(seq, recorder.action) : null
+                                recorder.conflict = other || null
+                            }
+                        }
+                    }
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        visible: text !== ""
+                        color: recorder.error !== "" ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.neutralTextColor
+                        text: recorder.error !== "" ? recorder.error
+                            : recorder.conflict ? "Already used for “" + recorder.conflict.name + "” (" + recorder.conflict.group + "). Reassign moves it here."
+                            : recorder.action && recorder.seq !== "" && sc.keys(recorder.action).includes(recorder.seq) && sc.keys(recorder.action).indexOf(recorder.seq) !== recorder.index ? "This action already has these keys."
+                            : ""
+                    }
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        text: "Escape cancels. Default: " + (recorder.action && recorder.action.keys.length ? recorder.action.keys.map(k => Browser.keySequenceDisplay(k)).join(", ") : "none") + "."
+                    }
                 }
             }
         }

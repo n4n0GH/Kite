@@ -48,6 +48,8 @@ extern "C" {
     fn kite_cpp_qwebchannel_js() -> *const c_char;
     fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char);
     fn kite_cpp_favicon_track(view_name: *const c_char, track: bool);
+    fn kite_cpp_key_text(key: std::ffi::c_int, modifiers: std::ffi::c_int) -> *const c_char;
+    fn kite_cpp_key_native(sequence: *const c_char) -> *const c_char;
 }
 
 /// Cache the favicon a page is showing (`icon_url` = image://favicon/...).
@@ -61,6 +63,17 @@ pub fn save_favicon(page_url: &str, icon_url: &str) {
 pub fn favicon_track(view_name: &str, track: bool) {
     let Ok(n) = CString::new(view_name) else { return };
     unsafe { kite_cpp_favicon_track(n.as_ptr(), track) }
+}
+
+/// A pressed key (Qt key code and modifiers) as a portable key sequence.
+pub fn key_text(key: i32, modifiers: i32) -> String {
+    unsafe { std::ffi::CStr::from_ptr(kite_cpp_key_text(key, modifiers)).to_string_lossy().into_owned() }
+}
+
+/// A portable key sequence as the desktop writes it (translated key names).
+pub fn key_native(sequence: &str) -> String {
+    let Ok(s) = CString::new(sequence) else { return sequence.to_owned() };
+    unsafe { std::ffi::CStr::from_ptr(kite_cpp_key_native(s.as_ptr())).to_string_lossy().into_owned() }
 }
 
 /// A favicon from `save_favicon`, as PNG.

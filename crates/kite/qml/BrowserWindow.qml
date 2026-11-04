@@ -600,68 +600,79 @@ QQC2.ApplicationWindow {
     }
 
     // ---- shortcuts ------------------------------------------------------------------
-    Shortcut { sequences: [StandardKey.AddTab]; onActivated: bw.openTab(app.newTabUrl(), {background: false}).focusLocationBar() }
-    Shortcut { sequences: [StandardKey.Close]; onActivated: bw.closeTab(bw.currentIndex) }
-    Shortcut { sequence: "Ctrl+Shift+T"; onActivated: bw.reopenClosedTab(0) }
-    Shortcut { sequence: "Ctrl+N"; onActivated: app.newWindow() }
-    Shortcut { sequence: "Ctrl+Shift+P"; onActivated: app.newWindow({privateMode: true}) }
-    Shortcut { sequences: ["Ctrl+L", "F6", "Alt+D"]; onActivated: if (locationBar) locationBar.focusAndSelect() }
-    Shortcut { sequence: "Ctrl+K"; onActivated: if (locationBar) { locationBar.focusAndSelect(); locationBar.text = "? " ; locationBar.cursorPosition = 2 } }
-    Shortcut { sequences: ["Ctrl+R", "F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reload() }
-    Shortcut { sequences: ["Ctrl+Shift+R", "Ctrl+F5"]; onActivated: if (bw.currentTab) bw.currentTab.view.reloadAndBypassCache() }
+    // The keys come from app.shortcutActions and the user's changes
+    // (Settings → Shortcuts); runAction does the work.
+    function runAction(id) {
+        const t = currentTab
+        switch (id) {
+        case "newTab": openTab(app.newTabUrl(), {background: false}).focusLocationBar(); break
+        case "closeTab": closeTab(currentIndex); break
+        case "reopenTab": reopenClosedTab(0); break
+        case "nextTab": nextTab(1); break
+        case "previousTab": nextTab(-1); break
+        case "tabLast": setCurrentIndex(count - 1); break
+        case "muteTab": if (t) t.view.audioMuted = !t.view.audioMuted; break
+        case "newWindow": app.newWindow(); break
+        case "newPrivateWindow": app.newWindow({privateMode: true}); break
+        case "fullScreen": visibility === Window.FullScreen ? showNormal() : showFullScreen(); break
+        case "quit": app.quit(); break
+        case "focusAddress": if (locationBar) locationBar.focusAndSelect(); break
+        case "searchWeb": if (locationBar) { locationBar.focusAndSelect(); locationBar.text = "? "; locationBar.cursorPosition = 2 } break
+        case "back": if (t) t.view.goBack(); break
+        case "forward": if (t) t.view.goForward(); break
+        case "home": if (t) t.load(app.homeUrl()); break
+        case "reload": if (t) t.view.reload(); break
+        case "reloadBypass": if (t) t.view.reloadAndBypassCache(); break
+        case "find": findBar.open(); break
+        case "findNext": findBar.find(false); break
+        case "findPrevious": findBar.find(true); break
+        case "zoomIn": if (t) t.zoomStep(1); break
+        case "zoomOut": if (t) t.zoomStep(-1); break
+        case "zoomReset": if (t) t.setZoom(app.setting("appearance.defaultZoom") / 100); break
+        case "viewSource": if (t) openTab("view-source:" + t.url, {background: false, afterCurrent: true}); break
+        case "print": printTab(); break
+        case "savePage": saveDialog.open(); break
+        case "openFile": openDialog.open(); break
+        case "devTools": if (t) t.showDevTools(); break
+        case "bookmarkPage": if (locationBar) locationBar.toggleBookmark(); break
+        case "bookmarkAllTabs": bookmarkAllTabs(); break
+        case "bookmarksSidebar": showSidebar("bookmarks"); break
+        case "historySidebar": showSidebar("history"); break
+        case "bookmarksLibrary": app.showLibrary("bookmarks"); break
+        case "historyLibrary": app.showLibrary("history"); break
+        case "downloads": app.showDownloads(); break
+        case "addons": app.showAddons(); break
+        case "settings": app.showPreferences(); break
+        default:
+            if (/^tab[1-8]$/.test(id)) setCurrentIndex(Math.min(count - 1, Number(id.substring(3)) - 1))
+        }
+    }
+    Instantiator {
+        model: app.shortcutActions
+        delegate: Shortcut {
+            required property var modelData
+            sequences: app.shortcutKeys(modelData.id, modelData.keys)
+            onActivated: bw.runAction(modelData.id)
+        }
+    }
     // Only while the find bar is open: otherwise Escape must reach the page
     // (web apps and extensions such as Vimium rely on it).
     Shortcut { sequence: "Esc"; enabled: findBar.visible && !bw.contentFullScreen; onActivated: findBar.close() }
     // Escape leaves a page's fullscreen (as in other browsers).
     Shortcut { sequence: "Esc"; enabled: bw.contentFullScreen; onActivated: bw.exitContentFullScreen(false) }
-    Shortcut { sequences: [StandardKey.Back, "Alt+Left"]; onActivated: if (bw.currentTab) bw.currentTab.view.goBack() }
-    Shortcut { sequences: [StandardKey.Forward, "Alt+Right"]; onActivated: if (bw.currentTab) bw.currentTab.view.goForward() }
-    Shortcut { sequence: "Alt+Home"; onActivated: if (bw.currentTab) bw.currentTab.load(app.homeUrl()) }
-    Shortcut { sequences: [StandardKey.Find]; onActivated: findBar.open() }
-    Shortcut { sequences: [StandardKey.FindNext, "F3"]; onActivated: findBar.find(false) }
-    Shortcut { sequences: [StandardKey.FindPrevious, "Shift+F3"]; onActivated: findBar.find(true) }
-    Shortcut { sequence: "Ctrl+D"; onActivated: if (locationBar) locationBar.toggleBookmark() }
-    Shortcut { sequence: "Ctrl+Shift+D"; onActivated: bw.bookmarkAllTabs() }
-    Shortcut { sequence: "Ctrl+H"; onActivated: bw.showSidebar("history") }
-    Shortcut { sequence: "Ctrl+B"; onActivated: bw.showSidebar("bookmarks") }
-    Shortcut { sequence: "Ctrl+Shift+O"; onActivated: app.showLibrary("bookmarks") }
-    Shortcut { sequence: "Ctrl+Shift+H"; onActivated: app.showLibrary("history") }
-    Shortcut { sequences: ["Ctrl+Shift+Y", "Ctrl+J"]; onActivated: app.showDownloads() }
-    Shortcut { sequence: "Ctrl+Shift+A"; onActivated: app.showAddons() }
-    Shortcut { sequences: [StandardKey.Preferences, "Ctrl+,"]; onActivated: app.showPreferences() }
-    Shortcut { sequences: ["Ctrl+Tab", "Ctrl+PgDown"]; onActivated: bw.nextTab(1) }
-    Shortcut { sequences: ["Ctrl+Shift+Tab", "Ctrl+PgUp"]; onActivated: bw.nextTab(-1) }
-    Shortcut { sequences: [StandardKey.ZoomIn, "Ctrl+="]; onActivated: if (bw.currentTab) bw.currentTab.zoomStep(1) }
-    Shortcut { sequences: [StandardKey.ZoomOut]; onActivated: if (bw.currentTab) bw.currentTab.zoomStep(-1) }
-    Shortcut { sequence: "Ctrl+0"; onActivated: if (bw.currentTab) bw.currentTab.setZoom(app.setting("appearance.defaultZoom") / 100) }
-    Shortcut { sequence: "F11"; onActivated: bw.visibility === Window.FullScreen ? bw.showNormal() : bw.showFullScreen() }
-    Shortcut { sequences: ["F12", "Ctrl+Shift+I"]; onActivated: if (bw.currentTab) bw.currentTab.showDevTools() }
-    Shortcut { sequence: "Ctrl+U"; onActivated: if (bw.currentTab) bw.openTab("view-source:" + bw.currentTab.url, {background: false, afterCurrent: true}) }
-    Shortcut { sequences: [StandardKey.Print]; onActivated: bw.printTab() }
-    Shortcut { sequences: [StandardKey.Save]; onActivated: saveDialog.open() }
-    Shortcut { sequences: [StandardKey.Open]; onActivated: openDialog.open() }
-    Shortcut { sequences: [StandardKey.Quit]; onActivated: app.quit() }
-    Shortcut { sequence: "Ctrl+M"; onActivated: if (bw.currentTab) bw.currentTab.view.audioMuted = !bw.currentTab.view.audioMuted }
-    Repeater {
-        model: 9
-        delegate: Item {
-            required property int index
-            Shortcut { sequence: "Alt+" + (index + 1); onActivated: bw.setCurrentIndex(index === 8 ? bw.count - 1 : index) }
-        }
-    }
     // Extension keyboard commands
-    property var extCommands: JSON.parse(Extensions.commands())
-    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = JSON.parse(Extensions.commands()) } }
+    property var extCommands: app.extensionShortcutActions()
+    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = app.extensionShortcutActions() } }
     Instantiator {
         model: bw.extCommands
         delegate: Shortcut {
             required property var modelData
-            sequence: modelData.shortcut.replace("Command", "Ctrl").replace("MacCtrl", "Ctrl")
+            sequences: app.shortcutKeys(modelData.id, modelData.keys)
             onActivated: {
                 const tabId = bw.currentTab ? bw.currentTab.tabId : -1
-                if (modelData.name === "_execute_browser_action" || modelData.name === "_execute_action") bw.openExtensionPopup(modelData.ext)
-                else if (modelData.name === "_execute_sidebar_action") bw.showSidebar("ext:" + modelData.ext)
-                else Extensions.command(modelData.ext, modelData.name, tabId)
+                if (modelData.command === "_execute_browser_action" || modelData.command === "_execute_action") bw.openExtensionPopup(modelData.ext)
+                else if (modelData.command === "_execute_sidebar_action") bw.showSidebar("ext:" + modelData.ext)
+                else Extensions.command(modelData.ext, modelData.command, tabId)
             }
         }
     }

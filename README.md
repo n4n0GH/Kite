@@ -18,6 +18,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   splits with them); "Open Link in New Split Tab".
 * **Toolbar and menus:** customizable toolbar, optional classic menu bar (Alt shows it),
   bookmarks toolbar, an extensions panel with pin/unpin.
+* **Keyboard shortcuts:** every action and extension command can get its own keys
+  (Settings → Shortcuts), with conflict warnings and reset to the defaults.
 * **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
   Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
   unsent form input or keeping the screen on stay loaded. Also from the tab menu and

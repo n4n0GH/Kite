@@ -78,6 +78,76 @@ QtObject {
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
 
+    // ---- keyboard shortcuts (Settings → Shortcuts) ----
+    // Every action with its default keys (portable key sequences); the user's
+    // changes are in "shortcuts" (id → keys). BrowserWindow binds them.
+    readonly property var shortcutActions: [
+        {id: "newTab", group: "Tabs", name: "New tab", keys: ["Ctrl+T"]},
+        {id: "closeTab", group: "Tabs", name: "Close tab", keys: ["Ctrl+W", "Ctrl+F4"]},
+        {id: "reopenTab", group: "Tabs", name: "Reopen closed tab", keys: ["Ctrl+Shift+T"]},
+        {id: "nextTab", group: "Tabs", name: "Next tab", keys: ["Ctrl+Tab", "Ctrl+PgDown"]},
+        {id: "previousTab", group: "Tabs", name: "Previous tab", keys: ["Ctrl+Shift+Tab", "Ctrl+PgUp"]},
+        {id: "tab1", group: "Tabs", name: "Switch to tab 1", keys: ["Alt+1"]},
+        {id: "tab2", group: "Tabs", name: "Switch to tab 2", keys: ["Alt+2"]},
+        {id: "tab3", group: "Tabs", name: "Switch to tab 3", keys: ["Alt+3"]},
+        {id: "tab4", group: "Tabs", name: "Switch to tab 4", keys: ["Alt+4"]},
+        {id: "tab5", group: "Tabs", name: "Switch to tab 5", keys: ["Alt+5"]},
+        {id: "tab6", group: "Tabs", name: "Switch to tab 6", keys: ["Alt+6"]},
+        {id: "tab7", group: "Tabs", name: "Switch to tab 7", keys: ["Alt+7"]},
+        {id: "tab8", group: "Tabs", name: "Switch to tab 8", keys: ["Alt+8"]},
+        {id: "tabLast", group: "Tabs", name: "Switch to the last tab", keys: ["Alt+9"]},
+        {id: "muteTab", group: "Tabs", name: "Mute or unmute tab", keys: ["Ctrl+M"]},
+        {id: "newWindow", group: "Windows", name: "New window", keys: ["Ctrl+N"]},
+        {id: "newPrivateWindow", group: "Windows", name: "New private window", keys: ["Ctrl+Shift+P"]},
+        {id: "fullScreen", group: "Windows", name: "Full screen", keys: ["F11"]},
+        {id: "quit", group: "Windows", name: "Quit Kite", keys: ["Ctrl+Q"]},
+        {id: "focusAddress", group: "Navigation", name: "Go to the address bar", keys: ["Ctrl+L", "F6", "Alt+D"]},
+        {id: "searchWeb", group: "Navigation", name: "Search the web", keys: ["Ctrl+K"]},
+        {id: "back", group: "Navigation", name: "Back", keys: ["Alt+Left", "Back"]},
+        {id: "forward", group: "Navigation", name: "Forward", keys: ["Alt+Right", "Forward"]},
+        {id: "home", group: "Navigation", name: "Home page", keys: ["Alt+Home"]},
+        {id: "reload", group: "Navigation", name: "Reload", keys: ["Ctrl+R", "F5"]},
+        {id: "reloadBypass", group: "Navigation", name: "Reload, ignoring the cache", keys: ["Ctrl+Shift+R", "Ctrl+F5"]},
+        {id: "find", group: "Page", name: "Find in page", keys: ["Ctrl+F"]},
+        {id: "findNext", group: "Page", name: "Find next", keys: ["F3", "Ctrl+G"]},
+        {id: "findPrevious", group: "Page", name: "Find previous", keys: ["Shift+F3", "Ctrl+Shift+G"]},
+        {id: "zoomIn", group: "Page", name: "Zoom in", keys: ["Ctrl++", "Ctrl+="]},
+        {id: "zoomOut", group: "Page", name: "Zoom out", keys: ["Ctrl+-"]},
+        {id: "zoomReset", group: "Page", name: "Reset zoom", keys: ["Ctrl+0"]},
+        {id: "viewSource", group: "Page", name: "View page source", keys: ["Ctrl+U"]},
+        {id: "print", group: "Page", name: "Print", keys: ["Ctrl+P"]},
+        {id: "savePage", group: "Page", name: "Save page", keys: ["Ctrl+S"]},
+        {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
+        {id: "devTools", group: "Page", name: "Developer tools", keys: ["F12", "Ctrl+Shift+I"]},
+        {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},
+        {id: "bookmarkAllTabs", group: "Bookmarks and history", name: "Bookmark all tabs", keys: ["Ctrl+Shift+D"]},
+        {id: "bookmarksSidebar", group: "Bookmarks and history", name: "Bookmarks sidebar", keys: ["Ctrl+B"]},
+        {id: "historySidebar", group: "Bookmarks and history", name: "History sidebar", keys: ["Ctrl+H"]},
+        {id: "bookmarksLibrary", group: "Bookmarks and history", name: "Manage bookmarks", keys: ["Ctrl+Shift+O"]},
+        {id: "historyLibrary", group: "Bookmarks and history", name: "Show all history", keys: ["Ctrl+Shift+H"]},
+        {id: "downloads", group: "Tools", name: "Downloads", keys: ["Ctrl+Shift+Y", "Ctrl+J"]},
+        {id: "addons", group: "Tools", name: "Add-ons", keys: ["Ctrl+Shift+A"]},
+        {id: "settings", group: "Tools", name: "Settings", keys: ["Ctrl+Shift+,", "Ctrl+,"]},
+    ]
+    // Extension commands as actions ("ext:<id>:<command>"), keys suggested by
+    // the extension.
+    function extensionShortcutActions() {
+        return JSON.parse(Extensions.commands()).map(c => ({
+            id: "ext:" + c.ext + ":" + c.name, group: "Extension: " + c.extName, ext: c.ext, command: c.name,
+            name: c.description || (c.name === "_execute_browser_action" || c.name === "_execute_action" ? "Open the toolbar button's popup" : c.name === "_execute_sidebar_action" ? "Open the sidebar" : c.name),
+            keys: c.shortcut ? [c.shortcut.replace("MacCtrl", "Ctrl").replace("Command", "Ctrl")] : []
+        }))
+    }
+    // The keys of an action: the user's, or the defaults.
+    function shortcutKeys(id, defaults) {
+        const o = liveSettings["shortcuts"] || {}
+        if (o[id] !== undefined) return o[id]
+        if (defaults !== undefined) return defaults
+        const a = shortcutActions.find(x => x.id === id)
+        return a ? a.keys : []
+    }
+
+
     // Unloading inactive tabs ("tabs.unloadInactive"): tabs not shown for
     // "tabs.unloadAfterMinutes" are unloaded (WebTab.unload() keeps those
     // playing sound, holding unsent form input, … loaded).
@@ -100,7 +170,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {

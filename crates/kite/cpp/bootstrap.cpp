@@ -13,6 +13,7 @@
 #include <QQuickItem>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QKeySequence>
 #include <QMimeData>
 #include <QElapsedTimer>
 #include <QTimer>
@@ -211,6 +212,24 @@ extern "C" void kite_cpp_favicon_track(const char *viewName, bool track)
         else FaviconProviderHelper::instance()->detach(view);
         return;
     }
+}
+
+// Keyboard shortcuts (Settings → Shortcuts): a pressed key as a portable
+// sequence ("Ctrl+Shift+T"), and a stored sequence as shown to the user.
+// The returned text stays valid until the next call.
+extern "C" const char *kite_cpp_key_text(int key, int modifiers)
+{
+    static QByteArray buf;
+    const auto mods = Qt::KeyboardModifiers(modifiers) & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier);
+    buf = QKeySequence(QKeyCombination(mods, Qt::Key(key))).toString(QKeySequence::PortableText).toUtf8();
+    return buf.constData();
+}
+
+extern "C" const char *kite_cpp_key_native(const char *sequence)
+{
+    static QByteArray buf;
+    buf = QKeySequence::fromString(QString::fromUtf8(sequence), QKeySequence::PortableText).toString(QKeySequence::NativeText).toUtf8();
+    return buf.constData();
 }
 
 extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl)

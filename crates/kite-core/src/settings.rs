@@ -59,6 +59,9 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
+        // Settings → Shortcuts: action id → key sequences, for the actions
+        // whose keys the user changed (the defaults live in Main.qml).
+        "shortcuts": {},
         "tabs.unloadInactive": true,
         "tabs.unloadAfterMinutes": 10,
         "tabs.unloadKeepPinned": true,

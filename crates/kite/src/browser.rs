@@ -307,6 +307,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "faviconTrack"]
         fn favicon_track(self: &Browser, view_name: &QString, track: bool);
+        /// Settings → Shortcuts: a pressed key as a portable key sequence,
+        /// and a stored sequence as shown to the user.
+        #[qinvokable]
+        #[cxx_name = "keySequenceText"]
+        fn key_sequence_text(self: &Browser, key: i32, modifiers: i32) -> QString;
+        #[qinvokable]
+        #[cxx_name = "keySequenceDisplay"]
+        fn key_sequence_display(self: &Browser, sequence: &QString) -> QString;
         /// Name of the extension doing content blocking instead of Kite, or "".
         #[qinvokable]
         #[cxx_name = "contentBlocker"]
@@ -958,6 +966,14 @@ impl qobject::Browser {
 
     fn favicon_track(&self, view_name: &QString, track: bool) {
         crate::ffi::favicon_track(&view_name.to_string(), track);
+    }
+
+    fn key_sequence_text(&self, key: i32, modifiers: i32) -> QString {
+        q(crate::ffi::key_text(key, modifiers))
+    }
+
+    fn key_sequence_display(&self, sequence: &QString) -> QString {
+        q(crate::ffi::key_native(&sequence.to_string()))
     }
 
     fn content_blocker(&self) -> QString {
