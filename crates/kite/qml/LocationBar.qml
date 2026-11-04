@@ -213,8 +213,21 @@ QQC2.TextField {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
             visible: field.siteHost !== "" && !field.editing
-            icon.name: "configure"
-            icon.color: field.siteHasSettings ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+            // Breeze's "configure" toggles, shipped with Kite (icons/) as a
+            // plain shape painted in the colour below: highlighted like the
+            // bookmark star while the site has settings.
+            // (Drawn at the toolbar icon size, like the star beside it, not
+            // stretched to the button.)
+            contentItem: Item {
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    width: Kirigami.Units.iconSizes.smallMedium
+                    height: width
+                    source: Qt.resolvedUrl("../icons/site-settings.svg")
+                    isMask: true
+                    color: field.siteHasSettings ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+                }
+            }
             onClicked: field.win.app.showSiteSettings(field.siteHost)
             QQC2.ToolTip.text: (field.siteHasSettings ? "Edit settings for " : "Add settings for ") + field.siteHost; QQC2.ToolTip.visible: hovered
         }
