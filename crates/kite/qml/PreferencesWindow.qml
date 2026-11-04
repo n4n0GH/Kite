@@ -324,7 +324,7 @@ Kirigami.ApplicationWindow {
                 wrapMode: Text.Wrap
                 opacity: 0.8
                 font: Kirigami.Theme.smallFont
-                text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. 10 minutes is the time Firefox waits before it considers a tab for unloading. Any tab can also be unloaded from its context menu."
+                text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. Any tab can also be unloaded from its context menu."
             }
 
             // ---- form autofill ("browsing.formFill", formfill.rs) ----
