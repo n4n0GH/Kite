@@ -46,6 +46,7 @@ extern "C" {
     fn kite_cpp_delete_cookies_of(hosts_json: *const c_char);
     fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
+    fn kite_cpp_copy_text(text: *const c_char);
     fn kite_cpp_webengine_version() -> *const c_char;
     fn kite_cpp_chromium_version() -> *const c_char;
     fn kite_cpp_chromium_security_patch() -> *const c_char;
@@ -117,6 +118,11 @@ pub fn delete_all_cookies() {
 }
 pub fn clear_http_cache() {
     unsafe { kite_cpp_clear_http_cache() }
+}
+
+pub fn copy_text(text: &str) {
+    let Ok(text) = CString::new(text) else { return };
+    unsafe { kite_cpp_copy_text(text.as_ptr()) }
 }
 
 /// What the About box says about the engine.

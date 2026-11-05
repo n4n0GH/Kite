@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/tabtree.js', 'utf8').replace('.pragma library', '');
-const T = new Function(src + '\nreturn {compute, parentAt, dropParent, ancestors, roots};')();
+const T = new Function(src + '\nreturn {compute, parentAt, dropParent, ancestors, roots, stepTarget};')();
 
 // [id, parent, extras]
 const rows = list => list.map(([id, parent, more]) => Object.assign({id, parent, collapsed: false, pinned: false, pane: 0, group: ''}, more));
@@ -141,4 +141,73 @@ test('ancestors, nearest first', () => {
   assert.deepStrictEqual(T.ancestors(rows([[1, -1], [2, 1], [3, 2]]), 3), [2, 1]);
   assert.deepStrictEqual(T.ancestors(rows([[1, -1]]), 1), []);
   assert.deepStrictEqual(T.ancestors(rows([[1, -1]]), 42), []);
+});
+
+// [ids in order] after applying a step to tab `id` with `more` descendants.
+const step = (list, id, dir, more = 0) => {
+  const r = rows(list);
+  const first = r.findIndex(x => x.id === id);
+  return T.stepTarget(r, first, first + more, dir);
+};
+
+test('stepping: one spot each way, nowhere past the ends', () => {
+  const list = [[1, -1], [2, -1], [3, -1]];
+  assert.deepStrictEqual(step(list, 2, -1), {to: 0});
+  assert.deepStrictEqual(step(list, 2, 1), {to: 2});
+  assert.strictEqual(step(list, 1, -1), null);
+  assert.strictEqual(step(list, 3, 1), null);
+});
+
+test('stepping stays among pinned or unpinned tabs', () => {
+  const p = {pinned: true};
+  const list = [[1, -1, p], [2, -1, p], [3, -1], [4, -1]];
+  assert.strictEqual(step(list, 2, 1), null);
+  assert.strictEqual(step(list, 3, -1), null);
+  assert.deepStrictEqual(step(list, 1, 1), {to: 1});
+});
+
+test('stepping stays in its pane, passing the other pane\'s tabs', () => {
+  const o = {pane: 1};
+  const list = [[1, -1], [8, -1, o], [2, -1], [9, -1, o]];
+  assert.deepStrictEqual(step(list, 1, 1), {to: 2});
+  assert.deepStrictEqual(step(list, 2, -1), {to: 0});
+  assert.strictEqual(step(list, 2, 1), null);
+  assert.strictEqual(step(list, 8, -1), null);
+  assert.deepStrictEqual(step(list, 8, 1), {to: 3});
+});
+
+test('stepping past a group takes the whole group as one spot', () => {
+  const g = {group: 'g'};
+  const list = [[1, -1], [2, -1, g], [3, -1, g], [4, -1]];
+  assert.deepStrictEqual(step(list, 1, 1), {to: 2});
+  assert.deepStrictEqual(step(list, 4, -1), {to: 1});
+});
+
+test('stepping inside a group; at its edge it leaves first', () => {
+  const g = {group: 'g'};
+  const list = [[1, -1], [2, -1, g], [3, -1, g], [4, -1]];
+  assert.deepStrictEqual(step(list, 2, 1), {to: 2});
+  assert.deepStrictEqual(step(list, 3, -1), {to: 1});
+  assert.deepStrictEqual(step(list, 3, 1), {leaveGroup: true});
+  assert.deepStrictEqual(step(list, 2, -1), {leaveGroup: true});
+  // Right beside another group.
+  assert.deepStrictEqual(step([[1, -1, g], [2, -1, {group: 'h'}]], 1, 1), {leaveGroup: true});
+});
+
+test('stepping with descendants, past another tab with descendants', () => {
+  // 1 > 2, 3 > 4, 5
+  const list = [[1, -1], [2, 1], [3, -1], [4, 3], [5, -1]];
+  assert.deepStrictEqual(step(list, 1, 1, 1), {to: 2});
+  assert.deepStrictEqual(step(list, 3, -1, 1), {to: 0});
+  assert.deepStrictEqual(step(list, 5, -1), {to: 2});
+  assert.deepStrictEqual(step(list, 3, 1, 1), {to: 3});
+});
+
+test('stepping stays among its siblings', () => {
+  // 1 > (2, 3), 4
+  const list = [[1, -1], [2, 1], [3, 1], [4, -1]];
+  assert.deepStrictEqual(step(list, 2, 1), {to: 2});
+  assert.deepStrictEqual(step(list, 3, -1), {to: 1});
+  assert.strictEqual(step(list, 2, -1), null);
+  assert.strictEqual(step(list, 3, 1), null);
 });

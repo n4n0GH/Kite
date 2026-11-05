@@ -1,0 +1,66 @@
+{
+    "id": "vim-keys",
+    "name": "Vim Keys",
+    "description": "Use the browser from the keyboard, with keys on the page itself: j and k to scroll, f to follow links by typing their label, o to open an address, and more. They're off while you type in a field, and on sites you exclude.",
+    "icon": "input-keyboard",
+    "defaultEnabled": false,
+    "window": "plugins/vim-keys/VimKeysWindow.qml",
+    "settingsPage": "plugins/vim-keys/VimKeysSettings.qml",
+    "actions": [
+        {
+            "id": "vim-keys.toggleSite",
+            "group": "Page",
+            "name": "Vim keys on this site",
+            "keys": [],
+            "icon": "input-keyboard"
+        }
+    ],
+    "pageScripts": [
+        {
+            "files": [
+                "plugins/vim-keys/keys.js",
+                "plugins/vim-keys/page.js"
+            ],
+            "worldId": 1,
+            "runsOnSubFrames": true,
+            "injectionPoint": 0
+        }
+    ],
+    "settings": {
+        "keys": {
+            "scrollDown": "j",
+            "scrollUp": "k",
+            "scrollLeft": "h",
+            "scrollRight": "l",
+            "halfPageDown": "d",
+            "halfPageUp": "u",
+            "top": "gg",
+            "bottom": "G",
+            "hints": "f",
+            "hintsNewTab": "F",
+            "open": "o",
+            "openNewTab": "O",
+            "tabSearch": "T",
+            "find": "/",
+            "findNext": "n",
+            "findPrevious": "N",
+            "back": "H",
+            "forward": "L",
+            "previousTab": "J",
+            "nextTab": "K",
+            "closeTab": "x",
+            "reopenTab": "X",
+            "newTab": "t",
+            "moveTabLeft": "<<",
+            "moveTabRight": ">>",
+            "reload": "r",
+            "copyUrl": "yy",
+            "insert": "i"
+        },
+        "hintChars": "sadfjklewcmpgh",
+        "hintColor": "#ffc542",
+        "smoothScroll": true,
+        "scrollSpeed": 1400,
+        "exceptions": []
+    }
+}

@@ -12,17 +12,21 @@ import "fuzzy.js" as Fuzzy
 //
 // `source()` gives the rows: {title, prefix (dim, before it), icon, run(),
 // keys (shown as keycaps), detail, badges (icons), checked (shows On/Off),
-// current (where the list starts), extra (more to search in, not highlighted),
+// current (where the list starts), first (stays on top while searching), extra
+// (more to search in, not highlighted),
 // close() (adds an ×, which keeps the bar open)}.
 QQC2.Popup {
     id: bar
     property var win
     property var source: () => []
     property string placeholder: "Search"
+    property string emptyText: "Nothing found"
+    readonly property alias query: field.text
     property var rows: []
     property int selected: 0
     property real _closedAt: 0
     property var _picked: null
+    property bool pickedWithShift: false
 
     parent: win.contentItem
     width: Math.min(win.width - Kirigami.Units.gridUnit * 2, Math.max(Kirigami.Units.gridUnit * 28, win.width / 2.4))
@@ -47,6 +51,7 @@ QQC2.Popup {
     // Pressing the button that opened it closes it first: that isn't reopening.
     function toggle() {
         if (opened) { close(); return }
+        pickedWithShift = false
         if (Date.now() - _closedAt < 250) return
         field.text = ""
         refresh()
@@ -80,11 +85,11 @@ QQC2.Popup {
             if (m) out.push(Object.assign({}, r, {label, positions: m.positions, score: m.score}))
             else if (r.extra && words.every(w => (label + " " + r.extra).toLowerCase().includes(w))) out.push(Object.assign({}, r, {label, positions: [], score: -1}))
         }
-        out.sort((a, b) => b.score - a.score)
+        out.sort((a, b) => (b.first ? 1 : 0) - (a.first ? 1 : 0) || b.score - a.score)
         // Without the letters scattered over much longer texts, once there are
         // real matches.
-        const best = out.length ? out[0].score : 0
-        rows = out.filter(r => r.score < 0 || r.score >= best / 3)
+        const best = out.reduce((top, r) => Math.max(top, r.score), 0)
+        rows = out.filter(r => r.first || r.score < 0 || r.score >= best / 3)
         selected = 0
     }
     function labelOf(r) { return (r.prefix ? r.prefix + ": " : "") + r.title }
@@ -127,7 +132,11 @@ QQC2.Popup {
                 onAccepted: bar.pick(bar.selected)
                 Keys.onPressed: event => {
                     const page = Math.max(1, Math.floor(list.height / list.rowHeight))
-                    if (event.key === Qt.Key_Escape) bar.close()
+                    if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && (event.modifiers & Qt.ShiftModifier)) {
+                        bar.pickedWithShift = true
+                        bar.pick(bar.selected)
+                    }
+                    else if (event.key === Qt.Key_Escape) bar.close()
                     else if (event.key === Qt.Key_Down) bar.move(1)
                     else if (event.key === Qt.Key_Up) bar.move(-1)
                     else if (event.key === Qt.Key_PageDown) bar.move(Math.min(page, bar.rows.length - 1 - bar.selected))
@@ -256,8 +265,8 @@ QQC2.Popup {
             }
         }
         QQC2.Label {
-            visible: bar.rows.length === 0
-            text: "Nothing found"
+            visible: bar.rows.length === 0 && text !== ""
+            text: bar.emptyText
             opacity: 0.7
             horizontalAlignment: Text.AlignHCenter
             Layout.fillWidth: true

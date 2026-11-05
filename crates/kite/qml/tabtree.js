@@ -66,6 +66,36 @@ function dropParent(rows, first, last, wanted) {
     return rest[up].id
 }
 
+// A step of the tab at `first` (with its descendants up to `last`) through its pane,
+// by keyboard (`step` -1 or 1). What it passes counts as one spot: a tab with its
+// descendants, or a whole group. It stays among its siblings, in its pane, and
+// pinned or unpinned as it is. Answers {to}, where its first row goes once it is
+// out of the way of what it passes; {leaveGroup: true} when at its group's edge,
+// which is the step; or null when it can't go on.
+function stepTarget(rows, first, last, step) {
+    const tree = compute(rows)
+    const me = rows[first]
+    const samePane = i => rows[i].pane === me.pane
+    let n = step < 0 ? first - 1 : last + 1
+    while (n >= 0 && n < rows.length && !samePane(n)) n += step
+    if (n < 0 || n >= rows.length || rows[n].pinned !== me.pinned) return null
+    if (rows[n].group !== me.group) {
+        if (me.group) return {leaveGroup: true}
+        // Past the whole group.
+        const g = rows[n].group
+        while (n + step >= 0 && n + step < rows.length && rows[n + step].group === g) n += step
+        return {to: step < 0 ? n : n - (last - first)}
+    }
+    const depth = tree[first].depth
+    if (step < 0) {
+        // Up to the sibling it is in the descendants of, if any.
+        while (tree[n].depth > depth) n = rows.findIndex(r => r.id === tree[n].parent)
+        return tree[n].depth < depth ? null : {to: n}
+    }
+    if (tree[n].depth < depth) return null
+    return {to: n + tree[n].count - (last - first)}
+}
+
 // Of the ids, those with none of the others above them in the tree: acting
 // on these with their descendants covers them all, once each.
 function roots(rows, ids) {

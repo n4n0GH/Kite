@@ -4,6 +4,8 @@
 //  * cookie store mirroring (cookies API)
 // Everything here forwards to Rust via a small C ABI (src/ffi.rs).
 #include <QBuffer>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QFile>
 #include <QHash>
 #include <QJsonArray>
@@ -297,6 +299,11 @@ extern "C" void kite_cpp_apply_dns(int mode, const char *server)
 extern "C" void kite_cpp_clear_http_cache()
 {
     if (g_profile) g_profile->clearHttpCache();
+}
+
+extern "C" void kite_cpp_copy_text(const char *text)
+{
+    QGuiApplication::clipboard()->setText(QString::fromUtf8(text));
 }
 
 // The engine actually loaded, which can be newer than the one Kite was built

@@ -112,6 +112,17 @@ Item {
             })
         }
     }
+    // Run code in the isolated world of the page and all its frames, for plugins;
+    // `each(frame, result)` with what each answers. (Qt's frames don't run it
+    // without a callback.)
+    function runInFrames(code, each) {
+        if (!web.mainFrame) return
+        for (const f of [web.mainFrame].concat(allFrames(web.mainFrame, []))) {
+            const frame = f
+            frame.runJavaScript(code, 1, r => { if (each) each(frame, r) })
+        }
+    }
+    function runInMainFrame(code) { if (web.mainFrame) web.mainFrame.runJavaScript(code, 1, () => {}) }
     function frameDown(frame, name, arg) {
         const call = "globalThis.__kiteFrameDown && __kiteFrameDown(" + JSON.stringify(name) + ", " + JSON.stringify(arg) + ", " + JSON.stringify(originOf(frame.url.toString())) + ")"
         // (Qt's frames don't run it without a callback.)
@@ -527,7 +538,8 @@ Item {
                 settings.webRTCPublicInterfacesOnly: !!wt.app.liveSettings["privacy.webrtcPublicOnly"]
                 settings.printElementBackgrounds: wt.app.liveSettings["web.printBackgrounds"]
                 settings.fullScreenSupportEnabled: true
-                settings.focusOnNavigationEnabled: true
+                // (Only the shown tab: one loading behind it mustn't take the keyboard.)
+                settings.focusOnNavigationEnabled: wt.window && wt.window.currentTab === wt
                 settings.screenCaptureEnabled: true
                 settings.javascriptCanOpenWindows: true
                 // The site's own choice (Site Settings), else the global one.
@@ -701,7 +713,12 @@ Item {
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
                 onJavaScriptConsoleMessage: (level, message, line, source) => {
-                    if (message.startsWith(wt.app.frameSecret)) { wt.frameMessage(message.substring(wt.app.frameSecret.length)); return }
+                    if (message.startsWith(wt.app.frameSecret)) {
+                        const text = message.substring(wt.app.frameSecret.length)
+                        if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
+                        else wt.frameMessage(text)
+                        return
+                    }
                     wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
                 }
             }

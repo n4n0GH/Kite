@@ -92,6 +92,25 @@ QtObject {
     }
     function setPluginSetting(plugin, key, value) { Browser.setSetting("plugins." + plugin.id + "." + key, JSON.stringify(value)) }
     function pluginUrl(file) { return "qrc:/qt/qml/org/kde/kite/" + file }
+    // The page scripts of the plugins that are on. They get their plugin's settings,
+    // and a way to tell the window: a console message with the secret, as forms in
+    // frames do, which pages can neither see nor imitate. It reaches
+    // BrowserWindow.pluginMessage.
+    function pluginScripts() {
+        const out = []
+        for (const p of plugins) {
+            if (!pluginEnabled(p)) continue
+            const settings = {}
+            for (const key of Object.keys(p.settings)) settings[key] = pluginSetting(p, key)
+            p.pageScripts.forEach((s, i) => {
+                const files = s.files.map(f => Browser.pluginFile(f).replace(".pragma library", "")).join("\n")
+                const send = "const kitePluginSend = m => console.debug(" + JSON.stringify(frameSecret + "plugin:") + " + JSON.stringify({plugin: " + JSON.stringify(p.id) + ", m}));"
+                out.push({name: "kite:plugin:" + p.id + ":" + i, worldId: s.worldId, runsOnSubFrames: s.runsOnSubFrames, injectionPoint: s.injectionPoint,
+                          sourceCode: "(() => {\nconst KITE_PLUGIN_SETTINGS = " + JSON.stringify(settings) + ";\n" + send + "\n" + files + "\n})();"})
+            })
+        }
+        return out
+    }
 
     // ---- picture-in-picture (PipWindow.qml, bridge.js __kitePip) ----
     // One at a time: the tab whose page is shown in the picture-in-picture
@@ -140,7 +159,11 @@ QtObject {
     // ---- keyboard shortcuts (Settings → Shortcuts) ----
     // Every action with its default keys (portable key sequences); the user's
     // changes are in "shortcuts" (id → keys). BrowserWindow binds them.
-    readonly property var shortcutActions: [
+    // Plugins' actions are there while they are on.
+    readonly property var shortcutActions: coreActions.concat(pluginActions)
+    property var pluginActions: enabledPluginActions()
+    function enabledPluginActions() { return plugins.filter(p => pluginEnabled(p)).reduce((all, p) => all.concat(p.actions), []) }
+    readonly property var coreActions: [
         {id: "newTab", group: "Tabs", name: "New tab", keys: ["Ctrl+T"]},
         {id: "closeTab", group: "Tabs", name: "Close tab", keys: ["Ctrl+W", "Ctrl+F4"]},
         {id: "reopenTab", group: "Tabs", name: "Reopen closed tab", keys: ["Ctrl+Shift+T"]},
@@ -239,6 +262,10 @@ QtObject {
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
             if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting"].includes(key)) app.installUserScripts()
+            if (key.startsWith("plugins.")) {
+                app.pluginActions = app.enabledPluginActions()
+                app.installUserScripts()
+            }
         }
     }
 
@@ -557,6 +584,7 @@ QtObject {
 
     function installUserScripts() {
         const sites = siteScripts()
+        const fromPlugins = pluginScripts()
         for (const p of allProfiles()) {
             // Like Firefox, extensions don't run in private windows unless allowed.
             const wanted = JSON.parse(Extensions.userScripts(p === privateProfile))
@@ -583,6 +611,7 @@ QtObject {
                 wanted.push({name: "kite:noPings", worldId: 1, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "for (const t of ['click', 'auxclick']) document.addEventListener(t, e => { const a = e.target instanceof Element && e.target.closest('a[ping], area[ping]'); if (a) a.removeAttribute('ping'); }, true);"})
             for (const s of sites) wanted.push(s)
+            for (const s of fromPlugins) wanted.push(s)
             updateScripts(p.userScripts, wanted)
         }
     }

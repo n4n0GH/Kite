@@ -853,6 +853,7 @@ QQC2.ApplicationWindow {
         case "settings": app.showPreferences(); break
         default:
             if (/^tab[1-8]$/.test(id)) setCurrentIndex(Math.min(count - 1, Number(id.substring(3)) - 1))
+            else runPluginAction(id)
         }
     }
     Instantiator {
@@ -1142,8 +1143,35 @@ QQC2.ApplicationWindow {
 
     // The window's part of plugins that are on. Sized zero: nothing here may
     // cover the pages (a plugin puts up what it shows itself).
+    // The current tab a spot to the left (-1) or right (1), by keyboard.
+    function stepCurrentTab(step) {
+        if (!currentTab) return
+        const id = currentTab.tabId
+        const first = indexOfTab(id)
+        const last = first + tabModel.get(first).treeCount
+        // (In a flat list the tree's links wait; they don't hold tabs together.)
+        const rows = treeRows().map(r => treeEnabled ? r : Object.assign(r, {parent: -1}))
+        const target = TabTree.stepTarget(rows, first, last, step)
+        if (!target) return
+        if (target.leaveGroup) removeFromGroup(id)
+        else moveRangeTo(first, last, target.to < first ? target.to : target.to + (last - first))
+        groupsVersion++
+        updateTree()
+        reindex()
+    }
+    function findFromPage() { findBar.openReturningToPage() }
+    function findStep(backward) { findBar.step(backward) }
+    // A plugin's page script told the window something: {plugin, m}.
+    signal pluginMessage(var tab, var message)
+    function runPluginAction(id) {
+        for (let i = 0; i < pluginWindows.count; ++i) {
+            const loader = pluginWindows.itemAt(i)
+            if (loader.item && id.startsWith(loader.modelData.id + ".")) loader.item.runAction(id)
+        }
+    }
     Item {
         Repeater {
+            id: pluginWindows
             model: bw.app.plugins.filter(p => p.window)
             delegate: Loader {
                 id: pluginLoader

@@ -25,9 +25,40 @@ pub struct Plugin {
     /// QML item shown in Settings → Plugins while the plugin is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_page: Option<String>,
-    /// The plugin's settings, with their defaults.
+    /// Its entries among the shortcut actions. Its window item's runAction(id)
+    /// does the work, so it needs one.
+    #[serde(default)]
+    pub actions: Vec<PluginAction>,
+    /// Scripts for web pages, while the plugin is on.
+    #[serde(default)]
+    pub page_scripts: Vec<PageScript>,
+    /// The plugin's settings, with their defaults. Page scripts see them, as they
+    /// are when the page loads, as KITE_PLUGIN_SETTINGS.
     #[serde(default)]
     pub settings: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginAction {
+    /// "<plugin id>.<name>".
+    pub id: String,
+    pub group: String,
+    pub name: String,
+    #[serde(default)]
+    pub keys: Vec<String>,
+    pub icon: String,
+}
+
+/// One script for pages, of one or more files put together in order. The other
+/// fields are those of QWebEngineScript, as in Main.qml's scripts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PageScript {
+    pub files: Vec<String>,
+    pub world_id: u32,
+    pub runs_on_sub_frames: bool,
+    pub injection_point: u32,
 }
 
 impl Plugin {
@@ -40,12 +71,22 @@ impl Plugin {
         for file in p.files() {
             anyhow::ensure!(file.starts_with(&folder) && !file.contains(".."), "plugin {}: {file} is outside its folder", p.id);
         }
+        for action in &p.actions {
+            anyhow::ensure!(action.id.starts_with(&format!("{}.", p.id)), "plugin {}: action {} must start with its id", p.id, action.id);
+        }
+        anyhow::ensure!(p.actions.is_empty() || p.window.is_some(), "plugin {}: actions need a window item to run them", p.id);
+        for script in &p.page_scripts {
+            anyhow::ensure!(!script.files.is_empty(), "plugin {}: a page script without files", p.id);
+            // The page's own world can be reached by the page, and would see the
+            // secret its messages to the window are marked with.
+            anyhow::ensure!(script.world_id != 0, "plugin {}: page scripts run in their own world", p.id);
+        }
         Ok(p)
     }
 
     /// The files it names, relative to the kite crate.
     pub fn files(&self) -> impl Iterator<Item = &String> {
-        self.window.iter().chain(self.settings_page.iter())
+        self.window.iter().chain(self.settings_page.iter()).chain(self.page_scripts.iter().flat_map(|s| s.files.iter()))
     }
 }
 
@@ -82,6 +123,14 @@ mod tests {
         assert!(with(r#""id": "a", "window": "plugins/b/W.qml""#).is_err());
         assert!(with(r#""id": "a", "window": "plugins/a/../b/W.qml""#).is_err());
         assert!(with(r#""id": "a", "window": "plugins/a/W.qml""#).is_ok());
+        let action = r#""actions": [{"id": "a.go", "group": "G", "name": "N", "icon": "i"}]"#;
+        assert!(with(&format!(r#""id": "a", {action}"#)).is_err(), "no window to run it");
+        assert!(with(&format!(r#""id": "a", "window": "plugins/a/W.qml", {action}"#)).is_ok());
+        assert!(with(&format!(r#""id": "b", "window": "plugins/b/W.qml", {action}"#)).is_err(), "another's id");
+        let script = |world: u32, file: &str| format!(r#""id": "a", "pageScripts": [{{"files": ["{file}"], "worldId": {world}, "runsOnSubFrames": true, "injectionPoint": 0}}]"#);
+        assert!(with(&script(1, "plugins/a/p.js")).is_ok());
+        assert!(with(&script(0, "plugins/a/p.js")).is_err(), "the page's world");
+        assert!(with(&script(1, "plugins/b/p.js")).is_err(), "another's file");
     }
 
     #[test]

@@ -19,7 +19,7 @@
 - [x] Hand `smb://`, `sftp://` and similar addresses to the system (instead of KIO integration)
 - [x] Make the UI on ctrl-shift-e look more like the UI on dolphin and other kde apps when ctrl-alt-i is pressed
 - [x] Add command palette on ctrl-shift-p and ctrl-alt-i (same visuals and everything as ctrl-shift-e), allowing users to type the setting they want to change, or action they want to take
-- [ ] Add internal plugin system for additional features that not all users need or want (the system and its first plugin are in; page scripts and plugin actions come with the plugins that need them)
+- [x] Add internal plugin system for additional features that not all users need or want
 
 ## Bigger projects
 
@@ -27,7 +27,7 @@
 - [ ] Passkeys (WebAuthn)
 - [ ] Sync
 - [ ] Turn picture-in-picture into a plugin, and make it stay on top on Wayland
-- [ ] For internal plugin system, remake vimium as native integration (use similar popup as on ctrl-shift-e for the vomnibar, search uses the same thing)
+- [x] For internal plugin system, remake vimium as native integration (use similar popup as on ctrl-shift-e for the vomnibar, search uses the same thing)
 
 ## Housekeeping
 

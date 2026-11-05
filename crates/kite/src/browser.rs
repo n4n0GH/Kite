@@ -408,6 +408,13 @@ pub mod qobject {
         /// Kite's optional features (kite_core::plugins), as a JSON list.
         #[qinvokable]
         fn plugins(self: &Browser) -> QString;
+        /// A file of a plugin's page script, from the list in this file.
+        #[qinvokable]
+        #[cxx_name = "pluginFile"]
+        fn plugin_file(self: &Browser, path: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "copyText"]
+        fn copy_text(self: &Browser, text: &QString);
         #[qinvokable]
         #[cxx_name = "engineInfo"]
         fn engine_info(self: &Browser) -> QString;
@@ -1185,6 +1192,15 @@ impl qobject::Browser {
         q(serde_json::to_string(&all_plugins()).unwrap_or_else(|_| "[]".into()))
     }
 
+    fn plugin_file(&self, path: &QString) -> QString {
+        let path = path.to_string();
+        q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+    }
+
+    fn copy_text(&self, text: &QString) {
+        crate::ffi::copy_text(&text.to_string());
+    }
+
     fn engine_info(&self) -> QString {
         q(crate::ffi::engine_info())
     }
@@ -1328,8 +1344,18 @@ pub fn parse_netscape(html: &str) -> Vec<Node> {
 /// Each plugin of crates/kite/plugins/. They are checked by a test below, so a
 /// mistake can't get this far.
 fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
-    kite_core::plugins::parse_all(&[include_str!("../plugins/gestures/plugin.json")]).expect("plugin.json")
+    kite_core::plugins::parse_all(&[
+        include_str!("../plugins/gestures/plugin.json"),
+        include_str!("../plugins/vim-keys/plugin.json"),
+    ])
+    .expect("plugin.json")
 }
+
+/// The files of plugins' page scripts (see the same test).
+const PLUGIN_FILES: &[(&str, &str)] = &[
+    ("plugins/vim-keys/keys.js", include_str!("../plugins/vim-keys/keys.js")),
+    ("plugins/vim-keys/page.js", include_str!("../plugins/vim-keys/page.js")),
+];
 
 #[cfg(test)]
 mod tests {
@@ -1341,6 +1367,12 @@ mod tests {
         for p in &plugins {
             for f in p.files() {
                 assert!(here.join(f).is_file(), "{}: {f}", p.id);
+            }
+        }
+        // Every page script's file can be had.
+        for p in &plugins {
+            for f in p.page_scripts.iter().flat_map(|s| s.files.iter()) {
+                assert!(super::PLUGIN_FILES.iter().any(|(path, _)| path == f), "{}: {f} isn't in PLUGIN_FILES", p.id);
             }
         }
         // Every folder is on the list.

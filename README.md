@@ -34,7 +34,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Sessions:** open windows and tabs saved under a name, with their groups, trees, containers and
   split view, to open beside what is open or switch to (Sessions menu, or the command palette).
 * **Plugins:** optional features built into Kite, off until you want them (Settings → Plugins, or
-  the command palette). So far: mouse gestures, with the button to choose, and strokes of your own to record.
+  the command palette). So far: mouse gestures, with the button to choose and strokes of your own to record; and Vim keys,
+  to scroll, follow links by typing their labels, open addresses and handle tabs from the keyboard.
 * **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Picture-in-picture:** a page's video in a small window above others (address bar

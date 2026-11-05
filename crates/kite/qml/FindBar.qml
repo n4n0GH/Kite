@@ -14,7 +14,16 @@ QQC2.ToolBar {
     position: QQC2.ToolBar.Footer
 
     function open() { visible = true; field.forceActiveFocus(); field.selectAll(); if (field.text) find(false) }
-    function close() { visible = false; if (tab) { tab.view.findText(""); tab.focusPage() } }
+    function close() { visible = false; returnToPage = false; if (tab) { tab.view.findText(""); tab.focusPage() } }
+    // For keys on the page (the Vim keys plugin): Enter goes back to the page, with
+    // the bar still there, and next and previous leave the keyboard where it is.
+    property bool returnToPage: false
+    function openReturningToPage() { returnToPage = true; open() }
+    function step(backward) {
+        if (visible) find(backward)
+        else if (field.text) { visible = true; find(backward) }
+        else openReturningToPage()
+    }
     function find(backward) {
         if (!tab) return
         if (!visible) { open(); return }
@@ -33,7 +42,10 @@ QQC2.ToolBar {
             Layout.preferredWidth: Kirigami.Units.gridUnit * 16
             placeholderText: "Find in page"
             onTextChanged: bar.find(false)
-            Keys.onReturnPressed: event => bar.find(event.modifiers & Qt.ShiftModifier)
+            Keys.onReturnPressed: event => {
+                bar.find(event.modifiers & Qt.ShiftModifier)
+                if (bar.returnToPage && bar.tab) bar.tab.focusPage()
+            }
             Keys.onEscapePressed: bar.close()
             color: text !== "" && bar.matches === 0 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
         }
