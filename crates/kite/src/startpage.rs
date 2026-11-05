@@ -8,6 +8,11 @@ fn esc(s: &str) -> String {
 
 const MAX_TILES: usize = 12;
 
+/// Sites removed from the speed dial since Kite started. They stay removed for
+/// good ("speeddial.hidden"), but only these are offered back: over time that
+/// list only grows, and adding a site again brings it back anyway.
+static REMOVED_THIS_RUN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 /// The same site for the speed dial: scheme, "www." and a trailing slash
 /// don't matter.
 fn same_site(a: &str, b: &str) -> bool {
@@ -52,6 +57,7 @@ pub fn edit(url: &str, initiator: &str) -> Option<(String, String)> {
         pinned.retain(|p| !same_site(p["url"].as_str().unwrap_or(""), target));
         if pinned.len() == before && !hidden.iter().any(|h| same_site(h, target)) {
             hidden.push(target.clone());
+            REMOVED_THIS_RUN.lock().unwrap_or_else(|e| e.into_inner()).push(target.clone());
         }
         out = ("Tile removed".into(), format!("restore={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>()));
         if pinned.len() != before {
@@ -61,8 +67,11 @@ pub fn edit(url: &str, initiator: &str) -> Option<(String, String)> {
         }
     } else if let Some(target) = q.get("restore") {
         hidden.retain(|h| !same_site(h, target));
+        REMOVED_THIS_RUN.lock().unwrap_or_else(|e| e.into_inner()).retain(|h| !same_site(h, target));
     } else if q.contains_key("restoreAll") {
-        hidden.clear();
+        let mut removed = REMOVED_THIS_RUN.lock().unwrap_or_else(|e| e.into_inner());
+        hidden.retain(|h| !removed.iter().any(|r| same_site(h, r)));
+        removed.clear();
     } else if let Some(order) = q.get("order") {
         // Tiles dragged into a new order (a JSON array of their URLs).
         let order: Vec<String> = serde_json::from_str(order).unwrap_or_default();
@@ -137,7 +146,8 @@ pub fn render(message: &str, undo: &str, in_private: bool) -> String {
         (true, true) => r#"<p class="empty">Sites you visit often will appear here.</p>"#,
         (true, false) => r#"<p class="empty">Sites you add will appear here.</p>"#,
     };
-    let restore = if hidden.is_empty() || !show_tiles { String::new() } else { format!(r#"<p class="foot"><a href="?restoreAll">Show the {} removed site{} again</a></p>"#, hidden.len(), if hidden.len() == 1 { "" } else { "s" }) };
+    let removed = REMOVED_THIS_RUN.lock().unwrap_or_else(|e| e.into_inner()).len();
+    let restore = if removed == 0 || !show_tiles { String::new() } else { format!(r#"<p class="foot"><a href="?restoreAll">Show the {} removed site{} again</a></p>"#, removed, if removed == 1 { "" } else { "s" }) };
     let bar = if message.is_empty() { String::new() } else {
         let undo = if undo.is_empty() { String::new() } else { format!(r#" <a href="?{}">Undo</a>"#, esc(undo)) };
         format!(r#"<div class="bar">{}{undo}</div>"#, esc(message))

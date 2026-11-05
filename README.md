@@ -232,5 +232,5 @@ own address; a restored session reopens the page itself.
 * Not available: sync, translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
-* Falkon features not yet ported: named session manager, speed-dial editing,
+* Falkon features not yet ported: named session manager,
   cookie/certificate managers, mouse gestures, KIO integration.
