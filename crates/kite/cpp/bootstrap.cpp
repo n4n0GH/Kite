@@ -335,7 +335,7 @@ extern "C" void kite_cpp_hook_container_profiles()
 
 extern "C" void kite_init_dns();
 
-extern "C" int kite_bootstrap(int argc, char **argv)
+extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
 {
     qInstallMessageHandler(kiteMessageHandler);
     kite_register_schemes();
@@ -358,7 +358,7 @@ extern "C" int kite_bootstrap(int argc, char **argv)
     QIcon::setThemeSearchPaths(QIcon::themeSearchPaths() << QStringLiteral(":/qt/qml/org/kde/kite/icons"));
     QIcon::setFallbackThemeName(QStringLiteral("kite"));
     QIcon::setFallbackSearchPaths(QIcon::fallbackSearchPaths() << QStringLiteral(":/qt/qml/org/kde/kite/icons/kite/22"));
-    QApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QApplication::setApplicationVersion(QString::fromUtf8(version));
     QApplication::setDesktopFileName(QStringLiteral("org.kde.kite"));
     QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("org.kde.kite"), QIcon::fromTheme(QStringLiteral("internet-web-browser"))));
     QApplication::setQuitOnLastWindowClosed(false);

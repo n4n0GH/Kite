@@ -19,7 +19,7 @@ use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 
 extern "C" {
-    fn kite_bootstrap(argc: c_int, argv: *mut *mut c_char) -> c_int;
+    fn kite_bootstrap(argc: c_int, argv: *mut *mut c_char, version: *const c_char) -> c_int;
     fn kite_pick_profile(argc: c_int, argv: *mut *mut c_char) -> c_int;
 }
 
@@ -148,7 +148,8 @@ fn main() {
     // The strings must outlive the QApplication.
     std::mem::forget(args);
     ffi::set_wheel_pixels(state::app().shared.settings().get_i64("web.wheelScrollPixels"));
-    let code = unsafe { kite_bootstrap((argv.len() - 1) as c_int, argv.as_mut_ptr()) };
+    let version = concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast();
+    let code = unsafe { kite_bootstrap((argv.len() - 1) as c_int, argv.as_mut_ptr(), version) };
     if private {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }

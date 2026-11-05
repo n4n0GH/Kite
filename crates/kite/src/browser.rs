@@ -406,6 +406,9 @@ pub mod qobject {
         fn key_sequence_display(self: &Browser, sequence: &QString) -> QString;
         /// The system's scroll distance per mouse wheel notch, in px.
         #[qinvokable]
+        #[cxx_name = "engineInfo"]
+        fn engine_info(self: &Browser) -> QString;
+        #[qinvokable]
         #[cxx_name = "systemWheelPixels"]
         fn system_wheel_pixels(self: &Browser) -> i32;
         /// Name of the extension doing content blocking instead of Kite, or "".
@@ -1173,6 +1176,10 @@ impl qobject::Browser {
 
     fn key_sequence_display(&self, sequence: &QString) -> QString {
         q(crate::ffi::key_native(&sequence.to_string()))
+    }
+
+    fn engine_info(&self) -> QString {
+        q(crate::ffi::engine_info())
     }
 
     fn system_wheel_pixels(&self) -> i32 {

@@ -46,6 +46,9 @@ extern "C" {
     fn kite_cpp_delete_cookies_of(hosts_json: *const c_char);
     fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
+    fn kite_cpp_webengine_version() -> *const c_char;
+    fn kite_cpp_chromium_version() -> *const c_char;
+    fn kite_cpp_chromium_security_patch() -> *const c_char;
     fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char);
     fn kite_cpp_favicon_track(view_name: *const c_char, track: bool);
     fn kite_cpp_key_text(key: std::ffi::c_int, modifiers: std::ffi::c_int) -> *const c_char;
@@ -114,6 +117,18 @@ pub fn delete_all_cookies() {
 }
 pub fn clear_http_cache() {
     unsafe { kite_cpp_clear_http_cache() }
+}
+
+/// What the About box says about the engine.
+pub fn engine_info() -> String {
+    unsafe {
+        format!(
+            "Rendering engine: QtWebEngine {}\nBased on Chromium {}\nSecurity fixes up to Chromium {}",
+            s(kite_cpp_webengine_version()),
+            s(kite_cpp_chromium_version()),
+            s(kite_cpp_chromium_security_patch()),
+        )
+    }
 }
 
 pub fn qwebchannel_js() -> &'static str {

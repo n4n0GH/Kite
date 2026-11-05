@@ -21,6 +21,7 @@
 #include <QWebEngineUrlRequestJob>
 #include <QWebEngineUrlScheme>
 #include <QWebEngineUrlSchemeHandler>
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
 
 #if __has_include(<QtWebEngineQuick/qquickwebengineprofile.h>)
 #include <QtWebEngineQuick/qquickwebengineprofile.h>
@@ -297,6 +298,13 @@ extern "C" void kite_cpp_clear_http_cache()
 {
     if (g_profile) g_profile->clearHttpCache();
 }
+
+// The engine actually loaded, which can be newer than the one Kite was built
+// against. Features come with the Chromium version; the security fixes go up
+// to the patch version, usually a later one.
+extern "C" const char *kite_cpp_webengine_version() { return qWebEngineVersion(); }
+extern "C" const char *kite_cpp_chromium_version() { return qWebEngineChromiumVersion(); }
+extern "C" const char *kite_cpp_chromium_security_patch() { return qWebEngineChromiumSecurityPatchVersion(); }
 
 extern "C" const char *kite_cpp_qwebchannel_js()
 {
