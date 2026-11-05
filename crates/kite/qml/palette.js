@@ -44,6 +44,7 @@ const TOGGLES = [
     {page: "privacy", text: "Block link click pings", key: "privacy.blockPings"},
     {page: "privacy", text: "Tell sites which page linked to them (referrer)", key: "privacy.sendReferer"},
     {page: "privacy", text: "Use a common user agent", key: "privacy.genericUserAgent"},
+    {page: "privacy", text: "Appear as Firefox when signing in to Google", key: "web.googleSignIn"},
     {page: "privacy", text: "Hide local network addresses from WebRTC", key: "privacy.webrtcPublicOnly"},
     {page: "privacy", text: "Allow fingerprint protection", key: "privacy.antiFingerprinting"},
     {page: "privacy", text: "HTTPS-only mode", key: "privacy.httpsOnly"},

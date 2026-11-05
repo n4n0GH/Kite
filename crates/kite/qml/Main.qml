@@ -265,7 +265,7 @@ QtObject {
                 app.liveSettings = o
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
-            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting"].includes(key)) app.installUserScripts()
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn"].includes(key)) app.installUserScripts()
             if (key.startsWith("plugins.")) {
                 app.pluginActions = app.enabledPluginActions()
                 app.installUserScripts()
@@ -616,6 +616,9 @@ QtObject {
                              sourceCode: "for (const t of ['click', 'auxclick']) document.addEventListener(t, e => { const a = e.target instanceof Element && e.target.closest('a[ping], area[ping]'); if (a) a.removeAttribute('ping'); }, true);"})
             for (const s of sites) wanted.push(s)
             for (const s of fromPlugins) wanted.push(s)
+            if (setting("web.googleSignIn"))
+                wanted.push({name: "kite:googleSignIn", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
+                             sourceCode: "// ==UserScript==\n// @match https://accounts.google.com/*\n// ==/UserScript==\n" + Browser.googleSignInScript()})
             updateScripts(p.userScripts, wanted)
         }
     }

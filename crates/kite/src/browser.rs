@@ -448,6 +448,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "certExceptions"]
         fn cert_exceptions(self: &Browser) -> QString;
+        /// For Google's sign-in: what its pages are told ("web.googleSignIn").
+        #[qinvokable]
+        #[cxx_name = "googleSignInScript"]
+        fn google_sign_in_script(self: &Browser) -> QString;
         /// Wayland: see kite_core::kwin.
         #[qinvokable]
         #[cxx_name = "placePipWindow"]
@@ -1254,6 +1258,10 @@ impl qobject::Browser {
     fn plugin_file(&self, path: &QString) -> QString {
         let path = path.to_string();
         q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+    }
+
+    fn google_sign_in_script(&self) -> QString {
+        q(include_str!("js/firefox_identity.js").replace("__KITE_UA__", kite_core::util::FIREFOX_USER_AGENT))
     }
 
     fn place_pip_window(&self, title: &QString, min_width: i32, all_desktops: bool) {

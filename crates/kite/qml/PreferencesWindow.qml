@@ -863,6 +863,8 @@ ManagerWindow {
                 Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Fingerprinting" }
                 Check { Kirigami.FormData.label: "Identity:"; text: "Use a common user agent"; key: "privacy.genericUserAgent" }
                 Hint { text: "Leaves out “QtWebEngine” from what Kite tells sites about itself, so it reads like Chrome." }
+                Check { text: "Appear as Firefox when signing in to Google"; key: "web.googleSignIn" }
+                Hint { text: "Google refuses to sign you in with browsers it doesn't know. This only applies on accounts.google.com, and only tells that site Kite is Firefox." }
                 Check { text: "Hide local network addresses from WebRTC"; key: "privacy.webrtcPublicOnly" }
                 Check { text: "Allow fingerprint protection"; key: "privacy.antiFingerprinting" }
                 Hint { text: "Turn it on for single sites in Site Settings: canvas, WebGL and audio readouts are blurred and the hardware reported is generic. Some sites may misbehave." }

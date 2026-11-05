@@ -237,6 +237,8 @@ own address; a restored session reopens the page itself.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland its
   window only stays on top under KDE Plasma, which is asked to keep it there.
+* Google refuses to sign in browsers it doesn't know, so on `accounts.google.com` alone Kite appears as
+  Firefox (Settings → Privacy, on by default).
 * Not available: sync (settings and bookmarks can be exported to files to carry over), translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.

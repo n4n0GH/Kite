@@ -186,7 +186,12 @@ public:
         // Make addons.mozilla.org treat Kite as Firefox.
         {
             QByteArray ua = takeBuf(kite_user_agent_for(url.constData()));
-            if (!ua.isEmpty()) info.setHttpHeader("User-Agent", ua);
+            if (!ua.isEmpty()) {
+                info.setHttpHeader("User-Agent", ua);
+                // The browser it says it is has none of Chromium's client hints.
+                for (const char *hint : {"Sec-CH-UA", "Sec-CH-UA-Mobile", "Sec-CH-UA-Platform", "Sec-CH-UA-Platform-Version", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Model", "Sec-CH-UA-WoW64"})
+                    info.setHttpHeader(hint, QByteArray());
+            }
         }
         const QByteArray verdict = takeBuf(kite_intercept(url.constData(), fp.constData(), ini.constData(),
                                                           resourceTypeName(info.resourceType()), info.requestMethod().constData(), m_private ? 1 : 0));

@@ -24,3 +24,22 @@ pub fn host_of(url: &str) -> String {
 pub fn local_path(text: &str) -> std::path::PathBuf {
     url::Url::parse(text).ok().filter(|u| u.scheme() == "file").and_then(|u| u.to_file_path().ok()).unwrap_or_else(|| text.into())
 }
+
+/// A current Firefox's user agent, for the sites that only work for known browsers.
+pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
+
+/// Is this where Google signs people in? It refuses browsers it doesn't know.
+pub fn is_google_sign_in(url: &str) -> bool {
+    url.starts_with("https://") && host_of(url) == "accounts.google.com"
+}
+
+#[cfg(test)]
+mod google_tests {
+    #[test]
+    fn only_google_s_own_sign_in() {
+        assert!(super::is_google_sign_in("https://accounts.google.com/signin?x=1"));
+        for other in ["http://accounts.google.com/", "https://accounts.google.com.evil.org/", "https://evil.org/accounts.google.com/", "https://mail.google.com/", "https://evil.org/?https://accounts.google.com/"] {
+            assert!(!super::is_google_sign_in(other), "{other}");
+        }
+    }
+}

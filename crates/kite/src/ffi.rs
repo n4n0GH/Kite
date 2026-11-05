@@ -576,6 +576,9 @@ pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
     if spoof && kite_core::util::host_of(url) == "addons.mozilla.org" {
         return KiteBuf::from_vec(kite_core::webext::amo::USER_AGENT.as_bytes().to_vec());
     }
+    if kite_core::util::is_google_sign_in(url) && app().shared.settings().get_bool("web.googleSignIn") {
+        return KiteBuf::from_vec(kite_core::util::FIREFOX_USER_AGENT.as_bytes().to_vec());
+    }
     KiteBuf::empty()
 }
 

@@ -56,6 +56,8 @@ pub fn defaults() -> Map<String, Value> {
         "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
         "web.printBackgrounds": true,
         "web.userAgent": "",
+        // Google's sign-in refuses Kite unless it appears as Firefox there.
+        "web.googleSignIn": true,
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
