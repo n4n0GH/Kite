@@ -598,6 +598,66 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
         allow = html_escape(&allow)
     )
 }
+
+// ---- the profile picker (cpp/profiles.cpp) --------------------------------
+
+static PICK_OPENS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_pick_profile_opens(open: bool) {
+    PICK_OPENS.store(open, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn profiles() -> Option<kite_core::profiles::Profiles> {
+    kite_core::profiles::Profiles::open().ok()
+}
+
+#[no_mangle]
+pub extern "C" fn kite_profiles_json() -> KiteBuf {
+    let json = profiles().map(|p| serde_json::json!({"profiles": p.list(), "last": p.choices().last}).to_string()).unwrap_or_default();
+    KiteBuf::from_vec(json.into_bytes())
+}
+
+fn error_buf(r: anyhow::Result<()>) -> KiteBuf {
+    KiteBuf::from_vec(r.err().map(|e| e.to_string()).unwrap_or_default().into_bytes())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn kite_profile_create(name: *const c_char) -> KiteBuf {
+    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.create(s(name))))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn kite_profile_delete(name: *const c_char) -> KiteBuf {
+    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.delete(s(name))))
+}
+
+#[no_mangle]
+pub extern "C" fn kite_profiles_ask() -> i32 {
+    profiles().is_none_or(|p| p.choices().ask) as i32
+}
+
+#[no_mangle]
+pub extern "C" fn kite_profiles_set_ask(ask: i32) {
+    if let Some(p) = profiles() {
+        let _ = p.set_choices(&kite_core::profiles::Choices { ask: ask != 0, ..p.choices() });
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn kite_profile_chosen(name: *const c_char) {
+    let name = s(name);
+    if let Some(p) = profiles() {
+        let _ = p.set_choices(&kite_core::profiles::Choices { last: name.to_owned(), ..p.choices() });
+    }
+    if PICK_OPENS.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(exe) = crate::own_executable() {
+            let _ = std::process::Command::new(exe).args(["--profile", name]).spawn();
+        }
+    } else {
+        println!("{name}");
+    }
+}
+
 // ---- printing (cpp/print.cpp, browser.rs) ---------------------------------
 
 extern "C" {

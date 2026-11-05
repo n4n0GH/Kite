@@ -28,6 +28,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Printing:** the system's print dialog (printer, paper, copies, pages, duplex), with the page
   laid out for the paper chosen and sent to CUPS as a PDF; also from pages' own print buttons.
   Or save the page as a PDF without printing.
+* **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
+  there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.
@@ -223,8 +225,7 @@ own address; a restored session reopens the page itself.
   window can only stay on top with a KWin window rule ("Keep above" for the title
   "Picture-in-Picture").
 * Not available: sync, translation, passkeys (WebAuthn),
-  card autofill, browser themes, a profile picker (profiles are chosen with
-  `--profile`).
+  card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
 * Falkon features not yet ported: named session manager, speed-dial editing,
   cookie/certificate managers, mouse gestures, KIO integration.

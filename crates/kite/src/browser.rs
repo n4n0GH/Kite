@@ -317,6 +317,21 @@ pub mod qobject {
         #[cxx_name = "printDone"]
         fn print_done(self: Pin<&mut Browser>, ok: bool, message: QString);
 
+        /// The profiles, as for the picker, and this one's name.
+        #[qinvokable]
+        fn profiles(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "currentProfile"]
+        fn current_profile(self: &Browser) -> QString;
+        /// Start Kite with that profile.
+        #[qinvokable]
+        #[cxx_name = "openProfile"]
+        fn open_profile(self: &Browser, name: &QString);
+        /// The profile picker, its choice starting another Kite.
+        #[qinvokable]
+        #[cxx_name = "manageProfiles"]
+        fn manage_profiles(self: &Browser);
+
         /// Reader view: the script that extracts the page's article, for an
         /// isolated world; it returns JSON, or "" without an article.
         #[qinvokable]
@@ -1026,6 +1041,26 @@ impl qobject::Browser {
 
     fn print_cancel(&self) {
         unsafe { crate::ffi::kite_cpp_print_cancel() }
+    }
+
+    fn profiles(&self) -> QString {
+        js(&json!(kite_core::profiles::Profiles::open().map(|p| p.list()).unwrap_or_default()))
+    }
+
+    fn current_profile(&self) -> QString {
+        q(&app().shared.profile.name)
+    }
+
+    fn open_profile(&self, name: &QString) {
+        if let Some(exe) = crate::own_executable() {
+            let _ = std::process::Command::new(exe).args(["--profile", &name.to_string()]).spawn();
+        }
+    }
+
+    fn manage_profiles(&self) {
+        if let Some(exe) = crate::own_executable() {
+            let _ = std::process::Command::new(exe).arg("--pick-profile-open").spawn();
+        }
     }
 
     fn reader_script(&self) -> QString {

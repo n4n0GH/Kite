@@ -51,6 +51,16 @@ fn install_notifyrc() {
 }
 
 pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::Result<()> {
+    init_app(profile, initial_urls, private)?;
+    // Open for as long as Kite runs (the profile picker reads this). A second
+    // Kite started on the profile on purpose just doesn't hold it.
+    if let Some(lock) = kite_core::profiles::lock(app().shared.profile.root()) {
+        std::mem::forget(lock);
+    }
+    Ok(())
+}
+
+fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::Result<()> {
     install_notifyrc();
     let profile = kite_core::Profile::open(profile)?;
     let shared = Shared::open(profile.clone())?;

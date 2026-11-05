@@ -20,16 +20,18 @@ pub struct Profile {
     pub root: PathBuf,
 }
 
+/// What holds the `profiles` directory.
+pub fn base_dir() -> anyhow::Result<PathBuf> {
+    match std::env::var_os("KITE_DATA_DIR") {
+        Some(d) => Ok(PathBuf::from(d)),
+        None => directories::ProjectDirs::from("org", "kde", "kite").map(|d| d.data_dir().to_path_buf()).ok_or_else(|| anyhow::anyhow!("no home directory")),
+    }
+}
+
 impl Profile {
     /// Open (and create if needed) a profile under the user data dir.
     pub fn open(name: &str) -> anyhow::Result<Self> {
-        let base = match std::env::var_os("KITE_DATA_DIR") {
-            Some(d) => PathBuf::from(d),
-            None => directories::ProjectDirs::from("org", "kde", "kite")
-                .map(|d| d.data_dir().to_path_buf())
-                .ok_or_else(|| anyhow::anyhow!("no home directory"))?,
-        };
-        Self::open_at(base.join("profiles").join(name), name)
+        Self::open_at(base_dir()?.join("profiles").join(name), name)
     }
 
     pub fn open_at(root: PathBuf, name: &str) -> anyhow::Result<Self> {

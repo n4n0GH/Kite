@@ -20,12 +20,45 @@ use std::os::raw::{c_char, c_int};
 
 extern "C" {
     fn kite_bootstrap(argc: c_int, argv: *mut *mut c_char) -> c_int;
+    fn kite_pick_profile(argc: c_int, argv: *mut *mut c_char) -> c_int;
+}
+
+/// How to start Kite again (an AppImage's own file, not the mounted one).
+pub fn own_executable() -> Option<std::path::PathBuf> {
+    std::env::var_os("APPIMAGE").map(Into::into).or_else(|| std::env::current_exe().ok())
+}
+
+/// The profile picker's own process: the chosen profile goes to stdout, or
+/// with --open, is started.
+fn pick_profile(args: &[String], open: bool) -> ! {
+    ffi::set_pick_profile_opens(open);
+    let args: Vec<CString> = args.iter().map(|a| CString::new(a.as_str()).unwrap_or_default()).collect();
+    let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr() as *mut c_char).collect();
+    argv.push(std::ptr::null_mut());
+    std::mem::forget(args);
+    std::process::exit(unsafe { kite_pick_profile((argv.len() - 1) as c_int, argv.as_mut_ptr()) });
+}
+
+/// A start without --profile, with several profiles: the user chooses. None
+/// if the picker was closed, to end there; the default if it can't show.
+fn ask_for_profile() -> Option<String> {
+    let default = || Some(kite_core::profiles::DEFAULT.to_owned());
+    let Some(exe) = own_executable() else { return default() };
+    match std::process::Command::new(exe).arg("--pick-profile").stderr(std::process::Stdio::inherit()).output() {
+        Ok(out) if out.status.success() => {
+            let name = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+            (!name.is_empty()).then_some(name)
+        }
+        _ => default(),
+    }
 }
 
 const HELP: &str = "Usage: kite [options] [URL...]
 
 Options:
-  -p, --profile <name>   Use (or create) the named profile (default: \"default\")
+  -p, --profile <name>   Use (or create) the named profile. Without it, Kite asks
+                         if there are several (or uses \"default\")
+      --pick-profile     Choose a profile, printing its name
       --private          Start a private browsing session (nothing is saved)
   -h, --help             Show this help
   -v, --version          Show version
@@ -39,7 +72,10 @@ Environment:
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,console::page=error")).init();
-    let mut profile = "default".to_owned();
+    let mut profile = kite_core::profiles::DEFAULT.to_owned();
+    let mut chosen = false;
+    let mut pick = false;
+    let mut pick_opens = false;
     let mut private = false;
     let mut urls = vec![];
     let mut qt_args: Vec<String> = vec![std::env::args().next().unwrap_or_else(|| "kite".into())];
@@ -54,16 +90,35 @@ fn main() {
                 println!("Kite {}", env!("CARGO_PKG_VERSION"));
                 return;
             }
-            "-p" | "--profile" => profile = it.next().unwrap_or(profile),
+            "-p" | "--profile" => {
+                profile = it.next().unwrap_or(profile);
+                chosen = true;
+            }
+            "--pick-profile" => pick = true,
+            "--pick-profile-open" => {
+                pick = true;
+                pick_opens = true;
+            }
             "--private" => private = true,
-            s if s.starts_with("--profile=") => profile = s["--profile=".len()..].to_owned(),
+            s if s.starts_with("--profile=") => {
+                profile = s["--profile=".len()..].to_owned();
+                chosen = true;
+            }
             // Pass Qt / Chromium options through.
             s if s.starts_with('-') => qt_args.push(a.clone()),
             _ => urls.push(a.clone()),
         }
     }
+    if pick {
+        pick_profile(&qt_args, pick_opens);
+    }
     if private {
         profile = format!("private-{}", std::process::id());
+    } else if !chosen && kite_core::profiles::Profiles::open().is_ok_and(|p| p.should_ask()) {
+        match ask_for_profile() {
+            Some(name) => profile = name,
+            None => return,
+        }
     }
     if let Err(e) = state::init(&profile, urls, private) {
         eprintln!("kite: cannot open profile {profile}: {e}");

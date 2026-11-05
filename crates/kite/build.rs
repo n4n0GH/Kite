@@ -39,6 +39,7 @@ fn main() {
         .cpp_file("cpp/bootstrap.cpp")
         .cpp_file("cpp/glue.cpp")
         .cpp_file("cpp/print.cpp")
+        .cpp_file("cpp/profiles.cpp")
         .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs"])
         .build();
 
