@@ -327,12 +327,24 @@ QtObject {
     // The dialog first, as the page is laid out for the paper chosen there.
     property var _printingTab: null
     property string _printPdf: ""
+    // The page as a PDF, with margins. printToPdf takes none and leaves the page
+    // edge to edge, into what printers can't reach, and Chromium ignores @page
+    // margins for it. So the page gets padding while it is made, which "clone"
+    // repeats on each sheet.
+    function makePdf(tab, path, pageSize, landscape, margins) {
+        const css = "@media print { html { padding: " + margins.map(m => m + "mm").join(" ") + " !important; box-decoration-break: clone !important; -webkit-box-decoration-break: clone !important; box-sizing: border-box !important; } }"
+        const add = "(() => { const s = document.createElement('style'); s.id = '__kite_print_margins'; s.textContent = " + JSON.stringify(css) + "; const h = document.head || document.documentElement; h.insertBefore(s, h.firstChild); })()"
+        tab.view.runJavaScript(add, 1, () => tab.view.printToPdf(path, pageSize, landscape ? WebEngineView.Landscape : WebEngineView.Portrait))
+    }
+    // (A page saved without asking for paper: half-inch margins on A4.)
+    function savePdf(tab, path) { makePdf(tab, path, WebEngineView.A4, false, [12.7, 12.7, 12.7, 12.7]) }
     function printTab(tab) {
         if (!tab || _printingTab) return
         _printingTab = tab
         Browser.printDialog(tab.title)
     }
     function pdfFinished(tab, path, ok) {
+        tab.view.runJavaScript("(() => { const s = document.getElementById('__kite_print_margins'); if (s) s.remove(); })()", 1)
         if (path === _printPdf && _printPdf !== "") {
             _printPdf = ""
             _printingTab = null
@@ -354,7 +366,7 @@ QtObject {
             }
             const c = JSON.parse(json)
             app._printPdf = c.path
-            t.view.printToPdf(c.path, c.pageSize, c.landscape ? WebEngineView.Landscape : WebEngineView.Portrait)
+            app.makePdf(t, c.path, c.pageSize, c.landscape, c.margins)
         }
         function onPrintDone(ok, message) { if (app.activeWindow) app.activeWindow.toast(message, ok ? "document-print" : "dialog-error") }
     }

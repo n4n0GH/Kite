@@ -1220,7 +1220,7 @@ QQC2.ApplicationWindow {
         currentFile: "file://" + app.setting("downloads.directory") + "/" + ((bw.currentTab ? bw.currentTab.title : "page").replace(/[\/\\:*?"<>|]/g, "_") || "page") + ".pdf"
         onAccepted: {
             const path = selectedFile.toString().replace("file://", "")
-            bw.currentTab.view.printToPdf(path)
+            bw.app.savePdf(bw.currentTab, path)
         }
     }
 

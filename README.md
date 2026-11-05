@@ -25,8 +25,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   bookmarks toolbar, an extensions panel with pin/unpin.
 * **Keyboard shortcuts:** every Kite action can get its own keys (Settings → Shortcuts),
   with conflict warnings and reset to the defaults. Extensions keep the keys they declare.
-* **Printing:** the system's print dialog (printer, paper, copies, pages, duplex), with the page
-  laid out for the paper chosen and sent to CUPS as a PDF; also from pages' own print buttons.
+* **Printing:** the system's print dialog (printer, paper, margins, copies, pages, duplex), with
+  the page laid out for the paper chosen and sent to CUPS as a PDF; also from pages' own print
+  buttons. It offers the paper of your locale and half-inch margins, whatever the driver's defaults.
   Or save the page as a PDF without printing.
 * **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).

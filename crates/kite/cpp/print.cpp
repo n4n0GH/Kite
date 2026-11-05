@@ -1,18 +1,25 @@
 // Printing: Qt's print dialog, then the page as a PDF made by Chromium for the
 // chosen paper (Main.qml), which goes to CUPS with lp. QtWebEngine's QML view
 // has no way to print to a printer itself; this keeps the text sharp too.
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPageRanges>
 #include <QPageSize>
 #include <QPrintDialog>
+#include <QSet>
 #include <QPrinter>
 #include <QProcess>
+#include <QPointer>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QWindow>
 #include <QtPrintSupport/qprintengine.h>
+#include <langinfo.h>
 
 extern "C" void kite_print_chosen(const char *json);
 extern "C" void kite_print_done(int ok, const char *message);
@@ -21,6 +28,50 @@ extern "C" void kite_print_done(int ok, const char *message);
 static QPrinter *g_printer = nullptr;
 static QTemporaryDir *g_tempDir = nullptr;
 static QString g_title;
+
+// What Kite offers instead of the driver's defaults: the paper of the user's
+// locale (LC_PAPER; generic drivers say Letter wherever they are), and half-inch
+// margins (printers have their own limits, and it reads better).
+static QPageSize localePaper(const QPageSize &otherwise)
+{
+    const auto width = int(reinterpret_cast<intptr_t>(nl_langinfo(_NL_PAPER_WIDTH)));
+    const auto height = int(reinterpret_cast<intptr_t>(nl_langinfo(_NL_PAPER_HEIGHT)));
+    if (width == 210 && height == 297) return QPageSize(QPageSize::A4);
+    if (width == 216 && height == 279) return QPageSize(QPageSize::Letter);
+    return otherwise;
+}
+static const double kMarginMm = 12.7;
+
+// The dialog overrides what is set on the printer with the driver's defaults,
+// both as it opens and when accepted, and its paper and margins are in a panel
+// made when first opened. So: this fills that panel in when it appears (found
+// by Qt's names for its fields; with other names it just shows the driver's),
+// and notes when it is accepted, which is when its values are the user's.
+static bool g_panelAccepted = false;
+static void watchPropertiesPanel(QPrintDialog *dialog)
+{
+    g_panelAccepted = false;
+    auto *timer = new QTimer(dialog);
+    timer->setInterval(50);
+    QObject::connect(timer, &QTimer::timeout, dialog, [dialog, last = QPointer<QComboBox>(), seen = QSet<QDialog *>()]() mutable {
+        for (QDialog *panel : dialog->findChildren<QDialog *>()) {
+            if (seen.contains(panel)) continue;
+            seen.insert(panel);
+            QObject::connect(panel, &QDialog::accepted, dialog, [] { g_panelAccepted = true; });
+        }
+        auto *sizes = dialog->findChild<QComboBox *>(QStringLiteral("pageSizeCombo"));
+        if (!sizes || sizes == last) return;
+        last = sizes;
+        const int at = sizes->findData(QVariant::fromValue(localePaper(QPageSize())));
+        if (at >= 0) sizes->setCurrentIndex(at);
+        const auto *units = dialog->findChild<QComboBox *>(QStringLiteral("unitCombo"));
+        const QPageLayout::Unit unit = units ? units->currentData().value<QPageLayout::Unit>() : QPageLayout::Millimeter;
+        const double value = unit == QPageLayout::Millimeter ? kMarginMm : unit == QPageLayout::Inch ? 0.5 : unit == QPageLayout::Point ? 36 : kMarginMm;
+        for (const char *name : {"topMargin", "bottomMargin", "leftMargin", "rightMargin"})
+            if (auto *margin = dialog->findChild<QDoubleSpinBox *>(QString::fromLatin1(name))) margin->setValue(value);
+    });
+    timer->start();
+}
 
 static void finishJob()
 {
@@ -50,9 +101,17 @@ extern "C" void kite_cpp_print_dialog(const char *title)
             return;
         }
         g_tempDir = new QTemporaryDir(); // (only the user can read it)
+        // Nothing was chosen (the panel unopened, or cancelled): Kite's defaults
+        // apply, as the panel would have shown.
+        if (!g_panelAccepted) {
+            g_printer->setPageSize(localePaper(g_printer->pageLayout().pageSize()));
+            g_printer->setPageMargins(QMarginsF(kMarginMm, kMarginMm, kMarginMm, kMarginMm), QPageLayout::Millimeter);
+        }
         const QPageLayout layout = g_printer->pageLayout();
         const QPageSize::PageSizeId size = layout.pageSize().id();
+        const QMarginsF margins = layout.margins(QPageLayout::Millimeter);
         QJsonObject o{{QStringLiteral("path"), g_tempDir->filePath(QStringLiteral("page.pdf"))},
+                      {QStringLiteral("margins"), QJsonArray{margins.top(), margins.right(), margins.bottom(), margins.left()}},
                       {QStringLiteral("pageSize"), int(size == QPageSize::Custom ? QPageSize::A4 : size)},
                       {QStringLiteral("landscape"), layout.orientation() == QPageLayout::Landscape}};
         kite_print_chosen(QJsonDocument(o).toJson(QJsonDocument::Compact).constData());
@@ -60,6 +119,7 @@ extern "C" void kite_cpp_print_dialog(const char *title)
     dialog->winId();
     if (from && dialog->windowHandle()) dialog->windowHandle()->setTransientParent(from);
     dialog->open();
+    watchPropertiesPanel(dialog);
 }
 
 // The options lp gets for the dialog's choices.
