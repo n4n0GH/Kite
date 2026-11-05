@@ -5,12 +5,12 @@ import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 
-// Add-ons manager (Firefox's about:addons): installed extensions and a
+// Managing extensions (Firefox's about:addons): installed extensions and a
 // browser for addons.mozilla.org.
 ManagerWindow {
     id: w
     property string page: "installed"
-    title: "Add-ons — Kite"
+    title: "Extensions — Kite"
     width: Kirigami.Units.gridUnit * 50
     height: Kirigami.Units.gridUnit * 38
 
@@ -21,7 +21,7 @@ ManagerWindow {
         width: Kirigami.Units.gridUnit * 11
         actions: [
             Kirigami.Action { text: "Extensions"; icon.name: "kite-extension"; checked: w.page === "installed"; onTriggered: w.page = "installed" },
-            Kirigami.Action { text: "Find Add-ons"; icon.name: "get-hot-new-stuff"; checked: w.page === "browse"; onTriggered: w.page = "browse" }
+            Kirigami.Action { text: "Find Extensions"; icon.name: "get-hot-new-stuff"; checked: w.page === "browse"; onTriggered: w.page = "browse" }
         ]
     }
     // Show `page`. The page is created with the page stack as its visual
@@ -57,10 +57,10 @@ ManagerWindow {
             Connections { target: Extensions; function onChanged(what) { if (what === "extensions") ip.exts = JSON.parse(Extensions.list()) } }
             actions: [
                 Kirigami.Action { text: "Check for Updates"; icon.name: "view-refresh"; onTriggered: Extensions.checkUpdates() },
-                Kirigami.Action { text: "Install Add-on From File…"; icon.name: "document-open"; onTriggered: xpiDialog.open() },
-                Kirigami.Action { text: "Load Temporary Add-on…"; icon.name: "run-build"; onTriggered: tempDialog.open() }
+                Kirigami.Action { text: "Install Extension From File…"; icon.name: "document-open"; onTriggered: xpiDialog.open() },
+                Kirigami.Action { text: "Load Temporary Extension…"; icon.name: "run-build"; onTriggered: tempDialog.open() }
             ]
-            FileDialog { id: xpiDialog; title: "Install Add-on From File"; nameFilters: ["Add-on packages (*.xpi *.zip)"]; onAccepted: Extensions.installFromFile(selectedFile.toString()) }
+            FileDialog { id: xpiDialog; title: "Install Extension From File"; nameFilters: ["Extension packages (*.xpi *.zip)"]; onAccepted: Extensions.installFromFile(selectedFile.toString()) }
             FileDialog { id: tempDialog; title: "Select manifest.json of an unpacked extension"; nameFilters: ["manifest.json (manifest.json)"]; onAccepted: w.app.toast(Extensions.loadTemporary(selectedFile.toString())) }
 
             ColumnLayout {
@@ -79,7 +79,7 @@ ManagerWindow {
                     icon.name: "kite-extension"
                     text: "No extensions installed"
                     explanation: "Kite runs Firefox extensions. Find some on addons.mozilla.org."
-                    helpfulAction: Kirigami.Action { text: "Find Add-ons"; icon.name: "get-hot-new-stuff"; onTriggered: w.page = "browse" }
+                    helpfulAction: Kirigami.Action { text: "Find Extensions"; icon.name: "get-hot-new-stuff"; onTriggered: w.page = "browse" }
                 }
                 Repeater {
                     model: ip.exts
@@ -150,7 +150,7 @@ ManagerWindow {
                                         onToggled: Extensions.setAllowPrivate(card.modelData.id, checked)
                                     }
                                     QQC2.Label {
-                                        text: card.modelData.privateNotAllowed ? "This add-on doesn't run in private windows." : "When allowed, it can see and change what you do in private windows."
+                                        text: card.modelData.privateNotAllowed ? "This extension doesn't run in private windows." : "When allowed, it can see and change what you do in private windows."
                                         opacity: 0.7
                                         font: Kirigami.Theme.smallFont
                                         wrapMode: Text.Wrap
@@ -162,7 +162,7 @@ ManagerWindow {
                                 QQC2.Label { Kirigami.FormData.label: "Manifest:"; text: "Version " + card.modelData.manifestVersion; visible: !card.modelData.broken }
                                 QQC2.Label { Kirigami.FormData.label: "Source:"; text: card.modelData.source === "amo" ? "addons.mozilla.org" : card.modelData.source === "temporary" ? "Temporary (" + card.modelData.path + ")" : "File" }
                                 QQC2.Label { Kirigami.FormData.label: "Homepage:"; visible: !!card.modelData.homepage; text: "<a href=\"" + card.modelData.homepage + "\">" + card.modelData.homepage + "</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
-                                QQC2.Label { Kirigami.FormData.label: "Add-on page:"; visible: !!card.modelData.amoSlug; text: "<a href=\"https://addons.mozilla.org/firefox/addon/" + card.modelData.amoSlug + "/\">addons.mozilla.org</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
+                                QQC2.Label { Kirigami.FormData.label: "Extension page:"; visible: !!card.modelData.amoSlug; text: "<a href=\"https://addons.mozilla.org/firefox/addon/" + card.modelData.amoSlug + "/\">addons.mozilla.org</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
                                 ColumnLayout {
                                     Kirigami.FormData.label: "Permissions:"
                                     visible: !card.modelData.broken
@@ -229,7 +229,7 @@ ManagerWindow {
             header: QQC2.ToolBar {
                 RowLayout {
                     anchors.fill: parent
-                    Kirigami.SearchField { id: query; Layout.fillWidth: true; placeholderText: "Search addons.mozilla.org, or paste an add-on URL"; onAccepted: {
+                    Kirigami.SearchField { id: query; Layout.fillWidth: true; placeholderText: "Search addons.mozilla.org, or paste an extension URL"; onAccepted: {
                         if (text.startsWith("https://addons.mozilla.org/")) Extensions.installFromAmo(text); else bp.run(1) } }
                     QQC2.ComboBox {
                         id: sort
@@ -245,7 +245,7 @@ ManagerWindow {
                     anchors.centerIn: parent
                     visible: !bp.busy && bp.results.length === 0
                     icon.name: bp.error ? "network-disconnect" : "search"
-                    text: bp.error ? "Could not reach addons.mozilla.org" : "No add-ons found"
+                    text: bp.error ? "Could not reach addons.mozilla.org" : "No extensions found"
                     explanation: bp.error
                 }
                 QQC2.BusyIndicator { anchors.centerIn: parent; running: bp.busy && bp.results.length === 0; visible: running }
@@ -299,7 +299,7 @@ ManagerWindow {
             }
             Kirigami.Dialog {
                 id: detailSheet
-                title: bp.detail ? (bp.detail.name || "Add-on") : "Loading…"
+                title: bp.detail ? (bp.detail.name || "Extension") : "Loading…"
                 width: Math.min(w.width - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 36)
                 height: Math.min(w.height - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 30)
                 padding: Kirigami.Units.largeSpacing

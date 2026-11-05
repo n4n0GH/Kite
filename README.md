@@ -36,7 +36,7 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Plugins:** optional features built into Kite, off until you want them (Settings → Plugins, or
   the command palette). So far: mouse gestures, with the button to choose and strokes of your own to record; and Vim keys,
   to scroll, follow links by typing their labels, open addresses and handle tabs from the keyboard.
-* **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
+* **Profiles:** each with its own bookmarks, history, logins and extensions; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
@@ -118,7 +118,7 @@ crates/kite        the application
   src/js/  page scripts (Screen Wake Lock shim, scrollbar styling, fingerprint protection)
   icons/   Kite's own icons (a fallback icon theme in the resources)
   qml/  UI: windows, tabs and tab groups, split view, location bar, menus, library,
-        downloads, preferences, add-ons manager (Kirigami / Breeze)
+        downloads, preferences, extensions window (Kirigami / Breeze)
 ```
 
 ### How WebExtensions work
@@ -228,7 +228,7 @@ own address; a restored session reopens the page itself.
   manage containers, and the `cookies` API covers the main container only.
 * Extensions are off in private windows by default (like Firefox): they don't run there and can't
   see their tabs or requests, and the built-in content blocker stands in for uBlock Origin. Each
-  can be allowed in its details in the add-ons manager. Taking that back leaves its content
+  can be allowed in its details in the Extensions window. Taking that back leaves its content
   scripts in open private pages until they are reloaded, cut off from the extension.
 * Form autofill: no card autofill. In frames nested inside frames, suggestions open at the pointer.
 * Printing goes through CUPS' `lp`; a page's print button prints the whole page, also from a frame.

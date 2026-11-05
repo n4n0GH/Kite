@@ -27,8 +27,7 @@ ManagerWindow {
         {key: "adblock", title: "Content Blocking", icon: "security-high"},
         {key: "downloads", title: "Downloads", icon: "download"},
         {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
-        {key: "extensions", title: "Extensions", icon: "kite-extension"},
-        {key: "plugins", title: "Plugins", icon: "preferences-plugin"},
+        {key: "extensions", title: "Plugins & Extensions", icon: "kite-extension"},
         {key: "shortcuts", title: "Shortcuts", icon: "preferences-desktop-keyboard-shortcut"},
     ]
 
@@ -62,54 +61,8 @@ ManagerWindow {
                 case "downloads": return downloads
                 case "sites": return sites
                 case "extensions": return extensions
-                case "plugins": return plugins
                 case "shortcuts": return shortcuts
                 default: return general
-                }
-            }
-        }
-    }
-
-    // ---- Kite's own optional features ("plugins") ----
-    Component {
-        id: plugins
-        ColumnLayout {
-            spacing: Kirigami.Units.gridUnit
-            QQC2.Label {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                text: "Features built into Kite that not everyone wants. They do nothing while off."
-            }
-            Repeater {
-                model: w.app.plugins
-                delegate: ColumnLayout {
-                    id: entry
-                    required property var modelData
-                    property bool on: w.app.pluginEnabled(modelData)
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    RowLayout {
-                        Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth }
-                        QQC2.Switch {
-                            text: entry.modelData.name
-                            checked: entry.on
-                            onToggled: { entry.on = checked; w.app.setPluginEnabled(entry.modelData, checked) }
-                        }
-                    }
-                    QQC2.Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
-                        text: entry.modelData.description
-                    }
-                    QQC2.Button {
-                        visible: entry.on && !!entry.modelData.settingsPage
-                        text: "Configure…"
-                        icon.name: "configure"
-                        onClicked: w.pageStack.push(pluginSettingsPage, {plugin: entry.modelData})
-                    }
                 }
             }
         }
@@ -177,6 +130,10 @@ ManagerWindow {
     }
 
     // A plugin's settings: a submenu each, so the list stays a list.
+    function openPluginSettings(plugin) {
+        if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+        pageStack.push(pluginSettingsPage, {plugin: plugin})
+    }
     Component {
         id: pluginSettingsPage
         Kirigami.ScrollablePage {
@@ -1527,10 +1484,58 @@ ManagerWindow {
     Component {
         id: extensions
         Kirigami.FormLayout {
-            QQC2.CheckBox { Kirigami.FormData.label: "Extensions:"; text: "Enable extensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
+            // (Left-aligned across the page, as Privacy comes out by its contents.)
+            wideMode: false
+            // ---- Kite's own optional features ----
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Plugins" }
+            QQC2.Label {
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 34
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                font: Kirigami.Theme.smallFont
+                text: "Kite's native plugins for powerusers."
+            }
+            Repeater {
+                model: w.app.plugins
+                delegate: ColumnLayout {
+                    id: entry
+                    required property var modelData
+                    property bool on: w.app.pluginEnabled(modelData)
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+                        Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth }
+                        QQC2.Label { text: entry.modelData.name; Layout.fillWidth: true }
+                        QQC2.Switch {
+                            Accessible.name: entry.modelData.name
+                            checked: entry.on
+                            onToggled: { entry.on = checked; w.app.setPluginEnabled(entry.modelData, checked) }
+                        }
+                        QQC2.Button {
+                            visible: !!entry.modelData.settingsPage
+                            enabled: entry.on
+                            text: "Configure…"
+                            icon.name: "configure"
+                            onClicked: w.openPluginSettings(entry.modelData)
+                        }
+                    }
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 34
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        text: entry.modelData.description
+                    }
+                }
+            }
+            // ---- WebExtensions ----
+            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "WebExtensions" }
+            QQC2.CheckBox { text: "Enable WebExtensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
             QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
             QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
-            QQC2.Button { text: "Manage Add-ons…"; icon.name: "kite-extension"; onClicked: w.app.showAddons() }
+            QQC2.Button { text: "Manage Extensions…"; icon.name: "kite-extension"; onClicked: w.app.showAddons() }
         }
     }
 }

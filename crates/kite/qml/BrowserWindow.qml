@@ -814,6 +814,7 @@ QQC2.ApplicationWindow {
         case "previousTab": nextTab(-1); break
         case "tabLast": setCurrentIndex(count - 1); break
         case "muteTab": if (t) t.view.audioMuted = !t.view.audioMuted; break
+        case "tabToOtherPane": if (t) moveToOtherPane(t.tabId); break
         case "tabSearch": tabSearch.toggle(); break
         case "commandPalette": commandPalette.toggle(); break
         case "saveSession": saveSessionAs(); break

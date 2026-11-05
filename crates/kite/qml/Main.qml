@@ -179,6 +179,7 @@ QtObject {
         {id: "tab8", group: "Tabs", name: "Switch to tab 8", keys: ["Alt+8"]},
         {id: "tabLast", group: "Tabs", name: "Switch to the last tab", keys: ["Alt+9"]},
         {id: "muteTab", group: "Tabs", name: "Mute or unmute tab", keys: ["Ctrl+M"]},
+        {id: "tabToOtherPane", group: "Tabs", name: "Move tab to split view", keys: []},
         {id: "tabSearch", group: "Tabs", name: "Search tabs", keys: ["Ctrl+Shift+E"]},
         {id: "newWindow", group: "Windows", name: "New window", keys: ["Ctrl+N"]},
         {id: "newPrivateWindow", group: "Windows", name: "New private window", keys: ["Ctrl+Shift+N"]},
@@ -214,7 +215,7 @@ QtObject {
         {id: "bookmarksLibrary", group: "Bookmarks and history", name: "Manage bookmarks", keys: ["Ctrl+Shift+O"]},
         {id: "historyLibrary", group: "Bookmarks and history", name: "Show all history", keys: ["Ctrl+Shift+H"]},
         {id: "downloads", group: "Tools", name: "Downloads", keys: ["Ctrl+Shift+Y", "Ctrl+J"]},
-        {id: "addons", group: "Tools", name: "Add-ons", keys: ["Ctrl+Shift+A"]},
+        {id: "addons", group: "Tools", name: "Extensions", keys: ["Ctrl+Shift+A"]},
         {id: "settings", group: "Tools", name: "Settings", keys: ["Ctrl+Shift+,", "Ctrl+,"]},
     ]
     // The keys of an action: the user's, or the defaults.
@@ -990,6 +991,7 @@ QtObject {
     function showLibrary(page) { return showSingleton("library", libraryComponent, {page: page || "history"}) }
     function showDownloads() { return showSingleton("downloads", downloadsComponent) }
     function showPreferences(page) { return showSingleton("preferences", preferencesComponent, {page: page || "general"}) }
+    function showPluginSettings(plugin) { showPreferences("extensions").openPluginSettings(plugin) }
     function showAddons(page) { return showSingleton("addons", addonsComponent, {page: page || "installed"}) }
 
 }

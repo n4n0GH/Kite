@@ -87,11 +87,19 @@ RowLayout {
         padding: Kirigami.Units.smallSpacing
         // Presses on the puzzle button toggle the panel (its own click).
         closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
+        // It takes the keyboard, for Esc; the page has it back afterwards.
+        focus: true
         property var exts: []
         // Installed, whether allowed in this window or not.
         property int installed: 0
-        onClosed: extMenu.close()
+        // Plugins may have been switched elsewhere since it was last open.
+        property int pluginStates: 0
+        onClosed: {
+            extMenu.close()
+            if (root.win.currentTab) root.win.currentTab.focusPage()
+        }
         onAboutToShow: {
+            pluginStates++
             const all = JSON.parse(Extensions.list()).filter(e => !e.broken)
             installed = all.length
             exts = all.filter(e => !root.win.privateMode || e.allowPrivate)
@@ -99,6 +107,47 @@ RowLayout {
 
         contentItem: ColumnLayout {
             spacing: 0
+            // Kite's own optional features: on and off here, the rest in Settings.
+            Kirigami.Heading { level: 4; text: "Plugins"; Layout.margins: Kirigami.Units.smallSpacing }
+            Repeater {
+                model: root.win.app.plugins
+                delegate: RowLayout {
+                    id: pluginRow
+                    required property var modelData
+                    readonly property bool on: { panel.pluginStates; return root.win.app.pluginEnabled(modelData) }
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Kirigami.Units.smallSpacing
+                    Layout.rightMargin: Kirigami.Units.smallSpacing
+                    spacing: Kirigami.Units.smallSpacing
+                    Kirigami.Icon {
+                        source: pluginRow.modelData.icon
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                        Layout.preferredHeight: Layout.preferredWidth
+                    }
+                    QQC2.Label { text: pluginRow.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                    QQC2.Switch {
+                        Accessible.name: pluginRow.modelData.name
+                        checked: pluginRow.on
+                        onToggled: {
+                            root.win.app.setPluginEnabled(pluginRow.modelData, checked)
+                            panel.pluginStates++
+                        }
+                    }
+                    QQC2.ToolButton {
+                        visible: !!pluginRow.modelData.settingsPage
+                        enabled: pluginRow.on
+                        icon.name: "configure"
+                        display: QQC2.AbstractButton.IconOnly
+                        text: "Configure " + pluginRow.modelData.name
+                        onClicked: {
+                            panel.close()
+                            root.win.app.showPluginSettings(pluginRow.modelData)
+                        }
+                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
+                }
+            }
+            Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Kirigami.Units.smallSpacing }
             Kirigami.Heading { level: 4; text: "Extensions"; Layout.margins: Kirigami.Units.smallSpacing }
             QQC2.Label {
                 visible: panel.exts.length === 0

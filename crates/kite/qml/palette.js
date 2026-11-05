@@ -55,7 +55,7 @@ const TOGGLES = [
     {page: "passwords", text: "Include symbols", key: "passwords.generatorSymbols"},
     {page: "adblock", text: "Block ads and trackers", key: "adblock.enabled"},
     {page: "downloads", text: "Always ask where to save files", key: "downloads.askWhereToSave"},
-    {page: "extensions", text: "Enable extensions", key: "extensions.enabled"},
+    {page: "extensions", text: "Enable WebExtensions", key: "extensions.enabled"},
     {page: "extensions", text: "Identify as Firefox on addons.mozilla.org", key: "extensions.amoSpoofFirefox"},
 ]
 
@@ -93,12 +93,12 @@ const CHOICES = [
 const PAGE_TITLES = {
     general: "General", appearance: "Appearance", browsing: "Browsing", search: "Search Engines", privacy: "Privacy",
     passwords: "Passwords", adblock: "Content Blocking", downloads: "Downloads", sites: "Site Settings",
-    extensions: "Extensions", plugins: "Plugins", shortcuts: "Shortcuts",
+    extensions: "Plugins & Extensions", shortcuts: "Shortcuts",
 }
 
 // Icons for the shortcut actions (Main.qml's shortcutActions).
 const ACTION_ICONS = {
-    newTab: "tab-new", closeTab: "tab-close", reopenTab: "edit-undo", nextTab: "go-next", previousTab: "go-previous", muteTab: "audio-volume-muted",
+    newTab: "tab-new", closeTab: "tab-close", reopenTab: "edit-undo", nextTab: "go-next", previousTab: "go-previous", muteTab: "audio-volume-muted", tabToOtherPane: "view-split-left-right",
     saveSession: "document-save", manageSessions: "configure", tabSearch: "search", commandPalette: "search", newWindow: "window-new", newPrivateWindow: "view-private", fullScreen: "view-fullscreen", quit: "application-exit",
     focusAddress: "go-jump-locationbar", searchWeb: "search", back: "go-previous", forward: "go-next", home: "go-home", reload: "view-refresh",
     reloadBypass: "view-refresh", find: "edit-find", findNext: "go-down-search", findPrevious: "go-up-search", zoomIn: "zoom-in", zoomOut: "zoom-out",
