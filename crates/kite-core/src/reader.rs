@@ -182,6 +182,11 @@ pre { overflow-x: auto; padding: 0.8em; font-size: 0.85em; background: color-mix
 code { font-size: 0.9em; }
 table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
 th, td { border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); padding: 0.3em 0.6em; }
+/* On paper: black on white, whatever the colours on screen. */
+@media print {
+  html, html[data-theme] { --bg: #ffffff; --fg: #000000; --link: #000000; color-scheme: light; }
+  body { max-width: none; padding: 0; }
+}
 "#;
 
 // `script-src 'none'` doesn't hinder Browser.readerApplyScript: scripts run by
@@ -293,6 +298,15 @@ mod tests {
         assert!(!html.contains("<script>"), "{html}");
         assert!(html.contains("--auto-fg:#123456"));
         assert!(html.contains("--auto-bg:#ffffff"));
+    }
+
+    #[test]
+    fn prints_black_on_white_in_every_theme() {
+        let print = &STYLE[STYLE.find("@media print").expect("print styles")..];
+        assert!(print.contains("--bg: #ffffff") && print.contains("--fg: #000000"));
+        // At least as specific as the themes, and after them, so it wins.
+        assert!(print.contains("html[data-theme]"));
+        assert!(STYLE.find(r#"html[data-theme="dark"]"#).unwrap() < STYLE.find("@media print").unwrap());
     }
 
     #[test]
