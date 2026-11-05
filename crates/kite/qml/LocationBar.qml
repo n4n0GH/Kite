@@ -67,7 +67,8 @@ QQC2.TextField {
         completions = JSON.parse(Browser.complete(t, win.privateMode))
         suggestions = []
         // (What is typed in a private window stays here.)
-        if (!win.privateMode) Browser.requestSuggestions(t)
+        // (Nor an address for another program, like smb://server/share.)
+        if (!win.privateMode && !Browser.isExternalUrl(t)) Browser.requestSuggestions(t)
         popup.open()
     }
     Connections {
@@ -96,7 +97,8 @@ QQC2.TextField {
         } else {
             const url = t.startsWith("? ") ? Browser.searchUrl(win.app.setting("general.searchEngine"), t.substring(2)) : Browser.resolveInput(t)
             if (!url) return
-            if (where === "tab") win.openTab(url, {background: false})
+            if (Browser.isExternalUrl(url)) win.openExternal(url)
+            else if (where === "tab") win.openTab(url, {background: false})
             else if (tab) tab.load(url)
         }
         editing = false
@@ -316,7 +318,7 @@ QQC2.TextField {
                         source: modelData.type === "bookmark" ? "bookmarks" : modelData.type === "history" ? "view-history" : "search"
                     }
                     QQC2.Label {
-                        text: modelData.type === "go" ? (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
+                        text: modelData.type === "go" ? Browser.isExternalUrl(modelData.title) && modelData.title.includes("://") ? "Open " + modelData.title + " in another app" : (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
                             : modelData.title || modelData.url
                         elide: Text.ElideRight
                         // Takes the rest of the row unless a URL follows it (which

@@ -90,6 +90,20 @@ pub fn parse_suggestions(body: &str) -> Vec<String> {
     vec![]
 }
 
+/// Schemes the browser itself deals with, besides those it can be told to load.
+const BROWSER_SCHEMES: &[&str] = &["ws", "wss", "qrc", "filesystem", "kite-res", "cid"];
+
+/// An address for another program (`smb://nas/share`, `magnet:?…`): not one a
+/// tab can show. They go to whatever the desktop has for them, and file shares
+/// are the file manager's job.
+pub fn is_external_url(url: &str) -> bool {
+    let Some((scheme, _)) = url.split_once(':') else { return false };
+    let mut chars = scheme.chars();
+    let valid = chars.next().is_some_and(|c| c.is_ascii_alphabetic()) && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    let s = scheme.to_ascii_lowercase();
+    valid && !url.contains(char::is_whitespace) && !KNOWN_SCHEMES.contains(&s.as_str()) && !BROWSER_SCHEMES.contains(&s.as_str())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoadAction {
     Url(String),
@@ -171,6 +185,12 @@ pub fn load_action(
             return LoadAction::Url(text.to_owned());
         }
     }
+    // Another program's kind of address: never a search, which would send it
+    // (with names of machines on the network) to the search engine. "://"
+    // because "note: hello" or "localhost:8080" are not such addresses.
+    if text.contains("://") && is_external_url(text) {
+        return LoadAction::Url(text.to_owned());
+    }
     // Local paths.
     if text.starts_with('/') || text.starts_with("~/") {
         let p = if let Some(r) = text.strip_prefix("~/") {
@@ -222,6 +242,25 @@ mod tests {
         assert!(matches!(act("hello"), LoadAction::Search { .. }));
         assert!(matches!(act("3.14"), LoadAction::Search { .. }));
         assert_eq!(act("/etc/hosts"), LoadAction::Url("file:///etc/hosts".into()));
+    }
+    #[test]
+    fn addresses_for_other_programs_are_not_searches() {
+        assert_eq!(act("smb://nas/share"), LoadAction::Url("smb://nas/share".into()));
+        assert_eq!(act("sftp://user@host/x"), LoadAction::Url("sftp://user@host/x".into()));
+        assert!(is_external_url("smb://nas/share"));
+        assert!(is_external_url("SMB://nas"));
+        assert!(is_external_url("magnet:?xt=urn:btih:abc"));
+        assert!(is_external_url("steam://run/1"));
+        for own in ["https://a.b/", "http://a", "file:///x", "kite:start", "about:blank", "data:text/plain,x", "blob:x", "javascript:0", "moz-extension://a/", "view-source:https://a", "wss://a", "mailto:a@b.c", "ftp://a"] {
+            assert!(!is_external_url(own), "{own}");
+        }
+        for text in ["no scheme", "a b://c", "1abc://x", "kde.org", ""] {
+            assert!(!is_external_url(text), "{text}");
+        }
+        // Not addresses: still what they were.
+        assert_eq!(act("localhost:8080/x"), LoadAction::Url("http://localhost:8080/x".into()));
+        assert!(matches!(act("note: hello"), LoadAction::Search { .. }));
+        assert!(matches!(act("how does smb:// work"), LoadAction::Search { .. }));
     }
     #[test]
     fn suggestions() {

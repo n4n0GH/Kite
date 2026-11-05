@@ -208,6 +208,12 @@ Item {
         web.url = u
     }
 
+    // ---- addresses for other programs ----
+    // A link to smb://server/share and the like could make the file manager
+    // connect wherever the page wants, sending the user's login, so a click
+    // on one asks first. (Pages doing it without a click get nowhere.)
+    property string externalPrompt: ""
+
     // ---- reader view (kite_core::reader) ----
     // The article is extracted in a world of its own, shown at a kite:reader
     // address (one step in the tab's history: Back returns to the page).
@@ -439,6 +445,18 @@ Item {
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
+            visible: wt.externalPrompt !== ""
+            type: Kirigami.MessageType.Warning
+            icon.name: "document-open-remote"
+            text: "This page wants to open <b>" + wt.externalPrompt.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> in another app."
+            actions: [
+                Kirigami.Action { text: "Open"; icon.name: "document-open"; onTriggered: { const u = wt.externalPrompt; wt.externalPrompt = ""; wt.window.openExternal(u) } },
+                Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: wt.externalPrompt = "" }
+            ]
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
             visible: wt.addressPrompt !== null
             type: Kirigami.MessageType.Information
             icon.name: "user-identity"
@@ -553,6 +571,8 @@ Item {
                     case WebEngineView.LoadStartedStatus:
                         wt.crashed = false
                         wt.readerAvailable = false
+                        // (A link it was asked about comes through here too.)
+                        if (!Browser.isExternalUrl(u)) wt.externalPrompt = ""
                         // A wake lock prompt belongs to the page being left.
                         if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
                         wt.loginForm = false
@@ -596,6 +616,11 @@ Item {
                 // (Also "Continue anyway" on the dangerous-site warning.)
                 onNavigationRequested: request => {
                     const u = request.url.toString()
+                    if (Browser.isExternalUrl(u)) {
+                        request.reject()
+                        if (request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation) wt.externalPrompt = u
+                        return
+                    }
                     const dangerous = u.startsWith("kite:dangerous-allow?")
                     if (!u.startsWith("kite:https-allow?") && !dangerous) return
                     request.reject()
@@ -609,6 +634,11 @@ Item {
                 }
 
                 onNewWindowRequested: request => {
+                    // (No tab for a link to another program: as above.)
+                    if (Browser.isExternalUrl(request.requestedUrl.toString())) {
+                        if (request.userInitiated) wt.externalPrompt = request.requestedUrl.toString()
+                        return
+                    }
                     const dest = request.destination
                     const popup = dest === WebEngineNewWindowRequest.InNewDialog || dest === WebEngineNewWindowRequest.InNewWindow
                     if (popup && !wt.app.setting("tabs.openPopupsInTabs")) {

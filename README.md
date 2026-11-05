@@ -235,4 +235,6 @@ own address; a restored session reopens the page itself.
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
 * Falkon features not yet ported: named session manager,
-  cookie/certificate managers, mouse gestures, KIO integration.
+  cookie/certificate managers, mouse gestures. KIO integration is left out on purpose: addresses
+  like `smb://` and `sftp://` open in the app the desktop has for them (the file manager), which
+  does more with them. Typed ones open directly; a page's links ask first.

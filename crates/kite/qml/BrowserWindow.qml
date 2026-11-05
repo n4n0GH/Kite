@@ -742,6 +742,12 @@ QQC2.ApplicationWindow {
         return info
     }
 
+    // An address for another program, chosen by the user.
+    function openExternal(url) {
+        const ok = Qt.openUrlExternally(url)
+        toast(ok ? "Opening " + url + " in another app" : "No app here can open " + url, ok ? "document-open" : "dialog-error")
+    }
+
     function toast(message, icon) { toastLabel.text = message; toastIcon.source = icon; toastBox.opacity = 1; toastTimer.restart() }
     function downloadStarted() { downloadsActive++; if (downloadsButton) downloadsButton.pulse() }
 

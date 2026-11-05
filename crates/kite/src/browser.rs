@@ -298,6 +298,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "scrollbarScript"]
         fn scrollbar_script(self: &Browser) -> QString;
+        /// An address for another program (search::is_external_url).
+        #[qinvokable]
+        #[cxx_name = "isExternalUrl"]
+        fn is_external_url(self: &Browser, url: &QString) -> bool;
         /// Forms in frames (webext::scripts::frame_forms_js): the script, and the
         /// random secret starting its console messages, for this run.
         #[qinvokable]
@@ -1036,6 +1040,10 @@ impl qobject::Browser {
         // the user's own flags): the setting may have changed since.
         let on = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS").is_ok_and(|f| f.contains("FluentOverlayScrollbar"));
         q(if on { include_str!("js/scrollbars.js") } else { "" })
+    }
+
+    fn is_external_url(&self, url: &QString) -> bool {
+        search::is_external_url(&url.to_string())
     }
 
     fn frame_forms_script(&self) -> QString {

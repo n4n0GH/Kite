@@ -151,6 +151,13 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                     .and_then(|u| u.query_pairs().find(|(k, _)| k == "q").map(|(_, v)| v.into_owned()))
                     .unwrap_or_default();
                 let target = crate::browser::resolve_input(&q);
+                // Another program's address: a link to click (anything can link
+                // to this page, and a click on it still asks before opening).
+                if kite_core::search::is_external_url(&target) {
+                    let shown = target.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
+                    let html = format!("<!DOCTYPE html><meta charset=utf-8><title>Open in Another App</title><p style=\"font:16px sans-serif;margin:3em\"><a href=\"{shown}\">Open {shown} in another app</a></p>");
+                    return (200, "text/html".into(), html.into_bytes());
+                }
                 let html = format!("<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url={}\">", target.replace('"', "%22"));
                 (200, "text/html".into(), html.into_bytes())
             }
