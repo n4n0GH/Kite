@@ -254,7 +254,7 @@ Rectangle {
             display: QQC2.AbstractButton.IconOnly
             text: "List and Search Tabs"
             Layout.alignment: Qt.AlignCenter
-            onClicked: stripRoot.browser.toggleTabSearch(tabListButton)
+            onClicked: stripRoot.browser.toggleTabSearch()
             QQC2.ToolTip.text: text + " (" + stripRoot.browser.app.shortcutKeys("tabSearch").map(k => Browser.keySequenceDisplay(k)).join(", ") + ")"
             QQC2.ToolTip.visible: hovered
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
