@@ -36,7 +36,7 @@ QQC2.Menu {
         info = {contexts: contexts, pageUrl: tab.url, frameUrl: tab.url, linkUrl: linkUrl || undefined, linkText: request.linkText || undefined,
                 srcUrl: mediaUrl || undefined, selectionText: selection || undefined, editable: editable,
                 mediaType: mediaType === ContextMenuRequest.MediaTypeImage ? "image" : mediaType === ContextMenuRequest.MediaTypeVideo ? "video" : mediaType === ContextMenuRequest.MediaTypeAudio ? "audio" : undefined}
-        extItems = tab.isExtensionPage || tab.window.privateMode ? [] : JSON.parse(Extensions.menus(JSON.stringify(info)))
+        extItems = tab.isExtensionPage ? [] : JSON.parse(Extensions.menus(JSON.stringify(Object.assign({incognito: tab.window.privateMode}, info))))
         popup()
     }
 
@@ -62,7 +62,7 @@ QQC2.Menu {
         after: openLinkInTab
         onChosen: c => menu.tab.window.openTab(menu.linkUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: c})
     }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl]}) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: menu.tab.window.privateMode}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark Link"; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save Link As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadLinkToDisk) }

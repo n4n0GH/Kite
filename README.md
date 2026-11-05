@@ -175,6 +175,16 @@ saved or update an existing entry; never from private windows.
   to extension pages; nothing is saved from private windows.
 * **Import/export:** Firefox/Chrome/Bitwarden CSV and Falkon XML; exports are 0600.
 
+## Private windows
+
+Their pages stay out of history, the saved session, closed tabs, the favicon cache and site
+settings (zoom applies to the tab only). What is typed in the address bar isn't sent for search
+suggestions. Downloads are listed until the last private window closes, never saved to the list
+(the files themselves stay). Their start page and address bar show only the tiles and bookmarks
+you added, unless Settings → Privacy says to show pages from the history there too. Only extensions allowed there run or see anything (below). Things
+done on purpose are kept: bookmarks, site settings and
+content blocker exceptions.
+
 ## Reader view
 
 The page's article is extracted with Mozilla's
@@ -199,7 +209,10 @@ own address; a restored session reopens the page itself.
   containers (`contextualIdentities`) API, `find`, `dns`, `tabGroups` and themes are not
   implemented. Tabs report their container (`cookieStoreId`), but extensions can't list or
   manage containers, and the `cookies` API covers the main container only.
-* Extensions are disabled in private windows (Firefox default); no per-extension toggle yet.
+* Extensions are off in private windows by default (like Firefox): they don't run there and can't
+  see their tabs or requests, and the built-in content blocker stands in for uBlock Origin. Each
+  can be allowed in its details in the add-ons manager. Taking that back leaves its content
+  scripts in open private pages until they are reloaded, cut off from the extension.
 * Password manager and form autofill: fields inside iframes are not detected; no card autofill.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the

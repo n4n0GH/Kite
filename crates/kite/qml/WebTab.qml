@@ -252,12 +252,12 @@ Item {
     }
     function setZoom(z) {
         web.zoomFactor = z
-        const host = Browser.hostOf(url)
+        // (Private windows don't store it: it stays with this tab and page.)
+        const host = window.privateMode ? "" : Browser.hostOf(url)
         if (host) {
             Browser.setSiteSetting(host, "zoom", Math.round(z * 100))
             // Other tabs of the site follow; the address bar updates.
-            // (Private windows don't store zoom: nothing changed.)
-            if (!window.privateMode) app.siteSettingsEdited(host)
+            app.siteSettingsEdited(host)
         }
     }
 
@@ -408,7 +408,7 @@ Item {
                     if (!loading) {
                         // same-document navigation (pushState / fragment)
                         wt.navEvent(u.split("#")[0] === wt._lastCommitted.split("#")[0] ? "onReferenceFragmentUpdated" : "onHistoryStateUpdated", {transitionType: "link", transitionQualifiers: []})
-                        Browser.recordVisit(u, title)
+                        Browser.recordVisit(u, title, wt.window.privateMode)
                     }
                     wt.sendUpdate({url: wt.sourceOf(u)})
                     if (!loading) readerProbe.restart()
@@ -417,7 +417,7 @@ Item {
                 }
                 onTitleChanged: {
                     wt.sendUpdate({title: title})
-                    if (!loading) Browser.updateTitle(url.toString(), title)
+                    if (!loading) Browser.updateTitle(url.toString(), title, wt.window.privateMode)
                 }
                 onIconChanged: {
                     const s = icon.toString()
@@ -449,7 +449,7 @@ Item {
                     case WebEngineView.LoadSucceededStatus:
                         wt.navEvent("onDOMContentLoaded", {url: u})
                         wt.navEvent("onCompleted", {url: u})
-                        Browser.recordVisit(u, title)
+                        Browser.recordVisit(u, title, wt.window.privateMode)
                         wt.sendUpdate({status: "complete"})
                         wt.focusPageAfterLoad()
                         readerProbe.restart()
@@ -644,6 +644,7 @@ Item {
     ExtBridge {
         id: bridge
         viewKey: "tab:" + wt.tabId; tabId: wt.tabId; windowId: wt.window.windowId; viewKind: "tab"
+        inPrivate: wt.window.privateMode
         onPasswordFormSubmitted: json => {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r

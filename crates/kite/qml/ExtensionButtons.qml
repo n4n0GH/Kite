@@ -88,16 +88,25 @@ RowLayout {
         // Presses on the puzzle button toggle the panel (its own click).
         closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
         property var exts: []
+        // Installed, whether allowed in this window or not.
+        property int installed: 0
         onClosed: extMenu.close()
-        onAboutToShow: exts = JSON.parse(Extensions.list()).filter(e => !e.broken)
+        onAboutToShow: {
+            const all = JSON.parse(Extensions.list()).filter(e => !e.broken)
+            installed = all.length
+            exts = all.filter(e => !root.win.privateMode || e.allowPrivate)
+        }
 
         contentItem: ColumnLayout {
             spacing: 0
             Kirigami.Heading { level: 4; text: "Extensions"; Layout.margins: Kirigami.Units.smallSpacing }
             QQC2.Label {
                 visible: panel.exts.length === 0
-                text: "No extensions installed"
+                text: panel.installed === 0 ? "No extensions installed"
+                    : "No extensions have permission to run in this private window. To allow one, open Manage Extensions and turn on Private windows in its details."
+                wrapMode: Text.Wrap
                 opacity: 0.7
+                Layout.fillWidth: true
                 Layout.margins: Kirigami.Units.smallSpacing
             }
             ListView {

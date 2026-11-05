@@ -245,7 +245,10 @@ QtObject {
     function configureProfile(p) {
         if (defaultUserAgent === "") defaultUserAgent = p.httpUserAgent
         applyProfileSettings(p)
-        p.downloadRequested.connect(onDownloadRequested)
+        p.downloadRequested.connect(d => {
+            if (p === privateProfile) _privateDownloads.push(d)
+            onDownloadRequested(d)
+        })
         p.presentNotification.connect(onWebNotification)
     }
 
@@ -308,6 +311,7 @@ QtObject {
         if (last) saveSession()
         windows = windows.filter(x => x !== w)
         Extensions.browserEvent("windowRemoved", JSON.stringify({windowId: w.windowId}))
+        if (w.privateMode && !windows.some(x => x.privateMode)) Browser.forgetPrivateDownloads()
         if (!quitting && !last && !w.privateMode) Browser.pushClosedWindow(JSON.stringify(w.saveState()))
         if (activeWindow === w) activeWindow = windows.length ? windows[windows.length - 1] : null
         if (last) quit(true)
@@ -339,9 +343,13 @@ QtObject {
         return usesFile("home") ? startPageUrl("home") : setting("general.homepage")
     }
     function newTabUrl() {
-        const o = Extensions.newTabOverride()
-        if (o !== "") return o
-        return usesFile("newtab") ? startPageUrl("newtab") : setting("general.newTabPage")
+        const o = Extensions.newTabOverride(false)
+        return o !== "" ? o : usesFile("newtab") ? startPageUrl("newtab") : setting("general.newTabPage")
+    }
+    // With only an extension allowed in private windows taking it over.
+    function privateNewTabUrl() {
+        const o = Extensions.newTabOverride(true)
+        return o !== "" ? o : usesFile("newtab") ? startPageUrl("newtab") : setting("general.newTabPage")
     }
     // Whether `url` is a custom start page in use (tabs report file: URLs
     // decoded).
@@ -373,19 +381,28 @@ QtObject {
         }
     }
 
+    // For extension requests. Private windows exist only for extensions
+    // allowed there (set by handleExtensionRequest).
+    property bool _extSeesPrivate: false
+    function _extWindows() { return _extSeesPrivate ? windows : windows.filter(w => !w.privateMode) }
     function findTab(tabId) {
-        for (const w of windows) { const t = w.tabById(tabId); if (t) return t }
+        for (const w of _extWindows()) { const t = w.tabById(tabId); if (t) return t }
         return null
     }
     function findWindow(windowId) {
-        return windows.find(w => w.windowId === windowId) || null
+        return _extWindows().find(w => w.windowId === windowId) || null
     }
     function currentWindowFor(windowId) {
-        return (windowId !== undefined && windowId >= 0 ? findWindow(windowId) : null) || activeWindow || windows[0]
+        const asked = windowId !== undefined && windowId >= 0 ? findWindow(windowId) : null
+        if (asked) return asked
+        const open = _extWindows()
+        if (activeWindow && open.includes(activeWindow)) return activeWindow
+        return open.length ? open[open.length - 1] : newWindow()
     }
 
-    function openUrl(url, where) {
-        const w = activeWindow || newWindow({empty: true})
+    // (`win`: the window to use, else the active one.)
+    function openUrl(url, where, win) {
+        const w = win || activeWindow || newWindow({empty: true})
         if (where === "window") return newWindow({urls: [url]})
         if (where === "current" && w.currentTab) { w.currentTab.load(url); return w.currentTab }
         return w.openTab(url, {background: where === "background"})
@@ -459,8 +476,8 @@ QtObject {
     function installUserScripts() {
         const sites = siteScripts()
         for (const p of allProfiles()) {
-            // Like Firefox, extensions don't run in private windows by default.
-            const wanted = JSON.parse(Extensions.userScripts(p !== privateProfile))
+            // Like Firefox, extensions don't run in private windows unless allowed.
+            const wanted = JSON.parse(Extensions.userScripts(p === privateProfile))
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Overlay scrollbars also for pages styling their own.
@@ -567,6 +584,7 @@ QtObject {
     // Executes extension API calls that need the GUI. Return a value to reply
     // immediately, or `undefined` and call Extensions.uiReply later.
     function handleExtensionRequest(view, ctx, callId, ext, method, a) {
+        _extSeesPrivate = Extensions.runsInPrivate(ext)
         const reply = (ok, v) => Extensions.uiReply(view, ctx, callId, ok, JSON.stringify(v === undefined ? null : v))
         switch (method) {
         case "tabs.create": {
@@ -624,6 +642,7 @@ QtObject {
         }
         case "windows.create": {
             const d = a[0] || {}
+            if (d.incognito && !_extSeesPrivate) throw new Error("Extension does not have permission for incognito mode")
             const urls = d.url ? (Array.isArray(d.url) ? d.url : [d.url]) : []
             const w = newWindow({urls: urls, privateMode: d.incognito, empty: urls.length === 0 && d.tabId !== undefined})
             if (d.tabId !== undefined) { const t = findTab(d.tabId); if (t) w.openTab(t.url, {}) ; if (t) t.close() }
@@ -649,17 +668,16 @@ QtObject {
         }
         case "windows.remove": { const w = findWindow(a[0]); if (w) w.close(); return null }
         case "openOptions": {
-            if (a.inTab) openUrl(a.url, "tab")
+            if (a.inTab) openUrl(a.url, "tab", currentWindowFor())
             else optionsDialog.open(a.url, a.name)
             return null
         }
         case "action.openPopup": {
-            const w = activeWindow
-            if (w) w.openExtensionPopup(ext)
+            currentWindowFor().openExtensionPopup(ext)
             return null
         }
         case "sidebar.open": case "sidebar.toggle": case "sidebar.close": case "sidebar.isOpen": {
-            const w = activeWindow; if (!w) return false
+            const w = currentWindowFor()
             if (method === "sidebar.isOpen") return w.sidebarExtension === ext
             if (method === "sidebar.close" || (method === "sidebar.toggle" && w.sidebarExtension === ext)) w.showSidebar("")
             else w.showSidebar("ext:" + ext)
@@ -694,13 +712,13 @@ QtObject {
         case "search.search": {
             const url = Browser.searchUrl(a.engine || setting("general.searchEngine"), a.query || a.text || "")
             const where = a.disposition === "NEW_WINDOW" ? "window" : a.disposition === "CURRENT_TAB" ? "current" : "tab"
-            if (a.tabId !== undefined) tabOrThrow(a.tabId).load(url); else openUrl(url, where)
+            if (a.tabId !== undefined) tabOrThrow(a.tabId).load(url); else openUrl(url, where, currentWindowFor())
             return null
         }
         case "sessions.restore": {
             const t = Browser.popClosedTab(0)
             const tab = JSON.parse(t)
-            if (tab && tab.url) return activeWindow.restoreTab(tab).extInfo()
+            if (tab && tab.url) return currentWindowFor().restoreTab(tab).extInfo()
             return null
         }
         case "clipboard.setImageData": return null
@@ -740,6 +758,8 @@ QtObject {
     property var activeDownloads: ({})
     property var pendingDownloadNames: ({})
 
+    // Downloads from private windows, until startDownload takes them.
+    property var _privateDownloads: []
     function onDownloadRequested(download) {
         const url = download.url.toString()
         // Firefox add-ons: install instead of saving.
@@ -769,7 +789,9 @@ QtObject {
     }
 
     function startDownload(download) {
-        const id = Browser.downloadUpdate(JSON.stringify({id: 0, url: download.url.toString(),
+        const inPrivate = _privateDownloads.includes(download)
+        _privateDownloads = _privateDownloads.filter(d => d !== download)
+        const id = Browser.downloadUpdate(JSON.stringify({id: 0, private: inPrivate, url: download.url.toString(),
             path: download.downloadDirectory + "/" + download.downloadFileName, mime: download.mimeType,
             total: download.totalBytes, received: 0, state: "in_progress"}))
         activeDownloads[id] = download

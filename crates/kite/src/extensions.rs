@@ -57,9 +57,9 @@ pub mod qobject {
 
         // ---- UI integration ----
         #[qinvokable]
-        fn toolbar(self: &Extensions, tab_id: i32) -> QString;
+        fn toolbar(self: &Extensions, tab_id: i32, in_private: bool) -> QString;
         #[qinvokable]
-        fn sidebars(self: &Extensions) -> QString;
+        fn sidebars(self: &Extensions, in_private: bool) -> QString;
         #[qinvokable]
         fn menus(self: &Extensions, info: &QString) -> QString;
         #[qinvokable]
@@ -69,24 +69,24 @@ pub mod qobject {
         #[cxx_name = "actionClicked"]
         fn action_clicked(self: Pin<&mut Extensions>, ext: &QString, kind: &QString, tab_id: i32);
         #[qinvokable]
-        fn commands(self: &Extensions) -> QString;
+        fn commands(self: &Extensions, in_private: bool) -> QString;
         #[qinvokable]
         fn command(self: Pin<&mut Extensions>, ext: &QString, name: &QString, tab_id: i32);
         #[qinvokable]
         #[cxx_name = "userScripts"]
-        fn user_scripts(self: &Extensions, include_extensions: bool) -> QString;
+        fn user_scripts(self: &Extensions, in_private: bool) -> QString;
         #[qinvokable]
         #[cxx_name = "backgroundPages"]
         fn background_pages(self: &Extensions) -> QString;
         #[qinvokable]
         #[cxx_name = "newTabOverride"]
-        fn new_tab_override(self: &Extensions) -> QString;
+        fn new_tab_override(self: &Extensions, in_private: bool) -> QString;
         #[qinvokable]
         #[cxx_name = "extensionNameForUrl"]
         fn extension_name_for_url(self: &Extensions, url: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "omniboxKeywords"]
-        fn omnibox_keywords(self: &Extensions) -> QString;
+        fn omnibox_keywords(self: &Extensions, in_private: bool) -> QString;
 
         /// False while extensions that block requests are still starting;
         /// tabs hold their first load until then.
@@ -97,6 +97,18 @@ pub mod qobject {
         // ---- management ----
         #[qinvokable]
         fn list(self: &Extensions) -> QString;
+        /// Let the extension run in private windows (saved with it), or not.
+        #[qinvokable]
+        #[cxx_name = "setAllowPrivate"]
+        fn set_allow_private(self: Pin<&mut Extensions>, id: &QString, allow: bool);
+        /// Whether the extension runs in private windows.
+        #[qinvokable]
+        #[cxx_name = "runsInPrivate"]
+        fn runs_in_private(self: &Extensions, id: &QString) -> bool;
+        /// Whether the extension owning a moz-extension: address does.
+        #[qinvokable]
+        #[cxx_name = "urlRunsInPrivate"]
+        fn url_runs_in_private(self: &Extensions, url: &QString) -> bool;
         #[qinvokable]
         #[cxx_name = "setEnabled"]
         fn set_enabled(self: Pin<&mut Extensions>, id: &QString, enabled: bool);
@@ -338,12 +350,12 @@ impl qobject::Extensions {
     }
 
     // ---- UI integration -------------------------------------------------------
-    fn toolbar(&self, tab_id: i32) -> QString {
-        let v = app().runtime().toolbar_json(tab_id as i64);
+    fn toolbar(&self, tab_id: i32, in_private: bool) -> QString {
+        let v = app().runtime().toolbar_json(tab_id as i64, in_private);
         js(&qml_icons(v))
     }
-    fn sidebars(&self) -> QString {
-        let v = app().runtime().sidebars_json();
+    fn sidebars(&self, in_private: bool) -> QString {
+        let v = app().runtime().sidebars_json(in_private);
         js(&qml_icons(v))
     }
     fn menus(&self, info: &QString) -> QString {
@@ -358,8 +370,8 @@ impl qobject::Extensions {
         let fx = app().runtime().action_clicked(&ext.to_string(), &kind.to_string(), tab_id as i64);
         self.apply(fx);
     }
-    fn commands(&self) -> QString {
-        js(&app().runtime().commands_json())
+    fn commands(&self, in_private: bool) -> QString {
+        js(&app().runtime().commands_json(in_private))
     }
     fn command(self: Pin<&mut Self>, ext: &QString, name: &QString, tab_id: i32) {
         let fx = app().runtime().command(&ext.to_string(), &name.to_string(), tab_id as i64);
@@ -368,15 +380,15 @@ impl qobject::Extensions {
 
     /// Profile-wide user scripts: the bridge plus every enabled extension's
     /// content scripts. QML installs these into `profile.userScripts`.
-    fn user_scripts(&self, include_extensions: bool) -> QString {
+    /// (`in_private`: for private windows, with only the extensions allowed there.)
+    fn user_scripts(&self, in_private: bool) -> QString {
         let a = app();
         let rt = a.runtime();
         let qwc = crate::ffi::qwebchannel_js();
         let mut out = vec![];
         let mut tokens = vec![];
-        let ext_on = include_extensions && a.shared.settings().get_bool("extensions.enabled");
-        if ext_on {
-            for e in rt.registry.enabled() {
+        if a.shared.settings().get_bool("extensions.enabled") {
+            for e in rt.registry.enabled().filter(|e| !in_private || e.runs_in_private()) {
                 let Some(token) = rt.token_of(&e.info.id) else { continue };
                 tokens.push(token.to_owned());
                 for s in scripts::content_scripts(e, token, rt.world_of(&e.info.id), &rt.dynamic_scripts(&e.info.id)) {
@@ -406,9 +418,9 @@ impl qobject::Extensions {
         app().runtime().network_ready()
     }
 
-    fn new_tab_override(&self) -> QString {
+    fn new_tab_override(&self, in_private: bool) -> QString {
         let rt = app().runtime();
-        let url = rt.registry.enabled().find_map(|e| e.manifest.newtab_override.as_ref().map(|p| e.url(p)));
+        let url = rt.registry.enabled().filter(|e| !in_private || e.runs_in_private()).find_map(|e| e.manifest.newtab_override.as_ref().map(|p| e.url(p)));
         q(url.unwrap_or_default())
     }
 
@@ -422,9 +434,9 @@ impl qobject::Extensions {
         q(rt.registry.by_uuid(u.host_str().unwrap_or("")).map(|e| e.manifest.name.clone()).unwrap_or_default())
     }
 
-    fn omnibox_keywords(&self) -> QString {
+    fn omnibox_keywords(&self, in_private: bool) -> QString {
         let rt = app().runtime();
-        js(&Value::Array(rt.registry.enabled().filter_map(|e| e.manifest.omnibox_keyword.as_ref().map(|k| json!({"ext": e.info.id, "keyword": k, "name": e.manifest.name}))).collect()))
+        js(&Value::Array(rt.registry.enabled().filter(|e| !in_private || e.runs_in_private()).filter_map(|e| e.manifest.omnibox_keyword.as_ref().map(|k| json!({"ext": e.info.id, "keyword": k, "name": e.manifest.name}))).collect()))
     }
 
     // ---- management -----------------------------------------------------------
@@ -438,7 +450,7 @@ impl qobject::Extensions {
                 let m = &e.manifest;
                 json!({
                     "id": e.info.id, "name": m.name, "version": m.version, "description": m.description, "author": m.author,
-                    "homepage": m.homepage_url, "enabled": e.info.enabled, "source": e.info.source, "amoSlug": e.info.amo_slug,
+                    "homepage": m.homepage_url, "enabled": e.info.enabled, "allowPrivate": e.runs_in_private(), "privateNotAllowed": e.private_not_allowed(), "source": e.info.source, "amoSlug": e.info.amo_slug,
                     "icon": e.icon_url(64), "optionsUrl": m.options_page.as_ref().map(|p| e.url(p)),
                     "optionsInTab": m.options_open_in_tab,
                     "permissions": m.permissions, "hostPermissions": e.host_patterns(), "warnings": m.permission_warnings(),
@@ -454,6 +466,23 @@ impl qobject::Extensions {
         out.sort_by_key(|v| v["name"].as_str().unwrap_or("").to_lowercase());
         drop(rt);
         js(&qml_icons(Value::Array(out)))
+    }
+
+    fn set_allow_private(self: Pin<&mut Self>, id: &QString, allow: bool) {
+        if app().runtime().registry.set_allow_private(&id.to_string(), allow).is_err() {
+            return;
+        }
+        // Private windows' content scripts and toolbars change.
+        self.apply(vec![Effect::Changed("extensions".into()), Effect::Changed("scripts".into()), Effect::Changed("actions".into())]);
+    }
+
+    fn runs_in_private(&self, id: &QString) -> bool {
+        app().runtime().runs_in_private(&id.to_string())
+    }
+
+    fn url_runs_in_private(&self, url: &QString) -> bool {
+        let Ok(u) = url::Url::parse(&url.to_string()) else { return false };
+        app().runtime().registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|e| e.info.enabled && e.runs_in_private())
     }
 
     fn set_enabled(self: Pin<&mut Self>, id: &QString, enabled: bool) {
@@ -739,7 +768,7 @@ fn native_download(d: &Value) -> Result<Value, String> {
     let id = {
         let mut dl = a.shared.downloads();
         let id = dl.next_id();
-        dl.upsert(kite_core::downloads::DownloadRecord { id, url: url.clone(), path: path.to_string_lossy().into_owned(), mime: String::new(), total: 0, received: 0, state: "in_progress".into(), started: kite_core::util::now_ms(), finished: 0 });
+        dl.upsert(kite_core::downloads::DownloadRecord { private: false, id, url: url.clone(), path: path.to_string_lossy().into_owned(), mime: String::new(), total: 0, received: 0, state: "in_progress".into(), started: kite_core::util::now_ms(), finished: 0 });
         id
     };
     std::thread::spawn(move || {

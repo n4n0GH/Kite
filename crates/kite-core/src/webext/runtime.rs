@@ -156,9 +156,20 @@ pub struct Runtime {
     ctxs: HashMap<String, Context>,
     /// `_.listen` calls that came before the context registered.
     early_listens: HashMap<String, std::collections::HashSet<String>>,
+    /// The regular windows and their tabs. Private ones are kept apart, so
+    /// that nothing reaches them by accident: only code working for an
+    /// extension allowed in private windows sees them here too
+    /// (`with_private_view`, and `browser_event` for their own events).
     tabs: BTreeMap<i64, Value>,
     windows: BTreeMap<i64, Value>,
     focused_window: i64,
+    private_tabs: BTreeMap<i64, Value>,
+    private_windows: BTreeMap<i64, Value>,
+    private_focused_window: i64,
+    /// The focused window is a private one.
+    private_has_focus: bool,
+    /// Handling an event of a private window: only allowed extensions hear it.
+    private_event: bool,
     msgs: HashMap<u64, PendingMsg>,
     next_msg: u64,
     ports: HashMap<String, Port>,
@@ -241,6 +252,11 @@ impl Runtime {
             tabs: BTreeMap::new(),
             windows: BTreeMap::new(),
             focused_window: -1,
+            private_tabs: BTreeMap::new(),
+            private_windows: BTreeMap::new(),
+            private_focused_window: -1,
+            private_has_focus: false,
+            private_event: false,
             msgs: HashMap::new(),
             next_msg: 1,
             ports: HashMap::new(),
@@ -375,6 +391,43 @@ impl Runtime {
 
     /// Handle an API call. `token` authenticates the extension.
     pub fn call(&mut self, origin: &Origin, token: &str, ctx: &str, method: &str, args: Value, call_id: i64) -> Vec<Effect> {
+        let ext = self.ext_for_token(token).unwrap_or_default().to_owned();
+        self.with_private_view(&ext, |rt| rt.call_inner(origin, token, ctx, method, args, call_id))
+    }
+
+    /// Whether the extension runs in private windows.
+    pub fn runs_in_private(&self, ext: &str) -> bool {
+        self.registry.get(ext).is_some_and(|e| e.runs_in_private())
+    }
+
+    /// Run `f` for an extension: if it is allowed in private windows, it finds
+    /// their windows and tabs among the others.
+    fn with_private_view<R>(&mut self, ext: &str, f: impl FnOnce(&mut Self) -> R) -> R {
+        if !self.runs_in_private(ext) {
+            return f(self);
+        }
+        let regular_focus = self.focused_window;
+        if self.private_has_focus {
+            self.focused_window = self.private_focused_window;
+        }
+        self.tabs.append(&mut self.private_tabs);
+        self.windows.append(&mut self.private_windows);
+        let out = f(self);
+        // (Whether a tab or window is private never changes.)
+        let is_private = |v: &Value| v["incognito"] == true;
+        let (private_tabs, tabs) = std::mem::take(&mut self.tabs).into_iter().partition(|(_, t)| is_private(t));
+        let (private_windows, windows) = std::mem::take(&mut self.windows).into_iter().partition(|(_, w)| is_private(w));
+        (self.tabs, self.private_tabs, self.windows, self.private_windows) = (tabs, private_tabs, windows, private_windows);
+        self.focused_window = regular_focus;
+        out
+    }
+
+    /// `tab_id` is private and the extension isn't allowed there.
+    fn private_tab_hidden_from(&self, ext: &str, tab_id: i64) -> bool {
+        self.private_tabs.contains_key(&tab_id) && !self.runs_in_private(ext)
+    }
+
+    fn call_inner(&mut self, origin: &Origin, token: &str, ctx: &str, method: &str, args: Value, call_id: i64) -> Vec<Effect> {
         let Some(ext_id) = self.tokens.get(token).cloned() else {
             return vec![Effect::Reply { view: origin.view.clone(), ctx: ctx.into(), call_id, result: Err("invalid extension token".into()) }];
         };
@@ -479,6 +532,9 @@ impl Runtime {
     fn fire_all(&self, name: &str, args_for: impl Fn(&Extension) -> Option<Value>) -> Vec<Effect> {
         let mut fx = vec![];
         for e in self.registry.enabled() {
+            if self.private_event && !e.runs_in_private() {
+                continue;
+            }
             if let Some(args) = args_for(e) {
                 fx.extend(self.fire(&e.info.id, name, args, false));
             }
@@ -534,16 +590,23 @@ impl Runtime {
     /// interceptor does not tell us), by matching the first-party URL.
     /// (tab, window) showing a page of `origin` (e.g. "https://kde.org"),
     /// preferring the active tab, then the most recently used one.
-    pub fn tab_for_origin(&self, origin: &str) -> (i64, i64) {
-        let id = self.tab_for_first_party(origin);
-        let window = self.tabs.get(&id).and_then(|t| t["windowId"].as_i64()).unwrap_or(-1);
+    /// (`in_private`: for an extension allowed there, which may be in either.)
+    pub fn tab_for_origin(&self, origin: &str, in_private: bool) -> (i64, i64) {
+        let mut id = self.tab_for_first_party(origin, false);
+        if id < 0 && in_private {
+            id = self.tab_for_first_party(origin, true);
+        }
+        let window = self.tabs.get(&id).or_else(|| if in_private { self.private_tabs.get(&id) } else { None }).and_then(|t| t["windowId"].as_i64()).unwrap_or(-1);
         (id, window)
     }
 
-    pub fn tab_for_first_party(&self, first_party: &str) -> i64 {
+    /// (`in_private`: the request is from a private window. It only belongs
+    /// among those tabs, even if a regular tab shows the same site.)
+    pub fn tab_for_first_party(&self, first_party: &str, in_private: bool) -> i64 {
         let origin = |u: &str| url::Url::parse(u).map(|u| u.origin().ascii_serialization()).unwrap_or_default();
         let fp = origin(first_party);
-        self.tabs
+        let tabs = if in_private { &self.private_tabs } else { &self.tabs };
+        tabs
             .values()
             .filter(|t| origin(t["url"].as_str().unwrap_or("")) == fp)
             .max_by_key(|t| (t["active"] == true, t["lastAccessed"].as_i64().unwrap_or(0)))
@@ -582,7 +645,7 @@ impl Runtime {
                         "windowType" => v == "normal",
                         "url" => url_set.as_ref().map(|s| s.matches(t["url"].as_str().unwrap_or(""))).unwrap_or(true),
                         "title" => title_re.as_ref().map(|r| r.is_match(t["title"].as_str().unwrap_or(""))).unwrap_or(true),
-                        "incognito" => !v.as_bool().unwrap_or(false),
+                        "incognito" => t["incognito"].as_bool().unwrap_or(false) == v.as_bool().unwrap_or(false),
                         _ => true,
                     };
                     if !ok {
@@ -614,6 +677,31 @@ impl Runtime {
     /// * `historyVisited` {entry}, `bookmarksChanged` {...}, `downloadCreated`/`downloadChanged`
     /// * `cookieChanged` {cookie, removed, cause}
     pub fn browser_event(&mut self, name: &str, d: &Value) -> Vec<Effect> {
+        let private = d["tab"]["incognito"] == true
+            || d["window"]["incognito"] == true
+            || d["tabId"].as_i64().is_some_and(|t| self.private_tabs.contains_key(&t))
+            || d["windowId"].as_i64().is_some_and(|w| self.private_windows.contains_key(&w));
+        if name == "windowFocused" {
+            self.private_has_focus = private;
+        }
+        if !private {
+            return self.browser_event_inner(name, d);
+        }
+        // The private windows' turn, with the same code as for the others.
+        let swap = |rt: &mut Self| {
+            std::mem::swap(&mut rt.tabs, &mut rt.private_tabs);
+            std::mem::swap(&mut rt.windows, &mut rt.private_windows);
+            std::mem::swap(&mut rt.focused_window, &mut rt.private_focused_window);
+        };
+        swap(self);
+        self.private_event = true;
+        let fx = self.browser_event_inner(name, d);
+        self.private_event = false;
+        swap(self);
+        fx
+    }
+
+    fn browser_event_inner(&mut self, name: &str, d: &Value) -> Vec<Effect> {
         let mut fx = vec![];
         match name {
             "tabCreated" => {
@@ -967,7 +1055,7 @@ impl Runtime {
                 .or_else(|| super::manifest::Manifest::icon_for(&ext.manifest.icons, 32))
                 .map(|p| ext.url(&p)),
             enabled: Some(true),
-            shown: Some(ns != "pageAction" || man.is_some_and(|m| !m.show_matches.is_empty() && tab.and_then(|t| self.tabs.get(&t)).is_some_and(|t| MatchSet::parse(m.show_matches.iter().map(String::as_str)).matches(t["url"].as_str().unwrap_or(""))))),
+            shown: Some(ns != "pageAction" || man.is_some_and(|m| !m.show_matches.is_empty() && tab.and_then(|t| self.tabs.get(&t).or_else(|| self.private_tabs.get(&t))).is_some_and(|t| MatchSet::parse(m.show_matches.iter().map(String::as_str)).matches(t["url"].as_str().unwrap_or(""))))),
         };
         let map = match ns {
             "pageAction" => &self.page_actions,
@@ -980,10 +1068,12 @@ impl Runtime {
     }
 
     /// Toolbar buttons for the active tab, for the GUI.
-    pub fn toolbar_json(&self, tab: i64) -> Value {
+    /// (`in_private`, here and below: for a private window, so only what
+    /// extensions allowed there offer.)
+    pub fn toolbar_json(&self, tab: i64, in_private: bool) -> Value {
         let tab = (tab >= 0).then_some(tab);
         let mut out = vec![];
-        for e in self.registry.enabled() {
+        for e in self.registry.enabled().filter(|e| !in_private || e.runs_in_private()) {
             for (ns, has) in [("browserAction", e.manifest.action.is_some()), ("pageAction", e.manifest.page_action.is_some())] {
                 if !has {
                     continue;
@@ -1003,10 +1093,11 @@ impl Runtime {
         Value::Array(out)
     }
 
-    pub fn sidebars_json(&self) -> Value {
+    pub fn sidebars_json(&self, in_private: bool) -> Value {
         Value::Array(
             self.registry
                 .enabled()
+                .filter(|e| !in_private || e.runs_in_private())
                 .filter(|e| e.manifest.sidebar_action.is_some())
                 .map(|e| {
                     let s = self.action_state("sidebarAction", e, None);
@@ -1018,6 +1109,13 @@ impl Runtime {
 
     /// The user clicked an extension's toolbar button without a popup.
     pub fn action_clicked(&mut self, ext: &str, kind: &str, tab_id: i64) -> Vec<Effect> {
+        if self.private_tab_hidden_from(ext, tab_id) {
+            return vec![];
+        }
+        self.with_private_view(ext, |rt| rt.action_clicked_inner(ext, kind, tab_id))
+    }
+
+    fn action_clicked_inner(&mut self, ext: &str, kind: &str, tab_id: i64) -> Vec<Effect> {
         let Some(tab) = self.tabs.get(&tab_id).cloned() else { return vec![] };
         let Some(e) = self.registry.get(ext) else { return vec![] };
         let t = self.tab_for(e, &tab);
@@ -1047,8 +1145,9 @@ impl Runtime {
             let tgt_ok = target_url.is_empty() || m.target_patterns.as_ref().map(|p| p.matches(target_url)).unwrap_or(true);
             ctx_ok && doc_ok && tgt_ok
         };
+        let in_private = info["incognito"] == true;
         let mut out = vec![];
-        for e in self.registry.enabled() {
+        for e in self.registry.enabled().filter(|e| !in_private || e.runs_in_private()) {
             let items: Vec<&MenuItem> = self.menus.iter().filter(|m| m.ext == e.info.id).collect();
             fn build(items: &[&MenuItem], parent: Option<&str>, visible: &dyn Fn(&MenuItem) -> bool, sel: &str) -> Vec<Value> {
                 items
@@ -1079,6 +1178,13 @@ impl Runtime {
     }
 
     pub fn menu_clicked(&mut self, ext: &str, item: &str, info: &Value, tab_id: i64) -> Vec<Effect> {
+        if self.private_tab_hidden_from(ext, tab_id) {
+            return vec![];
+        }
+        self.with_private_view(ext, |rt| rt.menu_clicked_inner(ext, item, info, tab_id))
+    }
+
+    fn menu_clicked_inner(&mut self, ext: &str, item: &str, info: &Value, tab_id: i64) -> Vec<Effect> {
         let Some(m) = self.menus.iter_mut().find(|m| m.ext == ext && m.id == item) else { return vec![] };
         let mut was_checked = None;
         if m.kind == "checkbox" {
@@ -1118,14 +1224,18 @@ impl Runtime {
     }
 
     pub fn command(&mut self, ext: &str, name: &str, tab_id: i64) -> Vec<Effect> {
-        let tab = self.tabs.get(&tab_id).cloned().unwrap_or(Value::Null);
+        if self.private_tab_hidden_from(ext, tab_id) {
+            return vec![];
+        }
+        let tab = self.tabs.get(&tab_id).or_else(|| self.private_tabs.get(&tab_id).filter(|_| self.runs_in_private(ext))).cloned().unwrap_or(Value::Null);
         self.fire(ext, "commands.onCommand", json!([name, tab]), false)
     }
 
-    pub fn commands_json(&self) -> Value {
+    pub fn commands_json(&self, in_private: bool) -> Value {
         Value::Array(
             self.registry
                 .enabled()
+                .filter(|e| !in_private || e.runs_in_private())
                 .flat_map(|e| {
                     e.manifest.commands.iter().filter(|c| !c.shortcut.is_empty()).map(move |c| json!({"ext": e.info.id, "name": c.name, "shortcut": c.shortcut, "description": c.description}))
                 })
@@ -1137,7 +1247,9 @@ impl Runtime {
     // Network hooks (called synchronously from the request interceptor)
     // ------------------------------------------------------------------
 
-    pub fn dnr_check(&self, url: &str, initiator: &str, method: &str, qt_type: &str) -> dnr::Outcome {
+    /// (`in_private`, here and below: a request from a private window, which
+    /// only extensions allowed there get to know about.)
+    pub fn dnr_check(&self, url: &str, initiator: &str, method: &str, qt_type: &str, in_private: bool) -> dnr::Outcome {
         if self.dnr.is_empty() {
             return dnr::Outcome::None;
         }
@@ -1145,7 +1257,7 @@ impl Runtime {
         dnr::combine(
             self.dnr
                 .iter()
-                .filter(|(id, _)| self.registry.get(id).is_some_and(|e| e.info.enabled))
+                .filter(|(id, _)| self.registry.get(id).is_some_and(|e| e.info.enabled && (!in_private || e.runs_in_private())))
                 .map(|(_, set)| set.evaluate(&req)),
         )
     }
@@ -1154,7 +1266,7 @@ impl Runtime {
     /// them as events; the returned extensions have blocking
     /// `onBeforeRequest` listeners for it and must be asked through
     /// [`Runtime::blocking`] (outside the runtime lock).
-    pub fn web_request(&mut self, details: &Value) -> (Vec<Effect>, Vec<String>) {
+    pub fn web_request(&mut self, details: &Value, in_private: bool) -> (Vec<Effect>, Vec<String>) {
         if self.web_request.is_empty() {
             return (vec![], vec![]);
         }
@@ -1165,7 +1277,7 @@ impl Runtime {
         let mut ask = vec![];
         for (ext, listeners) in &self.web_request {
             let Some(e) = self.registry.get(ext) else { continue };
-            if !e.info.enabled {
+            if !e.info.enabled || (in_private && !e.runs_in_private()) {
                 continue;
             }
             let hosts = MatchSet::parse(e.host_patterns().iter().map(String::as_str));
@@ -1214,9 +1326,15 @@ impl Runtime {
     /// A content blocker either has a blocking `onBeforeRequest` listener
     /// for all web URLs, or a large declarativeNetRequest ruleset.
     pub fn content_blocker(&self) -> Option<&str> {
+        self.content_blocker_for(false)
+    }
+
+    /// (`in_private`: for a private window, where the built-in blocker works
+    /// unless the extension is allowed there too.)
+    pub fn content_blocker_for(&self, in_private: bool) -> Option<&str> {
         const PROBES: [&str; 2] = ["https://kite.invalid/ad.js", "http://kite.invalid/ad.js"];
         const MIN_DNR_RULES: usize = 1000;
-        self.registry.enabled().find_map(|e| {
+        self.registry.enabled().filter(|e| !in_private || e.runs_in_private()).find_map(|e| {
             let id = &e.info.id;
             let listens = self.web_request.get(id).is_some_and(|v| {
                 v.iter().any(|l| l.blocking && l.event == "onBeforeRequest" && l.tab_id.is_none() && PROBES.iter().all(|u| l.urls.matches(u)))
@@ -1498,7 +1616,7 @@ impl Runtime {
                     .map(|c| json!({"contextType": c.kind.to_uppercase(), "documentUrl": c.url, "tabId": c.tab_id, "windowId": c.window_id, "frameId": c.frame_id, "incognito": false}))
                     .collect()
             ))),
-            ("extension", "isAllowedIncognitoAccess") => now!(Ok(json!(false))),
+            ("extension", "isAllowedIncognitoAccess") => now!(Ok(json!(e.runs_in_private()))),
             ("extension", "isAllowedFileSchemeAccess") => now!(Ok(json!(true))),
 
             // ---------------- i18n ----------------
@@ -2245,6 +2363,7 @@ impl Runtime {
                         let list: Vec<Value> = d
                             .items
                             .iter()
+                            .filter(|i| !i.private)
                             .filter(|i| q["id"].as_u64().map(|x| x == i.id).unwrap_or(true) && q["url"].as_str().map(|u| u == i.url).unwrap_or(true) && q["state"].as_str().map(|s| s == i.state).unwrap_or(true))
                             .map(download_json)
                             .collect();
@@ -2254,7 +2373,7 @@ impl Runtime {
                         let q = arg(args, 0);
                         let ids: Vec<u64> = {
                             let mut d = self.shared.downloads();
-                            let ids: Vec<u64> = d.items.iter().filter(|i| q["id"].as_u64().map(|x| x == i.id).unwrap_or(true) && i.state != "in_progress").map(|i| i.id).collect();
+                            let ids: Vec<u64> = d.items.iter().filter(|i| !i.private).filter(|i| q["id"].as_u64().map(|x| x == i.id).unwrap_or(true) && i.state != "in_progress").map(|i| i.id).collect();
                             for id in &ids {
                                 d.remove(*id);
                             }
@@ -2716,9 +2835,9 @@ mod tests {
         // badge
         rt.call(&bg, &tok, "bg", "browserAction.setBadgeText", json!([{"text": "5"}]), 4);
         rt.call(&bg, &tok, "bg", "action.setBadgeText", json!([{"text": "9", "tabId": 2}]), 5);
-        assert_eq!(rt.toolbar_json(1)[0]["badgeText"], "5");
-        assert_eq!(rt.toolbar_json(2)[0]["badgeText"], "9");
-        assert_eq!(rt.toolbar_json(2)[0]["title"], "Tee");
+        assert_eq!(rt.toolbar_json(1, false)[0]["badgeText"], "5");
+        assert_eq!(rt.toolbar_json(2, false)[0]["badgeText"], "9");
+        assert_eq!(rt.toolbar_json(2, false)[0]["title"], "Tee");
         // menus
         rt.call(&bg, &tok, "bg", "menus.create", json!([{"id": "a", "title": "Look up %s", "contexts": ["selection"]}]), 6);
         let m = rt.menus_json(&json!({"contexts": ["selection", "page"], "pageUrl": "https://x/", "selectionText": "kde"}));
@@ -2766,5 +2885,122 @@ mod tests {
     fn iso() {
         assert_eq!(iso_time(0), "1970-01-01T00:00:00.000Z");
         assert_eq!(iso_time(1_700_000_000_123), "2023-11-14T22:13:20.123Z");
+    }
+
+    // ---- private windows ----
+
+    /// `setup()` with a second extension and a regular and a private window.
+    fn private_setup() -> (tempfile::TempDir, Runtime, String, String) {
+        let (d, mut rt, tok) = setup();
+        let xpi = make_xpi(&[(
+            "manifest.json",
+            r#"{"manifest_version":2,"name":"A","version":"1","browser_specific_settings":{"gecko":{"id":"a@x"}},
+               "permissions":["tabs","<all_urls>"],"browser_action":{"default_title":"A"},"commands":{"go":{"suggested_key":{"default":"Ctrl+Y"}}},
+               "background":{"scripts":["bg.js"]}}"#,
+        )]);
+        rt.registry.install_xpi(&xpi, "file", "").unwrap();
+        rt.on_installed("a@x", false, "", false);
+        rt.registry.set_allow_private("a@x", true).unwrap();
+        let allowed = rt.token_of("a@x").unwrap().to_owned();
+        let tab = |id: i64, win: i64, url: &str, private: bool| json!({"id": id, "index": 0, "windowId": win, "url": url, "title": url, "active": true, "incognito": private, "lastAccessed": 1});
+        rt.browser_event("windowCreated", &json!({"window": {"id": 1, "incognito": false}}));
+        rt.browser_event("windowCreated", &json!({"window": {"id": 2, "incognito": true}}));
+        rt.browser_event("tabCreated", &json!({"tab": tab(10, 1, "https://regular.example/", false)}));
+        rt.browser_event("tabCreated", &json!({"tab": tab(20, 2, "https://secret.example/", true)}));
+        (d, rt, tok, allowed)
+    }
+
+    fn bg(id: &str) -> Origin {
+        Origin { view: format!("bg:{id}"), tab_id: -1, window_id: -1 }
+    }
+
+    fn urls(v: &Value) -> Vec<String> {
+        v.as_array().unwrap().iter().map(|t| t["url"].as_str().unwrap().to_owned()).collect()
+    }
+
+    #[test]
+    fn private_tabs_are_hidden_from_extensions_not_allowed_there() {
+        let (_d, mut rt, tok, _) = private_setup();
+        let o = bg("t@x");
+        let tabs = reply(&rt.call(&o, &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap();
+        assert_eq!(urls(&tabs), ["https://regular.example/"]);
+        assert!(reply(&rt.call(&o, &tok, "bg", "tabs.get", json!([20]), 2)).is_err());
+        let wins = reply(&rt.call(&o, &tok, "bg", "windows.getAll", json!([{"populate": true}]), 3)).unwrap();
+        assert_eq!(wins.as_array().unwrap().len(), 1);
+        assert_eq!(reply(&rt.call(&o, &tok, "bg", "extension.isAllowedIncognitoAccess", json!([]), 4)).unwrap(), false);
+    }
+
+    #[test]
+    fn private_tabs_are_visible_to_extensions_allowed_there() {
+        let (_d, mut rt, _, tok) = private_setup();
+        let o = bg("a@x");
+        let tabs = reply(&rt.call(&o, &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap();
+        assert_eq!(urls(&tabs), ["https://regular.example/", "https://secret.example/"]);
+        assert_eq!(reply(&rt.call(&o, &tok, "bg", "tabs.get", json!([20]), 2)).unwrap()["url"], "https://secret.example/");
+        assert_eq!(urls(&reply(&rt.call(&o, &tok, "bg", "tabs.query", json!([{"incognito": true}]), 3)).unwrap()), ["https://secret.example/"]);
+        assert_eq!(reply(&rt.call(&o, &tok, "bg", "windows.getAll", json!([{}]), 4)).unwrap().as_array().unwrap().len(), 2);
+        assert_eq!(reply(&rt.call(&o, &tok, "bg", "extension.isAllowedIncognitoAccess", json!([]), 5)).unwrap(), true);
+        // ...and the next extension doesn't, after that call.
+        let other = rt.token_of("t@x").unwrap().to_owned();
+        assert_eq!(urls(&reply(&rt.call(&bg("t@x"), &other, "bg", "tabs.query", json!([{}]), 6)).unwrap()), ["https://regular.example/"]);
+    }
+
+    #[test]
+    fn taking_private_access_back_hides_the_tabs_again() {
+        let (_d, mut rt, _, tok) = private_setup();
+        rt.registry.set_allow_private("a@x", false).unwrap();
+        assert_eq!(urls(&reply(&rt.call(&bg("a@x"), &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap()), ["https://regular.example/"]);
+    }
+
+    #[test]
+    fn requests_are_matched_to_tabs_of_their_own_kind() {
+        let (_d, rt, _, _) = private_setup();
+        assert_eq!(rt.tab_for_first_party("https://secret.example/x", false), -1);
+        assert_eq!(rt.tab_for_first_party("https://secret.example/x", true), 20);
+        assert_eq!(rt.tab_for_first_party("https://regular.example/x", true), -1);
+        assert_eq!(rt.tab_for_origin("https://secret.example", false), (-1, -1));
+        assert_eq!(rt.tab_for_origin("https://secret.example", true), (20, 2));
+        assert_eq!(rt.active_tab().0, 10);
+    }
+
+    #[test]
+    fn private_window_offers_only_what_is_allowed_there() {
+        let (_d, rt, _, _) = private_setup();
+        let exts = |v: Value| v.as_array().unwrap().iter().map(|x| x["ext"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+        assert_eq!(exts(rt.toolbar_json(20, true)), ["a@x"]);
+        assert_eq!(exts(rt.toolbar_json(10, false)).len(), 2);
+        assert_eq!(exts(rt.commands_json(true)), ["a@x"]);
+    }
+
+    #[test]
+    fn a_focused_private_window_stays_unknown_to_others() {
+        let (_d, mut rt, tok, allowed) = private_setup();
+        rt.browser_event("windowFocused", &json!({"windowId": 1}));
+        rt.browser_event("windowFocused", &json!({"windowId": 2}));
+        let focused = |rt: &mut Runtime, id: &str, tok: &str| reply(&rt.call(&bg(id), tok, "bg", "windows.getLastFocused", json!([{}]), 1)).unwrap()["id"].clone();
+        assert_eq!(focused(&mut rt, "t@x", &tok), 1);
+        assert_eq!(focused(&mut rt, "a@x", &allowed), 2);
+        // Nothing is lost when a private tab closes.
+        rt.browser_event("tabRemoved", &json!({"tabId": 20, "windowId": 2}));
+        assert_eq!(urls(&reply(&rt.call(&bg("a@x"), &allowed, "bg", "tabs.query", json!([{}]), 2)).unwrap()), ["https://regular.example/"]);
+    }
+
+    #[test]
+    fn manifest_can_rule_out_private_windows_and_the_choice_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let xpi = |id: &str, version: &str, extra: &str| make_xpi(&[("manifest.json", &*format!(r#"{{"manifest_version":2,"name":"X","version":"{version}","browser_specific_settings":{{"gecko":{{"id":"{id}"}}}}{extra}}}"#))]);
+        let mut reg = Registry::open(dir.path().to_owned());
+        reg.install_xpi(&xpi("yes@x", "1", ""), "file", "").unwrap();
+        reg.install_xpi(&xpi("no@x", "1", r#","incognito":"not_allowed""#), "file", "").unwrap();
+        assert!(!reg.get("yes@x").unwrap().runs_in_private(), "off by default");
+        reg.set_allow_private("yes@x", true).unwrap();
+        reg.set_allow_private("no@x", true).unwrap();
+        assert!(reg.get("yes@x").unwrap().runs_in_private());
+        assert!(!reg.get("no@x").unwrap().runs_in_private());
+        // Across a restart, and across an update.
+        let mut reg = Registry::open(dir.path().to_owned());
+        assert!(reg.get("yes@x").unwrap().runs_in_private());
+        reg.install_xpi(&xpi("yes@x", "2", ""), "file", "").unwrap();
+        assert!(reg.get("yes@x").unwrap().runs_in_private());
     }
 }

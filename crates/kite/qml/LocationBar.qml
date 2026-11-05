@@ -27,7 +27,7 @@ QQC2.TextField {
 
     text: editing ? text : (tab ? displayUrl(tab.url) : "")
     placeholderText: "Search with " + win.app.setting("general.searchEngine") + " or enter address"
-    leftPadding: securityButton.width + Kirigami.Units.smallSpacing * 2
+    leftPadding: securityButton.width + (win.privateMode ? privateIcon.width + Kirigami.Units.smallSpacing : 0) + Kirigami.Units.smallSpacing * 2
     rightPadding: trailing.implicitWidth + Kirigami.Units.smallSpacing * 2
     selectByMouse: true
     inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
@@ -66,7 +66,8 @@ QQC2.TextField {
         if (t === "") { popup.close(); return }
         completions = JSON.parse(Browser.complete(t))
         suggestions = []
-        Browser.requestSuggestions(t)
+        // (What is typed in a private window stays here.)
+        if (!win.privateMode) Browser.requestSuggestions(t)
         popup.open()
     }
     Connections {
@@ -87,7 +88,7 @@ QQC2.TextField {
         const t = input.trim()
         if (t === "") return
         // Extension omnibox keywords
-        const kw = JSON.parse(Extensions.omniboxKeywords())
+        const kw = JSON.parse(Extensions.omniboxKeywords(win.privateMode))
         const first = t.split(" ")[0]
         const k = kw.find(x => x.keyword === first)
         if (k && t.length > first.length) {
@@ -131,6 +132,21 @@ QQC2.TextField {
         onClicked: siteInfo.open()
         QQC2.ToolTip.text: field.extName !== "" ? "Extension (" + field.extName + ")" : field.tab && field.tab.isSecure ? "Connection is secure" : "Connection is not secure"
         QQC2.ToolTip.visible: hovered
+        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+    }
+
+    // Always there in a private window, whatever the page or tab bar.
+    Kirigami.Icon {
+        id: privateIcon
+        visible: field.win.privateMode
+        anchors { left: securityButton.right; leftMargin: Kirigami.Units.smallSpacing; verticalCenter: parent.verticalCenter }
+        width: Kirigami.Units.iconSizes.smallMedium
+        height: width
+        source: "view-private"
+        Accessible.name: "Private window"
+        HoverHandler { id: privateHover }
+        QQC2.ToolTip.text: "Private window: pages stay out of your history"
+        QQC2.ToolTip.visible: privateHover.hovered
         QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
     }
 
@@ -211,7 +227,7 @@ QQC2.TextField {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
             // Content-blocking extensions (uBlock Origin, ...) have their own button.
-            visible: field.tab && field.tab.url.startsWith("http") && Browser.contentBlocker() === ""
+            visible: field.tab && field.tab.url.startsWith("http") && Browser.contentBlocker(field.win.privateMode) === ""
             icon.name: field.shieldAllowed ? "security-low" : "security-high"
             icon.color: field.shieldAllowed ? Kirigami.Theme.disabledTextColor : Kirigami.Theme.positiveTextColor
             onClicked: shieldMenu.popup()
@@ -406,7 +422,7 @@ QQC2.TextField {
             }
             Kirigami.Separator { Layout.fillWidth: true }
             QQC2.CheckBox {
-                visible: Browser.contentBlocker() === ""
+                visible: Browser.contentBlocker(field.win.privateMode) === ""
                 text: "Block ads and trackers on this site"
                 checked: !field.shieldAllowed
                 onToggled: { Browser.adblockAllow(Browser.hostOf(field.tab.url), !checked); field.shieldAllowed = !checked; field.tab.view.reload() }

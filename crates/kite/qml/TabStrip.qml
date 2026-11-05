@@ -121,15 +121,6 @@ Rectangle {
         rowSpacing: 0
         columnSpacing: 0
 
-        Kirigami.Icon {
-            visible: stripRoot.browser.privateMode
-            source: "view-private"
-            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-            Layout.alignment: Qt.AlignCenter
-            Layout.margins: Kirigami.Units.smallSpacing
-        }
-
         // Scroll arrows, shown when there are more tabs than fit.
         QQC2.ToolButton {
             visible: strip.overflowing

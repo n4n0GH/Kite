@@ -1097,7 +1097,7 @@ ManagerWindow {
             property var subs: w.get("adblock.subscriptions")
             property string status: ""
             Connections { target: Browser; function onAdblockStatus(m) { ab.status = m } }
-            readonly property string extBlocker: Browser.contentBlocker()
+            readonly property string extBlocker: Browser.contentBlocker(false)
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
                 visible: ab.extBlocker !== ""

@@ -11,6 +11,7 @@ QtObject {
     property int tabId: -1
     property int windowId: -1
     property string viewKind: "tab"
+    property bool inPrivate: false
     signal deliver(string json)
 
     // Password manager hooks, called by the bridge world of a tab. Handlers
@@ -47,7 +48,7 @@ QtObject {
     function call(token, ctx, method, args, callId) {
         Extensions.call(viewKey, tabId, windowId, token, ctx, method, args, callId)
     }
-    function cosmetic(url) { return Browser.cosmetic(url) }
+    function cosmetic(url) { return Browser.cosmetic(url, inPrivate) }
 
     // Screen Wake Lock (crates/kite/src/js/wakelock.js, relayed by the bridge
     // world): WebTab prompts and answers with wakeLockAnswer.

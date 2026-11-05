@@ -122,7 +122,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Manifest V2 | ✅ | ❌ | ✅ | |
 | Manifest V3 | ✅ | ✅ | ✅ | |
 | API coverage | ⚠️ | ✅ | ✅ | Kite has 30+ namespaces but no containers, `find`, `dns`, themes or `filterResponseData`, and no native messaging. |
-| Extensions in private windows | ❌ | ⚠️ | ⚠️ | Chrome and Firefox: off by default, allowed per extension. |
+| Extensions in private windows | ⚠️ | ⚠️ | ⚠️ | All three: off by default, allowed per extension. |
 | Unified extensions panel with pin/unpin | ✅ | ✅ | ✅ | |
 | Extension sidebars | ✅ | ✅ | ✅ | |
 

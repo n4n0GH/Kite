@@ -39,8 +39,8 @@ public:
 extern "C" {
 struct KiteBuf { unsigned char *ptr; size_t len; size_t cap; };
 void kite_buf_free(KiteBuf b);
-KiteBuf kite_serve(const char *url, const char *initiator, int *status, KiteBuf *mime);
-KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method);
+KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime);
+KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method, int inPrivate);
 void kite_cookie_event(const char *json, int removed, int initial);
 int kite_rpc(const char *url, const char *initiator, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
 void kite_rpc_job_gone(quint64 job);
@@ -93,7 +93,7 @@ extern "C" void kite_cpp_rpc_complete(quint64 id, const unsigned char *data, siz
 // ---------------------------------------------------------------------------
 class KiteSchemeHandler : public QWebEngineUrlSchemeHandler {
 public:
-    using QWebEngineUrlSchemeHandler::QWebEngineUrlSchemeHandler;
+    KiteSchemeHandler(bool inPrivate, QObject *parent) : QWebEngineUrlSchemeHandler(parent), m_private(inPrivate) {}
     void requestStarted(QWebEngineUrlRequestJob *job) override
     {
         const QByteArray url = job->requestUrl().toString(QUrl::FullyEncoded).toUtf8();
@@ -117,7 +117,7 @@ public:
         }
         int status = 0;
         KiteBuf mimeBuf{nullptr, 0, 0};
-        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), &status, &mimeBuf));
+        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), m_private ? 1 : 0, &status, &mimeBuf));
         QByteArray mime = takeBuf(mimeBuf);
         if (status == 404) { job->fail(QWebEngineUrlRequestJob::UrlNotFound); return; }
         if (status == 403) { job->fail(QWebEngineUrlRequestJob::RequestDenied); return; }
@@ -131,6 +131,8 @@ public:
         job->setAdditionalResponseHeaders(headers);
         job->reply(mime, buffer);
     }
+private:
+    const bool m_private;
 };
 
 // ---------------------------------------------------------------------------
@@ -164,7 +166,7 @@ static const char *resourceTypeName(QWebEngineUrlRequestInfo::ResourceType t)
 
 class KiteInterceptor : public QWebEngineUrlRequestInterceptor {
 public:
-    using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
+    KiteInterceptor(bool inPrivate, QObject *parent) : QWebEngineUrlRequestInterceptor(parent), m_private(inPrivate) {}
     void interceptRequest(QWebEngineUrlRequestInfo &info) override
     {
         const QByteArray url = info.requestUrl().toString(QUrl::FullyEncoded).toUtf8();
@@ -180,7 +182,7 @@ public:
             if (!ua.isEmpty()) info.setHttpHeader("User-Agent", ua);
         }
         const QByteArray verdict = takeBuf(kite_intercept(url.constData(), fp.constData(), ini.constData(),
-                                                          resourceTypeName(info.resourceType()), info.requestMethod().constData()));
+                                                          resourceTypeName(info.resourceType()), info.requestMethod().constData(), m_private ? 1 : 0));
         if (verdict.isEmpty()) return;
         if (verdict == "block") { info.block(true); return; }
         if (verdict.startsWith("redirect:")) { info.redirect(QUrl(QString::fromUtf8(verdict.mid(9)))); return; }
@@ -192,6 +194,8 @@ public:
             }
         }
     }
+private:
+    const bool m_private;
 };
 
 // ---------------------------------------------------------------------------
@@ -334,11 +338,11 @@ void kite_register_schemes()
 void kite_install_profile_hooks(QObject *profileObject, int kind)
 {
     auto *profile = static_cast<QQuickWebEngineProfile *>(profileObject);
-    auto *schemes = new KiteSchemeHandler(profileObject);
+    auto *schemes = new KiteSchemeHandler(kind == 1, profileObject);
     profile->installUrlSchemeHandler("moz-extension", schemes);
     profile->installUrlSchemeHandler("kite", schemes);
     profile->installUrlSchemeHandler("kite-res", schemes);
-    profile->setUrlRequestInterceptor(new KiteInterceptor(profileObject));
+    profile->setUrlRequestInterceptor(new KiteInterceptor(kind == 1, profileObject));
     // A site's own cookie rule (Site Settings, "privacy.siteCookieRules"),
     // else "privacy.cookies": 0 = all, 1 = no third-party, 2 = none.
     profile->cookieStore()->setCookieFilter([](const QWebEngineCookieStore::FilterRequest &request) {

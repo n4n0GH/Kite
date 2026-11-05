@@ -54,6 +54,14 @@ impl Extension {
     pub fn id(&self) -> &str {
         &self.info.id
     }
+    /// The manifest rules out private windows (`"incognito": "not_allowed"`).
+    pub fn private_not_allowed(&self) -> bool {
+        self.manifest.raw.get("incognito").and_then(|v| v.as_str()) == Some("not_allowed")
+    }
+    /// Whether it runs in private windows: only if the user allowed it.
+    pub fn runs_in_private(&self) -> bool {
+        self.info.allow_private && !self.private_not_allowed()
+    }
     pub fn base_url(&self) -> String {
         format!("{}://{}/", super::SCHEME, self.info.uuid)
     }
@@ -269,6 +277,12 @@ impl Registry {
     pub fn set_enabled(&mut self, id: &str, enabled: bool) -> anyhow::Result<()> {
         let e = self.get_mut(id).ok_or_else(|| anyhow::anyhow!("extension {id} is not installed"))?;
         e.info.enabled = enabled;
+        self.save()
+    }
+
+    pub fn set_allow_private(&mut self, id: &str, allow: bool) -> anyhow::Result<()> {
+        let e = self.get_mut(id).ok_or_else(|| anyhow::anyhow!("extension {id} is not installed"))?;
+        e.info.allow_private = allow;
         self.save()
     }
 

@@ -65,10 +65,10 @@ pub mod qobject {
         // history
         #[qinvokable]
         #[cxx_name = "recordVisit"]
-        fn record_visit(self: Pin<&mut Browser>, url: &QString, title: &QString);
+        fn record_visit(self: Pin<&mut Browser>, url: &QString, title: &QString, in_private: bool);
         #[qinvokable]
         #[cxx_name = "updateTitle"]
-        fn update_title(self: Pin<&mut Browser>, url: &QString, title: &QString);
+        fn update_title(self: Pin<&mut Browser>, url: &QString, title: &QString, in_private: bool);
         #[qinvokable]
         fn history(self: &Browser, query: &QString, start: f64, end: f64, limit: i32) -> QString;
         #[qinvokable]
@@ -167,6 +167,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "downloadUpdate"]
         fn download_update(self: Pin<&mut Browser>, json: &QString) -> i32;
+        /// The last private window closed: its finished downloads leave the list.
+        #[qinvokable]
+        #[cxx_name = "forgetPrivateDownloads"]
+        fn forget_private_downloads(self: Pin<&mut Browser>);
         #[qinvokable]
         fn downloads(self: &Browser) -> QString;
         #[qinvokable]
@@ -280,7 +284,7 @@ pub mod qobject {
         #[cxx_name = "adblockAllowed"]
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
         #[qinvokable]
-        fn cosmetic(self: &Browser, url: &QString) -> QString;
+        fn cosmetic(self: &Browser, url: &QString, in_private: bool) -> QString;
         /// Keep the screen on for a tab holding a Screen Wake Lock (or stop).
         #[qinvokable]
         #[cxx_name = "setWakeLock"]
@@ -343,7 +347,7 @@ pub mod qobject {
         /// Name of the extension doing content blocking instead of Kite, or "".
         #[qinvokable]
         #[cxx_name = "contentBlocker"]
-        fn content_blocker(self: &Browser) -> QString;
+        fn content_blocker(self: &Browser, in_private: bool) -> QString;
         #[qsignal]
         #[cxx_name = "adblockStatus"]
         fn adblock_status(self: Pin<&mut Browser>, message: QString);
@@ -507,9 +511,11 @@ impl qobject::Browser {
     }
 
     // ---- history ----------------------------------------------------------
-    fn record_visit(self: Pin<&mut Self>, url: &QString, title: &QString) {
+    // (`a.private` is the whole of Kite started with --private; `in_private` a
+    // private window of a normal run.)
+    fn record_visit(self: Pin<&mut Self>, url: &QString, title: &QString, in_private: bool) {
         let a = app();
-        if a.private || !a.shared.settings().get_bool("privacy.saveHistory") {
+        if in_private || a.private || !a.shared.settings().get_bool("privacy.saveHistory") {
             return;
         }
         let (url, title) = (url.to_string(), title.to_string());
@@ -523,9 +529,9 @@ impl qobject::Browser {
             self.history_changed();
         }
     }
-    fn update_title(self: Pin<&mut Self>, url: &QString, title: &QString) {
+    fn update_title(self: Pin<&mut Self>, url: &QString, title: &QString, in_private: bool) {
         let a = app();
-        if a.private {
+        if in_private || a.private {
             return;
         }
         let _ = kite_core::history::update_title(&a.shared.db(), &url.to_string(), &title.to_string());
@@ -790,6 +796,7 @@ impl qobject::Browser {
                 received: v["received"].as_i64().unwrap_or(old.as_ref().map(|o| o.received).unwrap_or(0)),
                 state: v["state"].as_str().map(str::to_owned).or(old.as_ref().map(|o| o.state.clone())).unwrap_or_else(|| "in_progress".into()),
                 started: old.as_ref().map(|o| o.started).unwrap_or_else(kite_core::util::now_ms),
+                private: v["private"].as_bool().or(old.as_ref().map(|o| o.private)).unwrap_or(false),
                 finished: if v["state"].as_str().is_some_and(|s| s != "in_progress") { kite_core::util::now_ms() } else { old.as_ref().map(|o| o.finished).unwrap_or(0) },
             };
             if !a.private {
@@ -798,7 +805,9 @@ impl qobject::Browser {
             (id, created, rec)
         };
         let j = kite_core::webext::runtime::download_json(&rec);
-        let fx = if created {
+        let fx = if rec.private {
+            vec![]
+        } else if created {
             a.runtime().browser_event("downloadCreated", &json!({"args": [j]}))
         } else if v["state"].is_string() {
             a.runtime().browser_event("downloadChanged", &json!({"args": [{"id": id, "state": {"current": rec.state}}]}))
@@ -808,6 +817,10 @@ impl qobject::Browser {
         crate::extensions::apply_effects_async(fx);
         self.downloads_changed();
         id as i32
+    }
+    fn forget_private_downloads(self: Pin<&mut Self>) {
+        app().shared.downloads().forget_private();
+        self.downloads_changed();
     }
     fn downloads(&self) -> QString {
         js(&serde_json::to_value(&app().shared.downloads().items).unwrap_or_default())
@@ -1027,8 +1040,8 @@ impl qobject::Browser {
         crate::ffi::system_wheel_pixels()
     }
 
-    fn content_blocker(&self) -> QString {
-        q(app().runtime().content_blocker().unwrap_or_default())
+    fn content_blocker(&self, in_private: bool) -> QString {
+        q(app().runtime().content_blocker_for(in_private).unwrap_or_default())
     }
 
     fn adblock_allowed(&self, host: &QString) -> bool {
@@ -1036,9 +1049,9 @@ impl qobject::Browser {
         let list: Vec<String> = serde_json::from_value(app().shared.settings().get("adblock.allowlist")).unwrap_or_default();
         list.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
     }
-    fn cosmetic(&self, url: &QString) -> QString {
+    fn cosmetic(&self, url: &QString, in_private: bool) -> QString {
         // Cosmetic filters and scriptlets are the extension's job too.
-        if app().runtime().content_blocker().is_some() {
+        if app().runtime().content_blocker_for(in_private).is_some() {
             return js(&json!({}));
         }
         let (css, script) = app().adblock.cosmetic(&url.to_string());

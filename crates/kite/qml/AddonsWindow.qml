@@ -106,6 +106,15 @@ ManagerWindow {
                                         Kirigami.Heading { level: 4; text: card.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth }
                                         QQC2.Label { text: card.modelData.version; opacity: 0.6 }
                                         QQC2.Label { visible: card.modelData.temporary; text: "Temporary"; color: Kirigami.Theme.neutralTextColor }
+                                        Kirigami.Icon {
+                                            visible: !!card.modelData.allowPrivate
+                                            source: "view-private"
+                                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                            Layout.preferredHeight: Layout.preferredWidth
+                                            HoverHandler { id: privateBadge }
+                                            QQC2.ToolTip.text: "Runs in private windows"
+                                            QQC2.ToolTip.visible: privateBadge.hovered
+                                        }
                                         QQC2.Label { visible: !!card.modelData.broken; text: "Failed to load"; color: Kirigami.Theme.negativeTextColor }
                                         Item { Layout.fillWidth: true }
                                     }
@@ -130,6 +139,24 @@ ManagerWindow {
                             Kirigami.FormLayout {
                                 visible: card.expanded
                                 Layout.fillWidth: true
+                                ColumnLayout {
+                                    Kirigami.FormData.label: "Private windows:"
+                                    visible: !card.modelData.broken
+                                    spacing: 0
+                                    QQC2.Switch {
+                                        text: "Allow"
+                                        enabled: !card.modelData.privateNotAllowed
+                                        checked: !!card.modelData.allowPrivate
+                                        onToggled: Extensions.setAllowPrivate(card.modelData.id, checked)
+                                    }
+                                    QQC2.Label {
+                                        text: card.modelData.privateNotAllowed ? "This add-on doesn't run in private windows." : "When allowed, it can see and change what you do in private windows."
+                                        opacity: 0.7
+                                        font: Kirigami.Theme.smallFont
+                                        wrapMode: Text.Wrap
+                                        Layout.fillWidth: true
+                                    }
+                                }
                                 QQC2.Label { Kirigami.FormData.label: "Author:"; text: card.modelData.author || "—"; visible: !card.modelData.broken }
                                 QQC2.Label { Kirigami.FormData.label: "ID:"; text: card.modelData.id; textFormat: Text.PlainText }
                                 QQC2.Label { Kirigami.FormData.label: "Manifest:"; text: "Version " + card.modelData.manifestVersion; visible: !card.modelData.broken }

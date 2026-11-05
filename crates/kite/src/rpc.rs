@@ -142,7 +142,10 @@ pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &st
             let (tab_id, window_id) = match v["top"].as_str() {
                 // A content script in a sub-frame: Qt doesn't say which tab
                 // it is in, so go by the top frame's origin.
-                Some(top) if content_script => rt.tab_for_origin(top),
+                Some(top) if content_script => {
+                    let in_private = rt.ext_for_token(v["token"].as_str().unwrap_or("")).is_some_and(|e| rt.runs_in_private(e));
+                    rt.tab_for_origin(top, in_private)
+                }
                 // UI iframes live in the tab the user is interacting with.
                 _ => rt.active_tab(),
             };

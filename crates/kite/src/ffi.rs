@@ -123,14 +123,14 @@ pub fn qwebchannel_js() -> &'static str {
 /// Serve `moz-extension://` and `kite:` URLs. Returns the body; sets HTTP-like
 /// status and mime type.
 #[no_mangle]
-pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, status: *mut i32, mime: *mut KiteBuf) -> KiteBuf {
-    let (code, ty, body) = serve(s(url), s(initiator));
+pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, status: *mut i32, mime: *mut KiteBuf) -> KiteBuf {
+    let (code, ty, body) = serve(s(url), s(initiator), in_private != 0);
     *status = code;
     *mime = KiteBuf::from_vec(ty.into_bytes());
     KiteBuf::from_vec(body)
 }
 
-fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
+fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>) {
     if url.starts_with(kite_core::standin::SCHEME) {
         return match STAND_INS.get(url) {
             Some((mime, body)) => (200, mime, body),
@@ -327,6 +327,7 @@ pub unsafe extern "C" fn kite_intercept(
     initiator: *const c_char,
     rtype: *const c_char,
     method: *const c_char,
+    in_private: std::ffi::c_int,
 ) -> KiteBuf {
     let (url, first_party, initiator, rtype, method) = (s(url), s(first_party), s(initiator), s(rtype), s(method));
     let a = app();
@@ -360,10 +361,12 @@ pub unsafe extern "C" fn kite_intercept(
                 return format!("redirect:{secure}");
             }
         }
+        // (From a private window, only extensions allowed there are involved.)
+        let in_private = in_private != 0;
         let mut rt = a.runtime();
         // webRequest listeners
         if rt.has_web_request_listeners() {
-            let tab = rt.tab_for_first_party(first_party);
+            let tab = rt.tab_for_first_party(first_party, in_private);
             static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
             let frame = kite_core::webext::blocking::frame_context(url, rtype, first_party, initiator);
             let mut details = serde_json::json!({
@@ -371,12 +374,12 @@ pub unsafe extern "C" fn kite_intercept(
                 "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame.frame_id,
                 "parentFrameId": frame.parent_frame_id, "originUrl": initiator, "frameAncestors": frame.frame_ancestors,
                 "timeStamp": kite_core::util::now_ms(), "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
-                "incognito": a.private, "cookieStoreId": "firefox-default",
+                "incognito": a.private || in_private, "cookieStoreId": if in_private { "firefox-private" } else { "firefox-default" },
             });
             if let Some(doc) = frame.document_url {
                 details["documentUrl"] = doc.into();
             }
-            let (fx, ask) = rt.web_request(&details);
+            let (fx, ask) = rt.web_request(&details, in_private);
             let hub = rt.blocking.clone();
             drop(rt);
             crate::extensions::apply_effects_async(fx);
@@ -399,14 +402,14 @@ pub unsafe extern "C" fn kite_intercept(
             }
             rt = a.runtime();
         }
-        match rt.dnr_check(url, if initiator.is_empty() { first_party } else { initiator }, method, rtype) {
+        match rt.dnr_check(url, if initiator.is_empty() { first_party } else { initiator }, method, rtype, in_private) {
             kite_core::webext::dnr::Outcome::Block => return "block".into(),
             kite_core::webext::dnr::Outcome::Redirect(u) => return format!("redirect:{u}"),
             kite_core::webext::dnr::Outcome::Headers(h) => return format!("headers:{}", serde_json::to_string(&h).unwrap_or_default()),
             kite_core::webext::dnr::Outcome::None => {}
         }
         // An extension like uBlock Origin does the content blocking.
-        if rt.content_blocker().is_some() {
+        if rt.content_blocker_for(in_private).is_some() {
             return String::new();
         }
         drop(rt);

@@ -535,6 +535,8 @@ QQC2.ApplicationWindow {
 
     function openTab(url, opts) {
         opts = opts || {}
+        // (An extension's new tab page, say, if it isn't allowed here.)
+        if (privateMode && url && url.startsWith("moz-extension:") && !Extensions.urlRunsInPrivate(url)) url = app.privateNewTabUrl()
         const id = app.nextTabId++
         let idx = opts.index !== undefined && opts.index >= 0 ? Math.min(opts.index, tabModel.count) : tabModel.count
         if (opts.index === undefined && opts.afterCurrent && app.setting("tabs.newTabAfterActive")) idx = currentIndex + 1
@@ -748,7 +750,7 @@ QQC2.ApplicationWindow {
     function printTab() { pdfDialog.open() }
 
     // ---- extension toolbar -------------------------------------------------------
-    function refreshToolbar() { toolbarActions = JSON.parse(Extensions.toolbar(currentTab ? currentTab.tabId : -1)) }
+    function refreshToolbar() { toolbarActions = JSON.parse(Extensions.toolbar(currentTab ? currentTab.tabId : -1, privateMode)) }
     Connections {
         target: Extensions
         function onChanged(what) { if (what === "actions" || what === "extensions") bw.refreshToolbar() }
@@ -846,8 +848,8 @@ QQC2.ApplicationWindow {
     Shortcut { sequence: "Esc"; enabled: bw.contentFullScreen; onActivated: bw.exitContentFullScreen(false) }
     // Extension keyboard commands: the keys the extension's manifest gives
     // (extensions handle their own shortcut configuration).
-    property var extCommands: JSON.parse(Extensions.commands())
-    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = JSON.parse(Extensions.commands()) } }
+    property var extCommands: JSON.parse(Extensions.commands(privateMode))
+    Connections { target: Extensions; function onRevisionChanged() { bw.extCommands = JSON.parse(Extensions.commands(bw.privateMode)) } }
     Instantiator {
         model: bw.extCommands
         delegate: Shortcut {

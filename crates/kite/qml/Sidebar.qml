@@ -11,8 +11,9 @@ QQC2.Pane {
     id: root
     property var win
     property string mode: ""
-    property var extSidebars: JSON.parse(Extensions.sidebars())
-    Connections { target: Extensions; function onChanged(w) { if (w === "extensions" || w === "actions") root.extSidebars = JSON.parse(Extensions.sidebars()) } }
+    function loadExtSidebars() { return JSON.parse(Extensions.sidebars(!!win && win.privateMode)) }
+    property var extSidebars: loadExtSidebars()
+    Connections { target: Extensions; function onChanged(w) { if (w === "extensions" || w === "actions") root.extSidebars = root.loadExtSidebars() } }
     padding: 0
 
     ColumnLayout {

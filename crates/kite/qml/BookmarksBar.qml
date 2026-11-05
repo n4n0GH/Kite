@@ -17,7 +17,7 @@ QQC2.ToolBar {
 
     function open(url, mods) {
         if (mods & Qt.ControlModifier) win.openTab(url, {background: true, afterCurrent: true})
-        else if (mods & Qt.ShiftModifier) win.app.newWindow({urls: [url]})
+        else if (mods & Qt.ShiftModifier) win.app.newWindow({urls: [url], privateMode: win.privateMode})
         else if (win.currentTab) win.currentTab.load(url)
     }
 
