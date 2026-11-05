@@ -412,6 +412,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
+        /// The address selected text is written as, or "".
+        #[qinvokable]
+        #[cxx_name = "selectionUrl"]
+        fn selection_url(self: &Browser, text: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "copyText"]
         fn copy_text(self: &Browser, text: &QString);
@@ -1195,6 +1199,10 @@ impl qobject::Browser {
     fn plugin_file(&self, path: &QString) -> QString {
         let path = path.to_string();
         q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+    }
+
+    fn selection_url(&self, text: &QString) -> QString {
+        q(search::selection_url(&text.to_string()).unwrap_or_default())
     }
 
     fn copy_text(&self, text: &QString) {

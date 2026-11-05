@@ -144,6 +144,67 @@ fn looks_like_host(s: &str) -> bool {
     }
 }
 
+/// Domain endings that make a bare name in text an address. The common general ones
+/// and every country's; a rarer one still counts when written with https:// or www.
+const COMMON_DOMAINS: &str = "com org net edu gov mil int info biz name pro dev app ai io xyz online site store shop blog tech cloud wiki";
+const COUNTRY_DOMAINS: &str = "ac ad ae af ag al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo br bs bt bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg er es et eu fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw";
+/// Those that are mostly files, in text: `main.py`, `README.md`. With a path after
+/// them they're addresses.
+const FILE_LIKE: &[&str] = &["py", "rs", "md", "sh", "pl", "so", "ai", "app", "cc", "cd", "ps", "ms", "im", "st", "zip", "mov"];
+
+/// The address selected text is written as, if it is one and nothing else, for
+/// offering to open it. Pickier than the location bar, as nobody asked: `Node.js` or
+/// `window.location` shouldn't offer a link. And the text is the page's, so only
+/// what is plainly the web: no `javascript:` or `file:`, nor `https://bank.com@evil.com`.
+pub fn selection_url(text: &str) -> Option<String> {
+    let text = trim_around_url(text);
+    if text.is_empty() || text.len() > 2048 || text.contains(char::is_whitespace) {
+        return None;
+    }
+    let scheme = text.split_once(':').map(|(s, _)| s.to_ascii_lowercase());
+    let explicit = text.contains("://") && matches!(scheme.as_deref(), Some("http" | "https"));
+    let u = url::Url::parse(&if explicit { text.to_owned() } else { format!("https://{text}") }).ok()?;
+    let host = u.host_str()?.to_owned();
+    if !u.username().is_empty() || u.password().is_some() {
+        return None;
+    }
+    if explicit {
+        return Some(u.to_string());
+    }
+    if text.contains("://") {
+        return None;
+    }
+    if host == "localhost" || host.parse::<std::net::IpAddr>().is_ok() {
+        // Without a port, `1.2.3.4` is more likely a version.
+        let authority = text.split(['/', '?', '#']).next().unwrap_or("");
+        let has_port = authority.rsplit_once(':').is_some_and(|(_, p)| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+        return has_port.then(|| url::Url::parse(&format!("http://{text}")).ok().map(|u| u.to_string())).flatten();
+    }
+    let tld = host.rsplit('.').next().unwrap_or("");
+    let known = COMMON_DOMAINS.split(' ').chain(COUNTRY_DOMAINS.split(' ')).any(|d| d == tld);
+    let has_path = text.contains('/');
+    (host.starts_with("www.") || (host.contains('.') && known && (has_path || !FILE_LIKE.contains(&tld)))).then(|| u.to_string())
+}
+
+/// Without what writing puts around an address: quotes, brackets, the end of a sentence.
+fn trim_around_url(text: &str) -> &str {
+    let mut t = text.trim();
+    loop {
+        let before = t;
+        t = t.trim_start_matches(['"', '\'', '“', '”', '‘', '’', '«', '»', '<', '(', '[', '{']);
+        t = t.trim_end_matches(['"', '\'', '“', '”', '‘', '’', '«', '»', '>', '.', ',', ';', ':', '!', '?']);
+        // A closing bracket stays if it belongs to the address: /wiki/Kite_(toy).
+        for (open, close) in [('(', ')'), ('[', ']'), ('{', '}')] {
+            if t.ends_with(close) && t.matches(close).count() > t.matches(open).count() {
+                t = &t[..t.len() - close.len_utf8()];
+            }
+        }
+        if t == before {
+            return t;
+        }
+    }
+}
+
 /// Decide what to do with text typed into the location bar.
 ///
 /// * search-engine shortcut: `w rust` → Wikipedia search
@@ -225,6 +286,54 @@ pub fn load_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn selected(text: &str) -> Option<String> {
+        selection_url(text)
+    }
+
+    #[test]
+    fn selection_addresses() {
+        assert_eq!(selected("https://kde.org/x?a=1#b").as_deref(), Some("https://kde.org/x?a=1#b"));
+        assert_eq!(selected("HTTP://KDE.org").as_deref(), Some("http://kde.org/"));
+        assert_eq!(selected("www.anything.example").as_deref(), Some("https://www.anything.example/"));
+        assert_eq!(selected("kde.org").as_deref(), Some("https://kde.org/"));
+        assert_eq!(selected("bbc.co.uk/news").as_deref(), Some("https://bbc.co.uk/news"));
+        assert_eq!(selected("localhost:8080/a").as_deref(), Some("http://localhost:8080/a"));
+        assert_eq!(selected("192.168.1.1:8765").as_deref(), Some("http://192.168.1.1:8765/"));
+        assert_eq!(selected("192.168.1.1:80/a").as_deref(), Some("http://192.168.1.1/a"));
+        assert_eq!(selected("http://192.168.1.1/x").as_deref(), Some("http://192.168.1.1/x"));
+    }
+
+    #[test]
+    fn selection_without_what_writing_puts_around_it() {
+        for text in ["  kde.org  ", "kde.org.", "kde.org,", "(kde.org)", "“kde.org”", "<kde.org>", "\"kde.org\"", "(kde.org).", "kde.org!\n"] {
+            assert_eq!(selected(text).as_deref(), Some("https://kde.org/"), "{text:?}");
+        }
+        assert_eq!(selected("https://en.wikipedia.org/wiki/Kite_(toy)").as_deref(), Some("https://en.wikipedia.org/wiki/Kite_(toy)"));
+        assert_eq!(selected("(https://en.wikipedia.org/wiki/Kite_(toy))").as_deref(), Some("https://en.wikipedia.org/wiki/Kite_(toy)"));
+    }
+
+    #[test]
+    fn selection_that_is_just_text() {
+        for text in ["", "hello", "two words", "see kde.org for more", "kde.org and bbc.co.uk", "Node.js", "window.location", "e.g.", "i.e.", "v1.2.3", "1.2.3.4", "localhost", "3.14",
+            "me@kde.org", "hello.world", "foo.bar", "file.txt", "main.py", "README.md", "lib.rs", "line one\nkde.org"] {
+            assert_eq!(selected(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn selection_with_a_path_is_an_address_even_if_it_ends_like_a_file() {
+        assert_eq!(selected("example.rs/docs").as_deref(), Some("https://example.rs/docs"));
+    }
+
+    #[test]
+    fn selection_never_offers_what_a_page_could_abuse() {
+        for text in ["javascript:alert(1)", "JAVASCRIPT://kde.org/%0aalert(1)", "file:///etc/passwd", "data:text/html,x", "ftp://kde.org/", "smb://nas/share", "chrome://settings",
+            "https://kde.org@evil.com", "https://user:pw@kde.org/", "kde.org@evil.com", "kite:start", "about:blank"] {
+            assert_eq!(selected(text), None, "{text:?}");
+        }
+    }
+
     fn act(s: &str) -> LoadAction {
         let kw = |k: &str| (k == "kde").then(|| "https://kde.org/".to_string());
         load_action(s, &builtin_engines(), "DuckDuckGo", true, &kw)

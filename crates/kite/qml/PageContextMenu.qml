@@ -13,6 +13,8 @@ QQC2.Menu {
     property string mediaUrl: ""
     property int mediaType: 0
     property string selection: ""
+    // The selected text, if it is an address without being a link on the page.
+    property string selectionLink: ""
     property bool editable: false
     property var extItems: []
     property var info: ({})
@@ -22,7 +24,9 @@ QQC2.Menu {
         linkUrl = request.linkUrl.toString()
         mediaUrl = request.mediaUrl.toString()
         mediaType = request.mediaType
-        selection = request.selectedText
+        // (Triple-clicking takes the line's end along.)
+        selection = request.selectedText.trim()
+        selectionLink = !linkUrl && selection ? Browser.selectionUrl(selection) : ""
         editable = request.isContentEditable
         const contexts = []
         if (linkUrl) contexts.push("link")
@@ -84,6 +88,12 @@ QQC2.Menu {
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Copy Media Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyMediaUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Play / Pause"; icon.name: "media-playback-start"; onTriggered: menu.act(WebEngineView.ToggleMediaPlayPause) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo; height: visible ? implicitHeight : 0; text: "Show Controls"; checkable: true; onTriggered: menu.act(WebEngineView.ToggleMediaControls) }
+
+    // Selected text that is an address
+    QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link"; icon.name: "go-jump"; onTriggered: menu.tab.load(menu.selectionLink) }
+    QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.selectionLink, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, container: menu.tab.container}) }
+    QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.selectionLink], privateMode: true}) }
+    QQC2.MenuSeparator { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0 }
 
     // Editing / selection
     QQC2.MenuItem { visible: menu.editable; height: visible ? implicitHeight : 0; text: "Undo"; icon.name: "edit-undo"; onTriggered: menu.act(WebEngineView.Undo) }
