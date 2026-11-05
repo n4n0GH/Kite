@@ -17,6 +17,7 @@ pub mod formfill;
 pub mod passwords;
 pub mod privacy;
 pub mod paths;
+pub mod reader;
 pub mod screensaver;
 pub mod safebrowsing;
 pub mod search;

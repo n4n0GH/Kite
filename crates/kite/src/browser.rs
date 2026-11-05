@@ -294,6 +294,27 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "scrollbarScript"]
         fn scrollbar_script(self: &Browser) -> QString;
+        /// Reader view: the script that extracts the page's article, for an
+        /// isolated world; it returns JSON, or "" without an article.
+        #[qinvokable]
+        #[cxx_name = "readerScript"]
+        fn reader_script(self: &Browser) -> QString;
+        /// Reader view: the script telling whether the page looks like an article.
+        #[qinvokable]
+        #[cxx_name = "readerProbeScript"]
+        fn reader_probe_script(self: &Browser) -> QString;
+        /// Keep an extracted article; the kite:reader address showing it, or "".
+        #[qinvokable]
+        #[cxx_name = "readerOpen"]
+        fn reader_open(self: &Browser, source: &QString, json: &QString, background: &QString, text: &QString, link: &QString) -> QString;
+        /// The page a kite:reader address was extracted from, or "".
+        #[qinvokable]
+        #[cxx_name = "readerSource"]
+        fn reader_source(self: &Browser, url: &QString) -> QString;
+        /// The script bringing an open reader page in line with the settings.
+        #[qinvokable]
+        #[cxx_name = "readerApplyScript"]
+        fn reader_apply_script(self: &Browser) -> QString;
         /// The cached favicon of `page_url`'s site as a data: URL, or "".
         #[qinvokable]
         #[cxx_name = "cachedFavicon"]
@@ -955,6 +976,27 @@ impl qobject::Browser {
         // the user's own flags): the setting may have changed since.
         let on = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS").is_ok_and(|f| f.contains("FluentOverlayScrollbar"));
         q(if on { include_str!("js/scrollbars.js") } else { "" })
+    }
+
+    fn reader_script(&self) -> QString {
+        q(concat!("(() => {", include_str!("js/readability/Readability.js"), include_str!("js/reader_extract.js"), "})()"))
+    }
+
+    fn reader_probe_script(&self) -> QString {
+        q(concat!("(() => {", include_str!("js/readability/Readability-readerable.js"), "\nreturn isProbablyReaderable(document);})()"))
+    }
+
+    fn reader_open(&self, source: &QString, json: &QString, background: &QString, text: &QString, link: &QString) -> QString {
+        let colors = kite_core::reader::Colors { background: background.to_string(), text: text.to_string(), link: link.to_string() };
+        q(kite_core::reader::open(&source.to_string(), &json.to_string(), colors).unwrap_or_default())
+    }
+
+    fn reader_source(&self, url: &QString) -> QString {
+        q(kite_core::reader::source_of(&url.to_string()).unwrap_or_default())
+    }
+
+    fn reader_apply_script(&self) -> QString {
+        q(kite_core::reader::Prefs::from_settings(&app().shared.settings()).apply_script())
     }
 
     fn cached_favicon(&self, page_url: &QString) -> QString {

@@ -176,6 +176,11 @@ fn serve(url: &str, initiator: &str) -> (i32, String, Vec<u8>) {
                     None => (404, "text/html".into(), b"<h1>Not found</h1><p>The start page copy has no such file.</p>".to_vec()),
                 }
             }
+            // An article in reader view (kite_core::reader).
+            "reader" => {
+                let prefs = kite_core::reader::Prefs::from_settings(&app().shared.settings());
+                (200, "text/html".into(), kite_core::reader::page(url, &prefs).into_bytes())
+            }
             // A known phishing or malware site (dangerous-site protection).
             "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
             // HTTPS-only: the site has no working https version.

@@ -30,7 +30,9 @@ Item {
     // preview to keep out of its way.
     readonly property point pointer: pointerWatch.point.position
     readonly property bool pointerInside: pointerWatch.hovered
-    property string url: heldUrl !== "" ? heldUrl : pendingUrl !== "" ? pendingUrl : web.url.toString()
+    // (Reader view: the page the article is from, for everything but the view
+    // itself: the address bar, bookmarks, the saved session, extensions.)
+    property string url: heldUrl !== "" ? heldUrl : pendingUrl !== "" ? pendingUrl : sourceOf(web.url.toString())
     // Tabs that haven't loaded yet (restored ones load when first activated)
     // show the title and icon they had before.
     property string title: web.title !== "" ? web.title : ((pendingUrl !== "" || heldUrl !== "") && _restoredTitle !== "" ? _restoredTitle : (url === "" || url === "about:blank" ? "New Tab" : url))
@@ -90,6 +92,44 @@ Item {
         web.url = u
     }
 
+    // ---- reader view (kite_core::reader) ----
+    // The article is extracted in a world of its own, shown at a kite:reader
+    // address (one step in the tab's history: Back returns to the page).
+    readonly property int readerWorld: 250
+    readonly property bool isReader: web.url.toString().startsWith("kite:reader?")
+    // Whether the page looks like an article (the address bar offers it).
+    property bool readerAvailable: false
+    function sourceOf(u) { return u.startsWith("kite:reader?") ? (Browser.readerSource(u) || u) : u }
+    function canRead() { return isReader || /^https?:/i.test(url) }
+    function showSiteIcon() { window.setTabProperty(tabId, "icon", Browser.cachedFavicon(sourceOf(web.url.toString()))) }
+    function toggleReader() {
+        if (isReader) {
+            if (web.canGoBack) web.goBack()
+            else load(url)
+            return
+        }
+        if (!canRead()) return
+        const source = url
+        web.runJavaScript(Browser.readerScript(), readerWorld, json => {
+            if (wt.url !== source) return   // gone elsewhere meanwhile
+            const t = Kirigami.Theme
+            const reader = json ? Browser.readerOpen(source, json, t.backgroundColor.toString(), t.textColor.toString(), t.linkColor.toString()) : ""
+            if (reader === "") wt.window.toast("Kite found no article on this page", "dialog-information")
+            else web.url = reader
+        })
+    }
+    function probeReader() {
+        if (!visible || isReader || discarded || !/^https?:/i.test(web.url.toString())) return
+        const page = web.url.toString()
+        web.runJavaScript(Browser.readerProbeScript(), readerWorld, ok => { if (web.url.toString() === page) wt.readerAvailable = ok === true })
+    }
+    // Twice: pages often fill in only after loading.
+    Timer { id: readerProbe; interval: 300; onTriggered: { wt.probeReader(); readerProbeLate.restart() } }
+    Timer { id: readerProbeLate; interval: 2500; onTriggered: if (!wt.readerAvailable) wt.probeReader() }
+    // The settings reach open reader pages at once.
+    readonly property string readerLook: ["reader.fontSize", "reader.width", "reader.font", "reader.theme"].map(k => app.liveSettings[k]).join("|")
+    onReaderLookChanged: if (isReader) web.runJavaScript(Browser.readerApplyScript(), readerWorld)
+
     // ---- picture-in-picture (Main.qml startPip) ----
     // The page has a video to offer (bridge.js), and the page is in the
     // picture-in-picture window.
@@ -116,7 +156,11 @@ Item {
     // Text typed into the page that wasn't submitted (it would be lost).
     property bool formDirty: false
     // Shown tabs (the current one, both panes in split view) stay loaded.
-    onVisibleChanged: if (!visible) lastAccessed = Date.now()
+    // (Whether a page looks like an article matters once it is seen.)
+    onVisibleChanged: {
+        if (!visible) lastAccessed = Date.now()
+        else if (!readerAvailable) readerProbe.restart()
+    }
     // Why the tab must stay loaded ("" when it can be unloaded).
     function keepLoadedReason() {
         if (visible || inPip) return "shown"
@@ -127,7 +171,7 @@ Item {
         if (formDirty) return "unsent form input"
         if (devTools.active) return "developer tools open"
         if (pinned && wt.app.setting("tabs.unloadKeepPinned")) return "pinned"
-        if (url === "" || url.startsWith("kite:") || url === "about:blank") return "browser page"
+        if (url === "" || url.startsWith("kite:") || url === "about:blank" || isReader) return "browser page"
         return ""
     }
     function unload() {
@@ -228,7 +272,7 @@ Item {
             favIconUrl: web.icon.toString().startsWith("image://favicon/") ? web.icon.toString().substring(16) : "",
             status: status, incognito: window.privateMode, audible: web.recentlyAudible, discarded: unloaded,
             mutedInfo: {muted: web.audioMuted}, width: web.width, height: web.height, lastAccessed: lastAccessed,
-            openerTabId: openerTabId >= 0 ? openerTabId : undefined, hidden: false, isArticle: false, isInReaderMode: false,
+            openerTabId: openerTabId >= 0 ? openerTabId : undefined, hidden: false, isArticle: readerAvailable, isInReaderMode: isReader,
             cookieStoreId: window.privateMode ? "firefox-private" : container ? "firefox-container-" + container : "firefox-default",
         }
     }
@@ -356,7 +400,7 @@ Item {
                     wt.formDirty = false
                     wt.hasVideo = false
                     const u = url.toString()
-                    const host = Browser.hostOf(u)
+                    const host = Browser.hostOf(wt.sourceOf(u))
                     if (host !== wt.lastHost) {
                         wt.lastHost = host
                         wt.applySiteSettings()
@@ -366,7 +410,10 @@ Item {
                         wt.navEvent(u.split("#")[0] === wt._lastCommitted.split("#")[0] ? "onReferenceFragmentUpdated" : "onHistoryStateUpdated", {transitionType: "link", transitionQualifiers: []})
                         Browser.recordVisit(u, title)
                     }
-                    wt.sendUpdate({url: u})
+                    wt.sendUpdate({url: wt.sourceOf(u)})
+                    if (!loading) readerProbe.restart()
+                    // (The icon may have gone before the address changed.)
+                    if (u.startsWith("kite:reader?")) wt.showSiteIcon()
                 }
                 onTitleChanged: {
                     wt.sendUpdate({title: title})
@@ -374,6 +421,8 @@ Item {
                 }
                 onIconChanged: {
                     const s = icon.toString()
+                    // (Reader view: a kite: page has none; the site's is kept.)
+                    if (wt.isReader) { wt.showSiteIcon(); return }
                     wt.window.setTabProperty(wt.tabId, "icon", s)
                     wt.sendUpdate({favIconUrl: s.startsWith("image://favicon/") ? s.substring(16) : s})
                     // Remember it for the speed dial (not from private windows).
@@ -387,6 +436,7 @@ Item {
                     switch (info.status) {
                     case WebEngineView.LoadStartedStatus:
                         wt.crashed = false
+                        wt.readerAvailable = false
                         // A wake lock prompt belongs to the page being left.
                         if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
                         wt.loginForm = false
@@ -402,6 +452,7 @@ Item {
                         Browser.recordVisit(u, title)
                         wt.sendUpdate({status: "complete"})
                         wt.focusPageAfterLoad()
+                        readerProbe.restart()
                         break
                     case WebEngineView.LoadFailedStatus:
                         wt.navEvent("onErrorOccurred", {url: u, error: info.errorString})
@@ -491,6 +542,13 @@ Item {
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
                 onJavaScriptConsoleMessage: (level, message, line, source) => wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
+            }
+
+            ReaderControls {
+                tab: wt
+                visible: wt.isReader && !wt.inPip
+                z: 1
+                anchors { top: parent.top; right: parent.right; margins: Kirigami.Units.largeSpacing * 2 }
             }
 
             // Certificate error interstitial

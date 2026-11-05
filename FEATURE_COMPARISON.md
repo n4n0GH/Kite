@@ -156,7 +156,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 |---|---|---|---|---|
 | Sync between devices | ❌ | ✅ | ✅ | |
 | Built-in translation | ❌ | ✅ | ✅ | Firefox translates on the device. |
-| Reader view | ❌ | ⚠️ | ✅ | Chrome has a reading mode side panel. |
+| Reader view | ✅ | ⚠️ | ✅ | Chrome has a reading mode side panel. Kite uses Firefox's extraction library. |
 | Screenshots | ❌ | ⚠️ | ✅ | |
 | AI assistant | ❌ | ✅ | ⚠️ | Firefox: a sidebar for a chosen chatbot. |
 | Casting to TVs | ❌ | ✅ | ❌ | |
@@ -193,7 +193,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 
 **Where Kite lags:**
 - Its engine trails Chrome, and it runs only on Linux.
-- No sync, translation, reader view, passkeys or card autofill.
+- No sync, translation, passkeys or card autofill.
 - No browser themes.
 - No profile picker; profiles are chosen on the command line.
 - Its extension API coverage is narrower than Firefox's.

@@ -164,6 +164,7 @@ QtObject {
         {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
         {id: "devTools", group: "Page", name: "Developer tools", keys: ["F12", "Ctrl+Shift+I"]},
         {id: "pictureInPicture", group: "Page", name: "Picture-in-picture", keys: ["Ctrl+Shift+]"]},
+        {id: "readerView", group: "Page", name: "Reader view", keys: ["Ctrl+Alt+R"]},
         {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},
         {id: "bookmarkAllTabs", group: "Bookmarks and history", name: "Bookmark all tabs", keys: ["Ctrl+Shift+D"]},
         {id: "bookmarksSidebar", group: "Bookmarks and history", name: "Bookmarks sidebar", keys: ["Ctrl+B"]},
@@ -206,7 +207,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "reader.fontSize", "reader.width", "reader.font", "reader.theme", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {

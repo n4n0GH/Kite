@@ -636,6 +636,7 @@ QQC2.ApplicationWindow {
         case "openFile": openDialog.open(); break
         case "devTools": if (t) t.showDevTools(); break
         case "pictureInPicture": if (t) app.startPip(t); break
+        case "readerView": if (t) t.toggleReader(); break
         case "bookmarkPage": if (locationBar) locationBar.toggleBookmark(); break
         case "bookmarkAllTabs": bookmarkAllTabs(); break
         case "bookmarksSidebar": showSidebar("bookmarks"); break

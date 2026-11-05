@@ -23,6 +23,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.
+* **Reader view:** an article without the rest of the page (address bar button, the View menu
+  or Ctrl+Alt+R), with its own text size, line length, font and colours; see below.
 * **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
   Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
   unsent form input or keeping the screen on stay loaded. Also from the tab menu and
@@ -168,6 +170,21 @@ saved or update an existing entry; never from private windows.
   to extension pages; nothing is saved from private windows.
 * **Import/export:** Firefox/Chrome/Bitwarden CSV and Falkon XML; exports are 0600.
 
+## Reader view
+
+The page's article is extracted with Mozilla's
+[Readability](https://github.com/mozilla/readability) (`crates/kite/src/js/readability/`,
+Apache-2.0) in an isolated world, and shown at a `kite:reader` address, one step in the tab's
+history. The address bar, bookmarks, the saved session and extensions go on seeing the page's
+own address; a restored session reopens the page itself.
+
+* **Safety:** `kite:` is a privileged origin, so the article is sanitised in Rust (ammonia, with
+  an allow list: no scripts, styles, frames or forms; links and images on the web only), and the
+  page's Content-Security-Policy forbids scripts as well. Articles stay in memory under random
+  ids, so a web page can't link to one and pass it off as another site's.
+* **Left out:** videos and other embedded content, and images given as `data:` addresses. Images
+  are requested without a referrer, so sites refusing those won't show theirs.
+
 ## Known limitations
 
 * Blocking `webRequest` listeners are only asked about `onBeforeRequest`, and must answer
@@ -183,7 +200,7 @@ saved or update an existing entry; never from private windows.
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the
   window can only stay on top with a KWin window rule ("Keep above" for the title
   "Picture-in-Picture").
-* Not available: sync, translation, reader view, passkeys (WebAuthn),
+* Not available: sync, translation, passkeys (WebAuthn),
   card autofill, browser themes, a profile picker (profiles are chosen with
   `--profile`).
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.

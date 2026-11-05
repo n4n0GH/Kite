@@ -59,6 +59,12 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
+        // Reader view: text size (px), line length (em), "sans" | "serif",
+        // "auto" (the KDE colours) | "light" | "sepia" | "dark".
+        "reader.fontSize": 20,
+        "reader.width": 38,
+        "reader.font": "serif",
+        "reader.theme": "auto",
         // Speed dial: tiles the user added ([{url, title}], shown first) and
         // most-visited sites the user removed ([url]).
         "speeddial.showTiles": true,
