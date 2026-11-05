@@ -11,6 +11,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Tabs:** the tab bar above or below the address bar, below the page, or as a vertical
   list on either side (hidden with a single tab if wanted); pinned tabs, scroll arrows and
   wheel scrolling, drag to reorder, links/images/text dropped on the bar open in new tabs.
+* **Tab search:** the tab bar's list button or Ctrl+Shift+E searches the open tabs of all
+  windows by title and address (private and normal windows aren't mixed).
 * **Tab groups:** named and coloured, collapsible; shown as a group tab on horizontal bars
   and as a file tree in vertical lists; dragged as a whole. Ctrl/Shift+click selects
   several tabs for the tab menu.

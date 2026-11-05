@@ -39,7 +39,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Mute tab | ✅ | ✅ | ✅ | |
 | Container tabs (separate cookies) | ✅ | ❌ | ⚠️ | Firefox: through Mozilla's Multi-Account Containers add-on. Chrome uses profiles instead. |
 | Reopen closed tabs and windows | ✅ | ✅ | ✅ | |
-| List all tabs / tab search | ✅ | ✅ | ✅ | Kite has a list; Chrome and Firefox also search it. |
+| List all tabs / tab search | ✅ | ✅ | ✅ | Kite searches the tabs of all windows by title and address. |
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
 | Named sessions | ❌ | ❌ | ❌ | All need an extension. |

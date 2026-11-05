@@ -141,6 +141,7 @@ QtObject {
         {id: "tab8", group: "Tabs", name: "Switch to tab 8", keys: ["Alt+8"]},
         {id: "tabLast", group: "Tabs", name: "Switch to the last tab", keys: ["Alt+9"]},
         {id: "muteTab", group: "Tabs", name: "Mute or unmute tab", keys: ["Ctrl+M"]},
+        {id: "tabSearch", group: "Tabs", name: "Search tabs", keys: ["Ctrl+Shift+E"]},
         {id: "newWindow", group: "Windows", name: "New window", keys: ["Ctrl+N"]},
         {id: "newPrivateWindow", group: "Windows", name: "New private window", keys: ["Ctrl+Shift+P"]},
         {id: "fullScreen", group: "Windows", name: "Full screen", keys: ["F11"]},

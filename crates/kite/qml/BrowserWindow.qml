@@ -613,6 +613,7 @@ QQC2.ApplicationWindow {
         case "previousTab": nextTab(-1); break
         case "tabLast": setCurrentIndex(count - 1); break
         case "muteTab": if (t) t.view.audioMuted = !t.view.audioMuted; break
+        case "tabSearch": tabSearch.toggle(null); break
         case "newWindow": app.newWindow(); break
         case "newPrivateWindow": app.newWindow({privateMode: true}); break
         case "fullScreen": visibility === Window.FullScreen ? showNormal() : showFullScreen(); break
@@ -922,6 +923,8 @@ QQC2.ApplicationWindow {
     }
 
     MainMenu { id: mainMenu; win: bw; app: bw.app }
+    TabSearch { id: tabSearch; win: bw }
+    function toggleTabSearch(anchor) { tabSearch.toggle(anchor) }
 
     // A tab group's menu (its chip or header).
     QQC2.Menu {

@@ -255,32 +255,15 @@ Rectangle {
         }
 
         QQC2.ToolButton {
+            id: tabListButton
             icon.name: "tab-duplicate"
             display: QQC2.AbstractButton.IconOnly
-            text: "List all tabs"
+            text: "List and Search Tabs"
             Layout.alignment: Qt.AlignCenter
-            id: tabListButton
-            onClicked: tabListMenu.opened ? tabListMenu.close() : tabListMenu.popup(tabListButton, 0, tabListButton.height)
-            QQC2.Menu {
-                id: tabListMenu
-                // The button toggles the menu.
-                closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
-                Instantiator {
-                    model: stripRoot.browser.tabs
-                    delegate: QQC2.MenuItem {
-                        required property int index
-                        required property string title
-                        text: title
-                        checkable: true
-                        checked: index === stripRoot.browser.currentIndex
-                        onTriggered: stripRoot.browser.setCurrentIndex(index)
-                    }
-                    onObjectAdded: (i, o) => tabListMenu.insertItem(i, o)
-                    onObjectRemoved: (i, o) => tabListMenu.removeItem(o)
-                }
-                QQC2.MenuSeparator {}
-                QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: stripRoot.browser.reopenClosedTab(0) }
-            }
+            onClicked: stripRoot.browser.toggleTabSearch(tabListButton)
+            QQC2.ToolTip.text: text + " (" + stripRoot.browser.app.shortcutKeys("tabSearch").map(k => Browser.keySequenceDisplay(k)).join(", ") + ")"
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
     }
 }
