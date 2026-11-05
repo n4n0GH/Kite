@@ -405,6 +405,9 @@ pub mod qobject {
         #[cxx_name = "keySequenceDisplay"]
         fn key_sequence_display(self: &Browser, sequence: &QString) -> QString;
         /// The system's scroll distance per mouse wheel notch, in px.
+        /// Kite's optional features (kite_core::plugins), as a JSON list.
+        #[qinvokable]
+        fn plugins(self: &Browser) -> QString;
         #[qinvokable]
         #[cxx_name = "engineInfo"]
         fn engine_info(self: &Browser) -> QString;
@@ -1178,6 +1181,10 @@ impl qobject::Browser {
         q(crate::ffi::key_native(&sequence.to_string()))
     }
 
+    fn plugins(&self) -> QString {
+        q(serde_json::to_string(&all_plugins()).unwrap_or_else(|_| "[]".into()))
+    }
+
     fn engine_info(&self) -> QString {
         q(crate::ffi::engine_info())
     }
@@ -1318,8 +1325,29 @@ pub fn parse_netscape(html: &str) -> Vec<Node> {
     stack.pop().map(|r| r.children).unwrap_or_default()
 }
 
+/// Each plugin of crates/kite/plugins/. They are checked by a test below, so a
+/// mistake can't get this far.
+fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
+    kite_core::plugins::parse_all(&[include_str!("../plugins/gestures/plugin.json")]).expect("plugin.json")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plugins_are_valid_and_complete() {
+        let plugins = super::all_plugins();
+        assert!(!plugins.is_empty());
+        let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for p in &plugins {
+            for f in p.files() {
+                assert!(here.join(f).is_file(), "{}: {f}", p.id);
+            }
+        }
+        // Every folder is on the list.
+        let folders = std::fs::read_dir(here.join("plugins")).unwrap().count();
+        assert_eq!(folders, plugins.len());
+    }
+
     #[test]
     fn netscape() {
         let html = r#"<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>

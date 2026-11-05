@@ -13,6 +13,7 @@
 #include <QQuickItem>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPointingDevice>
 #include <QKeySequence>
 #include <QMimeData>
 #include <QElapsedTimer>
@@ -39,7 +40,8 @@ static QQmlApplicationEngine *g_engine = nullptr;
 // * presses while that menu bar is shown: BrowserWindow.windowPressed(x, y),
 //   so a click elsewhere hides it again;
 // * a window losing focus closes its open menus (e.g. right-clicking the
-//   title bar opens the window manager's menu, a click Qt Quick never sees).
+//   title bar opens the window manager's menu, a click Qt Quick never sees);
+// * mouse gestures: see holdForGesture() below.
 // Scroll distance per mouse wheel notch on pages ("web.wheelScrollPixels",
 // set from Rust; 0 = the system's). QtWebEngine scrolls a notch by the
 // system's wheel scroll lines × 20 px, so a notch is scaled to the chosen
@@ -74,6 +76,17 @@ protected:
         }
         case QEvent::MouseButtonPress: {
             m_altAlone = false;
+            if (!m_replaying) {
+                auto *m = static_cast<QMouseEvent *>(e);
+                if (m->button() == m_swallowRelease) m_swallowRelease = Qt::NoButton;
+                if (m_held) {
+                    // Another button ends it. The page never saw this one go down.
+                    m_swallowRelease = m_heldButton;
+                    endGesture(false);
+                } else if (holdForGesture(win, m)) {
+                    return true;
+                }
+            }
             if (win->property("menuBarPeek").toBool()) {
                 const QPointF p = static_cast<QMouseEvent *>(e)->scenePosition();
                 QMetaObject::invokeMethod(win, "windowPressed", Q_ARG(QVariant, p.x()), Q_ARG(QVariant, p.y()));
@@ -97,13 +110,40 @@ protected:
             m_rescaling = false;
             return true;
         }
+        case QEvent::MouseButtonRelease: {
+            auto *m = static_cast<QMouseEvent *>(e);
+            if (m->button() == m_swallowRelease) {
+                m_swallowRelease = Qt::NoButton;
+                return true;
+            }
+            if (m_held && m_heldWindow == win && m->button() == m_heldButton) {
+                if (m_gesturing) endGesture(true);
+                else replayClick();
+                return true;
+            }
+            break;
+        }
+        case QEvent::ContextMenu:
+            // The menu's own event, from a held press: the replayed click opens it.
+            if (m_held && m_heldWindow == win) return true;
+            break;
         case QEvent::MouseMove: {
             auto *m = static_cast<QMouseEvent *>(e);
+            if (m_held && m_heldWindow == win) {
+                const QPointF at = m->scenePosition();
+                if (!m_gesturing && (at - m_heldScene).manhattanLength() >= 12) {
+                    m_gesturing = true;
+                    QMetaObject::invokeMethod(win, "gestureStarted", Q_ARG(double, m_heldScene.x()), Q_ARG(double, m_heldScene.y()));
+                }
+                if (m_gesturing) QMetaObject::invokeMethod(win, "gestureMoved", Q_ARG(double, at.x()), Q_ARG(double, at.y()));
+                return true;
+            }
             if (m->buttons() == Qt::NoButton && overlayScrollbars())
                 revealScrollbar(win, m->scenePosition());
             break;
         }
         case QEvent::WindowDeactivate:
+            if (m_held && m_heldWindow == win) endGesture(false);
             closeMenus(win);
             break;
         // A drag over a browser window (from a page, or another app): the
@@ -130,19 +170,95 @@ protected:
         return false;
     }
 private:
+    // Mouse gestures. A page acts on a button as soon as it is pressed (Chromium
+    // even opens its menu then), before anyone can tell a click from a gesture.
+    // So a press of the window's "gestureButton" on a tab's page is held back.
+    // If the pointer travels, it is a gesture: the page never hears of it, and
+    // the window is told. If not, the release replays the click for the page.
+    // Shift, or a menu being open, leaves the press to do what it always does.
+    bool holdForGesture(QQuickWindow *win, QMouseEvent *m)
+    {
+        const int wanted = win->property("gestureButton").toInt();
+        if (!wanted || int(m->button()) != wanted || m->buttons() != m->button()) return false;
+        if (m->modifiers() & Qt::ShiftModifier) return false;
+        if (popupOpen(win)) return false;
+        QQuickItem *view = viewAt(win, m->scenePosition());
+        if (!view || !view->property("kiteTabPage").toBool()) return false;
+        m_held = true;
+        m_gesturing = false;
+        m_heldWindow = win;
+        m_heldButton = m->button();
+        m_heldLocal = m->position();
+        m_heldScene = m->scenePosition();
+        m_heldGlobal = m->globalPosition();
+        m_heldModifiers = m->modifiers();
+        m_heldDevice = m->pointingDevice();
+        return true;
+    }
+    void endGesture(bool finished)
+    {
+        const bool told = m_gesturing;
+        m_held = m_gesturing = false;
+        if (told && m_heldWindow) QMetaObject::invokeMethod(m_heldWindow, finished ? "gestureFinished" : "gestureCancelled");
+    }
+    void replayClick()
+    {
+        m_held = false;
+        if (!m_heldWindow) return;
+        QMouseEvent press(QEvent::MouseButtonPress, m_heldLocal, m_heldScene, m_heldGlobal, m_heldButton, m_heldButton, m_heldModifiers, m_heldDevice);
+        QMouseEvent release(QEvent::MouseButtonRelease, m_heldLocal, m_heldScene, m_heldGlobal, m_heldButton, Qt::NoButton, m_heldModifiers, m_heldDevice);
+        m_replaying = true;
+        QCoreApplication::sendEvent(m_heldWindow, &press);
+        if (m_heldWindow) QCoreApplication::sendEvent(m_heldWindow, &release);
+        m_replaying = false;
+    }
+    static bool popupOpen(QQuickWindow *win)
+    {
+        for (QQuickItem *layer : win->contentItem()->childItems()) {
+            if (!layer->inherits("QQuickOverlay") || !layer->isVisible()) continue;
+            for (QQuickItem *item : layer->childItems()) {
+                QObject *popup = item->parent();
+                if (item->isVisible() && !(popup && popup->inherits("QQuickToolTip"))) return true;
+            }
+        }
+        return false;
+    }
+    bool m_replaying = false;
+    bool m_held = false;
+    bool m_gesturing = false;
+    QPointer<QQuickWindow> m_heldWindow;
+    Qt::MouseButton m_heldButton = Qt::NoButton;
+    Qt::MouseButton m_swallowRelease = Qt::NoButton;
+    QPointF m_heldLocal, m_heldScene, m_heldGlobal;
+    Qt::KeyboardModifiers m_heldModifiers;
+    const QPointingDevice *m_heldDevice = nullptr;
+
     bool m_rescaling = false;
     // Is a page (WebEngineView) the topmost item under this point?
-    static bool overWebView(QQuickWindow *win, QPointF scenePos)
+    static bool overWebView(QQuickWindow *win, QPointF scenePos) { return viewAt(win, scenePos); }
+    static QQuickItem *viewAt(QQuickWindow *win, QPointF scenePos)
     {
         QQuickItem *it = win->contentItem()->parentItem() ? win->contentItem()->parentItem() : win->contentItem();
         while (it) {
-            if (it->inherits("QQuickWebEngineView")) return true;
-            const QPointF p = it->mapFromScene(scenePos);
-            QQuickItem *c = it->childAt(p.x(), p.y());
-            if (!c) return false;
-            it = c;
+            if (it->inherits("QQuickWebEngineView")) return it;
+            it = childUnder(it, scenePos);
         }
-        return false;
+        return nullptr;
+    }
+    // Popups' layer covers the window while anything shows in it, even a tooltip
+    // elsewhere: where it has nothing, what is below it counts.
+    static QQuickItem *childUnder(QQuickItem *item, QPointF scenePos)
+    {
+        const QPointF p = item->mapFromScene(scenePos);
+        QQuickItem *child = item->childAt(p.x(), p.y());
+        if (!child || !child->inherits("QQuickOverlay")) return child;
+        const QPointF inLayer = child->mapFromScene(scenePos);
+        if (child->childAt(inLayer.x(), inLayer.y())) return child;
+        const QList<QQuickItem *> kids = item->childItems();
+        for (auto k = kids.crbegin(); k != kids.crend(); ++k) {
+            if (*k != child && (*k)->isVisible() && (*k)->contains((*k)->mapFromScene(scenePos))) return *k;
+        }
+        return nullptr;
     }
     // Overlay page scrollbars (main.rs: Chromium's FluentOverlayScrollbar)
     // hide while idle, and Chromium doesn't bring them back when the pointer

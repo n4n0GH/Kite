@@ -1,27 +1,35 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
-    let qml: Vec<String> = std::fs::read_dir("qml")
+    fn files(dir: &std::path::Path, out: &mut Vec<String>) {
+        for e in std::fs::read_dir(dir).expect("resource dir").filter_map(|e| e.ok()) {
+            let p = e.path();
+            if p.is_dir() { files(&p, out) } else { out.push(p.to_string_lossy().into_owned()) }
+        }
+    }
+    let mut qml: Vec<String> = std::fs::read_dir("qml")
         .expect("qml dir")
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "qml"))
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
-    let mut qml = qml;
+    // Plugins' QML files are part of the module too, under plugins/<id>/ (so
+    // their names must differ from all others).
+    let plugin_files = {
+        let mut out = Vec::new();
+        files(std::path::Path::new("plugins"), &mut out);
+        out
+    };
+    qml.extend(plugin_files.iter().filter(|f| f.ends_with(".qml")).cloned());
     qml.sort();
     for f in &qml {
         println!("cargo::rerun-if-changed={f}");
     }
     println!("cargo::rerun-if-changed=qml");
+    println!("cargo::rerun-if-changed=plugins");
     // Icons Kite ships itself (qrc:/qt/qml/org/kde/kite/icons/…), including
     // its fallback icon theme (icons/kite/, see bootstrap.cpp).
-    fn files(dir: &std::path::Path, out: &mut Vec<String>) {
-        for e in std::fs::read_dir(dir).expect("icons dir").filter_map(|e| e.ok()) {
-            let p = e.path();
-            if p.is_dir() { files(&p, out) } else { out.push(p.to_string_lossy().into_owned()) }
-        }
-    }
     let mut icons = Vec::new();
     files(std::path::Path::new("icons"), &mut icons);
     icons.sort();
@@ -29,6 +37,7 @@ fn main() {
     for js in ["qml/tabtree.js", "qml/fuzzy.js", "qml/palette.js"] {
         icons.push(js.to_owned());
     }
+    icons.extend(plugin_files.iter().filter(|f| f.ends_with(".js") && !f.ends_with(".test.js")).cloned());
     println!("cargo::rerun-if-changed=icons");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml))

@@ -33,6 +33,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   Or save the page as a PDF without printing.
 * **Sessions:** open windows and tabs saved under a name, with their groups, trees, containers and
   split view, to open beside what is open or switch to (Sessions menu, or the command palette).
+* **Plugins:** optional features built into Kite, off until you want them (Settings → Plugins, or
+  the command palette). So far: mouse gestures, with the button to choose, and strokes of your own to record.
 * **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Picture-in-picture:** a page's video in a small window above others (address bar
@@ -70,7 +72,7 @@ qqc2-desktop-style. QtWebEngineQuick *development* headers are optional.
 ```sh
 cargo build --release
 ./target/release/kite [URL...]            # --profile NAME, --private
-cargo test --workspace && node --test crates/kite-core/src/webext/js/*.test.js crates/kite/qml/*.test.js
+cargo test --workspace && node --test crates/kite-core/src/webext/js/*.test.js crates/kite/qml/*.test.js crates/kite/plugins/*/*.test.js
 ```
 
 Developer tools:
@@ -236,6 +238,6 @@ own address; a restored session reopens the page itself.
 * Not available: sync, translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
-* Falkon features not yet ported: cookie/certificate managers, mouse gestures. KIO integration is left out on purpose: addresses
+* Falkon features not yet ported: cookie/certificate managers. KIO integration is left out on purpose: addresses
   like `smb://` and `sftp://` open in the app the desktop has for them (the file manager), which
   does more with them. Typed ones open directly; a page's links ask first.

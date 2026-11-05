@@ -93,7 +93,7 @@ const CHOICES = [
 const PAGE_TITLES = {
     general: "General", appearance: "Appearance", browsing: "Browsing", search: "Search Engines", privacy: "Privacy",
     passwords: "Passwords", adblock: "Content Blocking", downloads: "Downloads", sites: "Site Settings",
-    extensions: "Extensions", shortcuts: "Shortcuts",
+    extensions: "Extensions", plugins: "Plugins", shortcuts: "Shortcuts",
 }
 
 // Icons for the shortcut actions (Main.qml's shortcutActions).

@@ -15,6 +15,7 @@ pub mod history;
 pub mod kwallet;
 pub mod formfill;
 pub mod passwords;
+pub mod plugins;
 pub mod privacy;
 pub mod paths;
 pub mod profiles;

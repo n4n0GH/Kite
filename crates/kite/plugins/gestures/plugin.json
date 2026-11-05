@@ -1,0 +1,23 @@
+{
+    "id": "gestures",
+    "name": "Mouse Gestures",
+    "description": "Hold a mouse button on a page and draw a stroke to go back, close a tab and more. While it's on, right-click menus open when the button is released. Hold Shift for the page's own use of the button.",
+    "icon": "input-mouse",
+    "defaultEnabled": false,
+    "window": "plugins/gestures/GesturesWindow.qml",
+    "settingsPage": "plugins/gestures/GesturesSettings.qml",
+    "settings": {
+        "button": "right",
+        "trail": true,
+        "map": {
+            "L": "back",
+            "R": "forward",
+            "D": "newTab",
+            "UD": "reload",
+            "DR": "closeTab",
+            "LU": "reopenTab",
+            "UL": "previousTab",
+            "UR": "nextTab"
+        }
+    }
+}

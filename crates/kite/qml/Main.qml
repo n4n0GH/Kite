@@ -78,6 +78,21 @@ QtObject {
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
 
+    // Kite's own optional features (crates/kite/plugins/). What a plugin hasn't
+    // had set comes from its plugin.json.
+    readonly property var plugins: JSON.parse(Browser.plugins())
+    function pluginEnabled(plugin) {
+        const on = setting("plugins." + plugin.id + ".enabled")
+        return on === null ? plugin.defaultEnabled : !!on
+    }
+    function setPluginEnabled(plugin, on) { Browser.setSetting("plugins." + plugin.id + ".enabled", JSON.stringify(on)) }
+    function pluginSetting(plugin, key) {
+        const v = setting("plugins." + plugin.id + "." + key)
+        return v === null ? plugin.settings[key] : v
+    }
+    function setPluginSetting(plugin, key, value) { Browser.setSetting("plugins." + plugin.id + "." + key, JSON.stringify(value)) }
+    function pluginUrl(file) { return "qrc:/qt/qml/org/kde/kite/" + file }
+
     // ---- picture-in-picture (PipWindow.qml, bridge.js __kitePip) ----
     // One at a time: the tab whose page is shown in the picture-in-picture
     // window. Its WebEngineView moves into the window and back.

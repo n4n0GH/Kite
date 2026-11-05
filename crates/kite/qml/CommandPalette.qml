@@ -51,6 +51,14 @@ CommandBar {
             const item = t
             out.push({prefix: "Settings: " + Palette.PAGE_TITLES[t.page] + (t.prefix ? ", " + t.prefix : ""), title: t.text, icon: "configure", checked: !!app.setting(t.key), run: () => palette.toggle_(item)})
         }
+        for (const p of app.plugins) {
+            const plugin = p
+            const on = app.pluginEnabled(plugin)
+            out.push({prefix: "Plugins", title: plugin.name, icon: plugin.icon, checked: on, run: () => {
+                app.setPluginEnabled(plugin, !on)
+                win.toast(plugin.name + ": " + (on ? "off" : "on"), plugin.icon)
+            }})
+        }
         for (const c of Palette.CHOICES) {
             const page = c.page
             out.push({prefix: "Settings: " + Palette.PAGE_TITLES[c.page], title: c.text, icon: "configure", run: () => app.showPreferences(page)})

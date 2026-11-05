@@ -1120,6 +1120,36 @@ QQC2.ApplicationWindow {
     CommandPalette { id: commandPalette; win: bw }
     function toggleTabSearch() { tabSearch.toggle() }
     function toggleCommandPalette() { commandPalette.toggle() }
+    // Mouse gestures (bootstrap.cpp): the button the input filter holds back on
+    // pages (a Qt.MouseButton, 0 = none), and what the pointer does with it.
+    // A click without moving never shows up here: it reaches the page as usual.
+    property int gestureButton: 0
+    signal gestureStarted(real x, real y)
+    signal gestureMoved(real x, real y)
+    signal gestureFinished()
+    signal gestureCancelled()
+
+    // The window's part of plugins that are on. Sized zero: nothing here may
+    // cover the pages (a plugin puts up what it shows itself).
+    Item {
+        Repeater {
+            model: bw.app.plugins.filter(p => p.window)
+            delegate: Loader {
+                id: pluginLoader
+                required property var modelData
+                function sync() {
+                    if (!bw.app.pluginEnabled(modelData)) source = ""
+                    else if (!item) setSource(bw.app.pluginUrl(modelData.window), {win: bw, app: bw.app, plugin: modelData})
+                }
+                Component.onCompleted: sync()
+                Connections {
+                    target: Browser
+                    function onSettingChanged(key) { if (key === "plugins." + pluginLoader.modelData.id + ".enabled") pluginLoader.sync() }
+                }
+            }
+        }
+    }
+
     SessionDialogs { id: sessionDialogs; win: bw }
     function saveSessionAs() { sessionDialogs.save() }
     function manageSessions() { sessionDialogs.manage() }

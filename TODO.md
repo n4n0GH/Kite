@@ -15,11 +15,11 @@
 
 - [x] Tree-style nested tabs
 - [x] Named sessions
-- [ ] Mouse gestures
+- [x] Mouse gestures
 - [x] Hand `smb://`, `sftp://` and similar addresses to the system (instead of KIO integration)
 - [x] Make the UI on ctrl-shift-e look more like the UI on dolphin and other kde apps when ctrl-alt-i is pressed
 - [x] Add command palette on ctrl-shift-p and ctrl-alt-i (same visuals and everything as ctrl-shift-e), allowing users to type the setting they want to change, or action they want to take
-- [ ] Add internal plugin system for additional features that not all users need or want
+- [ ] Add internal plugin system for additional features that not all users need or want (the system and its first plugin are in; page scripts and plugin actions come with the plugins that need them)
 
 ## Bigger projects
 

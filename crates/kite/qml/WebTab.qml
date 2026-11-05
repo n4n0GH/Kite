@@ -498,6 +498,8 @@ Item {
 
             WebEngineView {
                 id: web
+                // (bootstrap.cpp: mouse gestures, on tabs' pages only.)
+                readonly property bool kiteTabPage: true
                 objectName: "kite-web-" + wt.tabId
                 anchors.fill: parent
                 // Passive: the page still gets every hover event.
