@@ -26,6 +26,22 @@ pub struct Cookie {
     pub same_site: String,
 }
 
+/// Cookies by site, for showing: `site_of` says which site a domain belongs to.
+/// Sites in order, and in each the cookies by domain, path and name.
+pub fn cookies_by_site(cookies: &[Cookie], site_of: &dyn Fn(&str) -> String) -> Vec<(String, Vec<Cookie>)> {
+    let mut sites: std::collections::BTreeMap<String, Vec<Cookie>> = Default::default();
+    for c in cookies {
+        let domain = c.domain.trim_start_matches('.');
+        let site = site_of(domain);
+        sites.entry(if site.is_empty() { domain.to_owned() } else { site }).or_default().push(c.clone());
+    }
+    let mut out: Vec<_> = sites.into_iter().collect();
+    for (_, list) in &mut out {
+        list.sort_by(|a, b| (&a.domain, &a.path, &a.name).cmp(&(&b.domain, &b.path, &b.name)));
+    }
+    out
+}
+
 impl Cookie {
     pub fn host_only(&self) -> bool {
         !self.domain.starts_with('.')
@@ -98,5 +114,29 @@ impl Shared {
     /// For tests: everything in a temp dir.
     pub fn temporary(dir: &std::path::Path) -> anyhow::Result<Self> {
         Self::open(Profile::open_at(dir.to_path_buf(), "test")?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cookie(name: &str, domain: &str) -> Cookie {
+        Cookie { name: name.into(), value: String::new(), domain: domain.into(), path: "/".into(), secure: false, http_only: false, session: true, expiration_date: 0.0, same_site: String::new() }
+    }
+
+    #[test]
+    fn cookies_go_with_their_site() {
+        let site = |d: &str| d.rsplit('.').take(2).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(".");
+        let all = [cookie("b", ".kde.org"), cookie("a", "www.kde.org"), cookie("z", ".bbc.com"), cookie("c", "kde.org")];
+        let sites = cookies_by_site(&all, &site);
+        assert_eq!(sites.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>(), ["bbc.com", "kde.org"]);
+        assert_eq!(sites[1].1.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["b", "c", "a"]);
+    }
+
+    #[test]
+    fn a_domain_without_a_site_stands_for_itself() {
+        let sites = cookies_by_site(&[cookie("a", "127.0.0.1"), cookie("b", ".localhost")], &|_| String::new());
+        assert_eq!(sites.iter().map(|(s, _)| s.as_str()).collect::<Vec<_>>(), ["127.0.0.1", "localhost"]);
     }
 }

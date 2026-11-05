@@ -47,6 +47,8 @@ extern "C" {
     fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
     fn kite_cpp_copy_text(text: *const c_char);
+    fn kite_cpp_site_of(host: *const c_char) -> *const c_char;
+    fn kite_cpp_cert_fingerprint(error: *const std::ffi::c_void) -> *const c_char;
     fn kite_cpp_webengine_version() -> *const c_char;
     fn kite_cpp_chromium_version() -> *const c_char;
     fn kite_cpp_chromium_security_patch() -> *const c_char;
@@ -118,6 +120,16 @@ pub fn delete_all_cookies() {
 }
 pub fn clear_http_cache() {
     unsafe { kite_cpp_clear_http_cache() }
+}
+
+pub fn site_of(host: &str) -> String {
+    let Ok(host) = CString::new(host) else { return String::new() };
+    unsafe { s(kite_cpp_site_of(host.as_ptr())).to_owned() }
+}
+
+/// The fingerprint of the certificate of a QWebEngineCertificateError held by a QVariant.
+pub fn cert_fingerprint(error: *const std::ffi::c_void) -> String {
+    unsafe { s(kite_cpp_cert_fingerprint(error)).to_owned() }
 }
 
 pub fn copy_text(text: &str) {
@@ -519,6 +531,12 @@ pub fn hook_container_profiles() {
 }
 
 /// Delete the cookies of the sites set to "until Kite closes".
+/// Those of these hosts and the names under them.
+pub fn delete_cookies_of(hosts: &[String]) {
+    let c = CString::new(serde_json::to_string(hosts).unwrap_or_default()).unwrap_or_default();
+    unsafe { kite_cpp_delete_cookies_of(c.as_ptr()) }
+}
+
 pub fn delete_session_cookies() {
     let hosts = serde_json::to_string(&app().privacy.session_cookie_hosts()).unwrap_or_default();
     let c = CString::new(hosts).unwrap_or_default();

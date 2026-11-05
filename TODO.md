@@ -27,6 +27,7 @@
 - [ ] Passkeys (WebAuthn)
 - [x] Export and import settings to a file (instead of sync: single-machine use, rsync the file if needed)
 - [x] Import bookmarks directly from other browsers
+- [x] Cookie manager and certificate exceptions (parity with Falkon)
 - [ ] Turn picture-in-picture into a plugin, and make it stay on top on Wayland
 - [x] For internal plugin system, remake vimium as native integration (use similar popup as on ctrl-shift-e for the vomnibar, search uses the same thing)
 

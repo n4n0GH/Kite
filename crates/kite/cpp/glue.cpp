@@ -4,6 +4,10 @@
 //  * cookie store mirroring (cookies API)
 // Everything here forwards to Rust via a small C ABI (src/ffi.rs).
 #include <QBuffer>
+#include <QCryptographicHash>
+#include <QSslCertificate>
+#include <QVariant>
+#include <QWebEngineCertificateError>
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QFile>
@@ -299,6 +303,28 @@ extern "C" void kite_cpp_apply_dns(int mode, const char *server)
 extern "C" void kite_cpp_clear_http_cache()
 {
     if (g_profile) g_profile->clearHttpCache();
+}
+
+// The site a host belongs to: example.co.uk for www.example.co.uk. "" for what has
+// none, like an IP address.
+extern "C" const char *kite_cpp_site_of(const char *host)
+{
+    static thread_local QByteArray out;
+    out = qWebEngineGetDomainAndRegistry(QUrl(QStringLiteral("https://") + QString::fromUtf8(host))).toUtf8();
+    return out.constData();
+}
+
+// SHA-256 of the certificate a certificate error is about (from QML: Qt gives its
+// chain to C++ only), in hex; "" if it can't tell.
+extern "C" const char *kite_cpp_cert_fingerprint(const QVariant *error)
+{
+    static thread_local QByteArray out;
+    out.clear();
+    if (error && error->canConvert<QWebEngineCertificateError>()) {
+        const auto chain = error->value<QWebEngineCertificateError>().certificateChain();
+        if (!chain.isEmpty()) out = chain.first().digest(QCryptographicHash::Sha256).toHex();
+    }
+    return out.constData();
 }
 
 extern "C" void kite_cpp_copy_text(const char *text)

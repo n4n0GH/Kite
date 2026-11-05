@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS history (
     date INTEGER DEFAULT 0 NOT NULL, count INTEGER DEFAULT 0 NOT NULL);
 CREATE INDEX IF NOT EXISTS history_titleindex ON history (title);
 CREATE UNIQUE INDEX IF NOT EXISTS history_urluniqueindex ON history (url);
+CREATE TABLE IF NOT EXISTS kite_cert_exceptions (
+    host TEXT NOT NULL, fingerprint TEXT NOT NULL, description TEXT, added INTEGER, UNIQUE (host, fingerprint));
 CREATE TABLE IF NOT EXISTS search_engines (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT, icon BLOB, shortcut TEXT,
     suggestionsUrl TEXT, suggestionsParameters TEXT, postData TEXT);

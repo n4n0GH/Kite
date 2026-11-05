@@ -85,6 +85,8 @@ const CHOICES = [
     {page: "passwords", text: "Where logins are stored (KDE Wallet, master password)"},
     {page: "adblock", text: "Filter lists and custom rules"},
     {page: "downloads", text: "Download folder"},
+    {page: "privacy", text: "Manage cookies"},
+    {page: "privacy", text: "Manage certificate exceptions"},
     {page: "sites", text: "Site settings"},
     {page: "extensions", text: "Extension settings"},
     {page: "shortcuts", text: "Keyboard shortcuts"},

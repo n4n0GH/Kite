@@ -50,6 +50,24 @@ Item {
     property bool crashed: false
     property var pendingPermissions: []
     property var certError: null
+    property string certFingerprint: ""
+    // Only a tab being shown holds a certificate warning open: while one waits for an
+    // answer, Chromium keeps every other tab's requests to that site waiting too, so a
+    // warning in a tab behind would leave the shown one hanging. A tab that isn't shown
+    // says no for now, and asks again when it is.
+    property string certRetryUrl: ""
+    readonly property bool shownInPane: window && window.paneTab.includes(tabId)
+    onShownInPaneChanged: {
+        if (!shownInPane && certError) {
+            certRetryUrl = certError.url.toString()
+            certError.rejectCertificate()
+            certError = null
+        } else if (shownInPane && certRetryUrl !== "") {
+            const u = certRetryUrl
+            certRetryUrl = ""
+            load(u)
+        }
+    }
     // Password manager
     property var logins: []
     property bool loginForm: false
@@ -679,11 +697,23 @@ Item {
                 }
 
                 onCertificateError: error => {
+                    // Accepted for good earlier (Settings → Privacy → Certificate Exceptions).
+                    const fingerprint = Browser.certFingerprint(error)
+                    if (error.overridable && Browser.certAccepted(Browser.hostOf(error.url.toString()), fingerprint)) {
+                        error.acceptCertificate()
+                        return
+                    }
                     // Like Firefox and Chrome, only the page itself gets the
                     // interstitial; subresources with bad certificates (e.g. a
                     // favicon from a self-signed router) just fail to load.
                     if (!error.isMainFrame) { error.rejectCertificate(); return }
+                    if (!wt.shownInPane) {
+                        error.rejectCertificate()
+                        wt.certRetryUrl = error.url.toString()
+                        return
+                    }
                     error.defer()
+                    wt.certFingerprint = fingerprint
                     wt.certError = error
                 }
 
@@ -745,12 +775,31 @@ Item {
                         Layout.fillWidth: true; wrapMode: Text.Wrap
                         text: wt.certError ? ("Kite detected a potential security threat and did not continue to <b>" + Browser.hostOf(wt.certError.url.toString()) + "</b>.<br><br>" + wt.certError.description) : ""
                     }
+                    QQC2.Label {
+                        visible: wt.certFingerprint !== ""
+                        Layout.fillWidth: true
+                        wrapMode: Text.WrapAnywhere
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                        text: "Certificate fingerprint (SHA-256): " + wt.certFingerprint
+                    }
                     RowLayout {
                         Layout.alignment: Qt.AlignHCenter
                         QQC2.Button { text: "Go Back (Recommended)"; icon.name: "go-previous"; onClicked: { wt.certError.rejectCertificate(); wt.certError = null; if (web.canGoBack) web.goBack() } }
                         QQC2.Button {
                             text: "Accept the Risk and Continue"; visible: wt.certError && wt.certError.overridable
                             onClicked: { wt.certError.acceptCertificate(); wt.certError = null }
+                        }
+                        // For good, for this certificate; another one on this site gets
+                        // this warning again. (A private window leaves nothing behind.)
+                        QQC2.Button {
+                            text: "Always Accept This Certificate"
+                            visible: wt.certError && wt.certError.overridable && !wt.window.privateMode && wt.certFingerprint !== ""
+                            onClicked: {
+                                Browser.addCertException(Browser.hostOf(wt.certError.url.toString()), wt.certFingerprint, wt.certError.description)
+                                wt.certError.acceptCertificate()
+                                wt.certError = null
+                            }
                         }
                     }
                 }

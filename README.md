@@ -51,6 +51,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   in the profile (`kite:startpage/…`); saving the file reloads it.
 * **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules
   and fingerprint protection, from Settings or the address bar.
+* **Cookies and certificates:** stored cookies to look through and remove, by site; certificate
+  exceptions to accept one certificate for good, and to take that back (Settings → Privacy).
 * **Privacy:** third-party cookies blocked by default, Global Privacy Control, tracking
   parameters removed from addresses, link pings dropped, a common user agent, WebRTC limited
   to public addresses, HTTPS-only mode, DNS over HTTPS, a proxy (SOCKS5/HTTP), container
@@ -239,6 +241,6 @@ own address; a restored session reopens the page itself.
 * Not available: sync (settings and bookmarks can be exported to files to carry over), translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
-* Falkon features not yet ported: cookie/certificate managers. KIO integration is left out on purpose: addresses
+* KIO integration is left out on purpose: addresses
   like `smb://` and `sftp://` open in the app the desktop has for them (the file manager), which
   does more with them. Typed ones open directly; a page's links ask first.

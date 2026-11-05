@@ -68,6 +68,10 @@ ManagerWindow {
         }
     }
 
+    // Submenus of Privacy.
+    Component { id: cookiesPage; CookiesPage { prefs: w } }
+    Component { id: certificatesPage; CertificatesPage { } }
+
     // ---- the settings file (General) ----
     FileDialog {
         id: settingsExport
@@ -843,6 +847,8 @@ ManagerWindow {
                 }
                 Check { id: siteCookies; text: "Use per-site cookie rules"; key: "privacy.siteCookieRules" }
                 Hint { text: "Allow, block, or keep until Kite closes the cookies of single sites, in Site Settings." }
+                QQC2.Button { text: "Manage Cookies…"; icon.name: "preferences-web-browser-cookies"; onClicked: w.pageStack.push(cookiesPage) }
+                QQC2.Button { Kirigami.FormData.label: "Certificates:"; text: "Manage Certificate Exceptions…"; icon.name: "security-medium"; onClicked: w.pageStack.push(certificatesPage) }
 
                 Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tracking" }
                 Check { Kirigami.FormData.label: "Ask sites:"; text: "Send Global Privacy Control"; key: "privacy.globalPrivacyControl" }

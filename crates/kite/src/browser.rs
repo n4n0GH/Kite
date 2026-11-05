@@ -15,6 +15,8 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qvariant.h");
+        type QVariant = cxx_qt_lib::QVariant;
     }
 
     extern "RustQt" {
@@ -413,6 +415,39 @@ pub mod qobject {
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
         /// The address selected text is written as, or "".
+        // Stored cookies (Settings → Privacy): by site, as JSON. The main profile's.
+        #[qinvokable]
+        #[cxx_name = "cookiesBySite"]
+        fn cookies_by_site(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "removeCookie"]
+        fn remove_cookie(self: &Browser, cookie: &QString);
+        #[qinvokable]
+        #[cxx_name = "removeSiteCookies"]
+        fn remove_site_cookies(self: &Browser, site: &QString);
+        #[qinvokable]
+        #[cxx_name = "removeAllCookies"]
+        fn remove_all_cookies(self: &Browser);
+        // Certificate exceptions (kite_core::certs).
+        #[qinvokable]
+        #[cxx_name = "certFingerprint"]
+        fn cert_fingerprint(self: &Browser, error: &QVariant) -> QString;
+        #[qinvokable]
+        #[cxx_name = "certAccepted"]
+        fn cert_accepted(self: &Browser, host: &QString, fingerprint: &QString) -> bool;
+        #[qinvokable]
+        #[cxx_name = "addCertException"]
+        fn add_cert_exception(self: &Browser, host: &QString, fingerprint: &QString, description: &QString);
+        /// A site as typed, accepted with any certificate; false if it isn't a site.
+        #[qinvokable]
+        #[cxx_name = "addCertExceptionForSite"]
+        fn add_cert_exception_for_site(self: &Browser, site: &QString) -> bool;
+        #[qinvokable]
+        #[cxx_name = "removeCertException"]
+        fn remove_cert_exception(self: &Browser, host: &QString, fingerprint: &QString);
+        #[qinvokable]
+        #[cxx_name = "certExceptions"]
+        fn cert_exceptions(self: &Browser) -> QString;
         // Settings file (Settings → General). Export answers with a message;
         // preview with what's in a file, or {error}; import with a message.
         #[qinvokable]
@@ -1215,6 +1250,56 @@ impl qobject::Browser {
     fn plugin_file(&self, path: &QString) -> QString {
         let path = path.to_string();
         q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+    }
+
+    fn cookies_by_site(&self) -> QString {
+        let cookies = app().shared.cookies().clone();
+        let sites = kite_core::shared::cookies_by_site(&cookies, &crate::ffi::site_of);
+        js(&json!(sites.iter().map(|(site, cookies)| json!({"site": site, "cookies": cookies})).collect::<Vec<_>>()))
+    }
+
+    fn remove_cookie(&self, cookie: &QString) {
+        crate::ffi::delete_cookie(&cookie.to_string());
+    }
+
+    fn remove_site_cookies(&self, site: &QString) {
+        crate::ffi::delete_cookies_of(&[site.to_string()]);
+    }
+
+    fn remove_all_cookies(&self) {
+        crate::ffi::delete_all_cookies();
+    }
+
+    fn cert_fingerprint(&self, error: &cxx_qt_lib::QVariant) -> QString {
+        q(crate::ffi::cert_fingerprint(error as *const cxx_qt_lib::QVariant as *const std::ffi::c_void))
+    }
+
+    fn cert_accepted(&self, host: &QString, fingerprint: &QString) -> bool {
+        kite_core::certs::accepted(&app().shared.db(), &host.to_string(), &fingerprint.to_string())
+    }
+
+    fn add_cert_exception(&self, host: &QString, fingerprint: &QString, description: &QString) {
+        // (Without a fingerprint this would take any certificate: that's asked for
+        // by name, below.)
+        if fingerprint.to_string().is_empty() {
+            return;
+        }
+        let now = kite_core::util::now_ms() / 1000;
+        let _ = kite_core::certs::add(&app().shared.db(), &host.to_string(), &fingerprint.to_string(), &description.to_string(), now);
+    }
+
+    fn add_cert_exception_for_site(&self, site: &QString) -> bool {
+        let Some(host) = kite_core::certs::host_of_input(&site.to_string()) else { return false };
+        let now = kite_core::util::now_ms() / 1000;
+        kite_core::certs::add(&app().shared.db(), &host, "", "", now).is_ok()
+    }
+
+    fn remove_cert_exception(&self, host: &QString, fingerprint: &QString) {
+        let _ = kite_core::certs::remove(&app().shared.db(), &host.to_string(), &fingerprint.to_string());
+    }
+
+    fn cert_exceptions(&self) -> QString {
+        js(&json!(kite_core::certs::list(&app().shared.db()).unwrap_or_default()))
     }
 
     fn export_settings(&self, path: &QString) -> QString {
