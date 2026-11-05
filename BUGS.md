@@ -1,2 +1,6 @@
 - [x] when printing in reading view on dark mode, the print background is also dark, it should ignore the dark mode and print black on white, as expected
 - [x] x on history delete is not centered vertically with the list item
+- [ ] pip doesn't float on top, but should (on hold: Wayland ignores the app's request, and asking KWin by script didn't work either; revisit when PiP becomes a plugin)
+- [x] creating a new split view should focus the url bar for the new tab
+- [x] tab search should put focus on the selected tab
+- [x] closing a tab returns the user to the parent tab, it should simply move on  to the tab next to it on the right. if this already exists as an option, say so

@@ -606,12 +606,11 @@ QQC2.ApplicationWindow {
         const pane = tabModel.get(index).pane
         const wasCurrent = index === currentIndex
         const wasPaneCurrent = paneTab[pane] === id
-        // The tab to show next in its pane: the opener (if it is there),
-        // else the neighbour.
+        // The tab to show next in its pane: the one to the right, or at the end
+        // the one to the left.
         const before = paneTabs(pane)
         const at = before.indexOf(id)
-        let next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
-        if (t && t.openerTabId >= 0 && before.includes(t.openerTabId)) next = t.openerTabId
+        const next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
         detachFromTree(id)
         tabModel.remove(index)
         updateTree()
@@ -697,6 +696,18 @@ QQC2.ApplicationWindow {
         setCurrentIndex(Math.min(saved.current || 0, count - 1))
     }
     function focusLocationBarNow() { if (locationBar) locationBar.focusAndSelect() }
+    // A menu gives the keyboard back to what had it as it finishes closing, after
+    // its item has run: the address bar asks again then.
+    function keepFocusOnLocationBar(tab) {
+        locationBarRefocus.tab = tab
+        locationBarRefocus.restart()
+    }
+    Timer {
+        id: locationBarRefocus
+        property var tab: null
+        interval: 200
+        onTriggered: if (bw.currentTab === tab && bw.locationBar && !bw.locationBar.activeFocus && !bw.activeFocusItem?.cursorVisible) bw.focusLocationBarNow()
+    }
     function findResult(count, active) { findBar.matches = count; findBar.activeMatch = active }
 
     // Pinned tabs stay in front of unpinned ones.

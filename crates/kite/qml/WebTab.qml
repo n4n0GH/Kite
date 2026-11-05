@@ -338,7 +338,10 @@ Item {
 
     function activate() { window.setCurrentIndex(window.indexOfTab(tabId)); window.raise(); window.requestActivate() }
     function close() { window.closeTabById(tabId) }
-    function focusLocationBar() { Qt.callLater(() => { if (window.currentTab === wt) window.focusLocationBarNow() }) }
+    function focusLocationBar() {
+        Qt.callLater(() => { if (window.currentTab === wt) window.focusLocationBarNow() })
+        window.keepFocusOnLocationBar(wt)
+    }
 
     function setPinned(p) {
         // Pinned tabs aren't in groups (leaving one can move the tab).

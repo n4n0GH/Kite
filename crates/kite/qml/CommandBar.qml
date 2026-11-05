@@ -22,6 +22,7 @@ QQC2.Popup {
     property var rows: []
     property int selected: 0
     property real _closedAt: 0
+    property var _picked: null
 
     parent: win.contentItem
     width: Math.min(win.width - Kirigami.Units.gridUnit * 2, Math.max(Kirigami.Units.gridUnit * 28, win.width / 2.4))
@@ -52,9 +53,13 @@ QQC2.Popup {
         open()
     }
     onOpened: { field.forceActiveFocus(); list.positionViewAtIndex(selected, ListView.Contain) }
+    // The page gets the keyboard back first: what was picked may want it elsewhere.
     onClosed: {
         _closedAt = Date.now()
         if (win.currentTab) win.currentTab.focusPage()
+        const run = _picked
+        _picked = null
+        if (run) Qt.callLater(run)
     }
 
     function refresh() {
@@ -86,8 +91,8 @@ QQC2.Popup {
     function pick(i) {
         const r = rows[i]
         if (!r) return
+        _picked = r.run
         close()
-        Qt.callLater(r.run)
     }
     function closeRow(i) {
         const r = rows[i]
