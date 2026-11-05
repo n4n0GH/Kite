@@ -33,10 +33,12 @@ fn main() {
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Widgets")
+        .qt_module("PrintSupport")
         .qt_module("WebEngineCore")
         .qt_module("Quick")
         .cpp_file("cpp/bootstrap.cpp")
         .cpp_file("cpp/glue.cpp")
+        .cpp_file("cpp/print.cpp")
         .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs"])
         .build();
 

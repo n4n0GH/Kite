@@ -156,7 +156,7 @@ QQC2.ToolBar {
     }
     Component {
         id: printItem
-        Button { icon.name: "document-print"; tip: "Print to PDF"; onClicked: toolbar.win.printTab() }
+        Button { icon.name: "document-print"; tip: "Print"; onClicked: toolbar.win.printTab() }
     }
     Component {
         id: findItem

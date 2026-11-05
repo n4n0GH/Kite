@@ -598,3 +598,10 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
         allow = html_escape(&allow)
     )
 }
+// ---- printing (cpp/print.cpp, browser.rs) ---------------------------------
+
+extern "C" {
+    pub fn kite_cpp_print_dialog(title: *const c_char);
+    pub fn kite_cpp_print_submit();
+    pub fn kite_cpp_print_cancel();
+}

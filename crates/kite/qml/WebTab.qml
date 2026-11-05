@@ -533,6 +533,11 @@ Item {
                     contextMenu.show(request)
                 }
 
+                // (window.print() in a page, or one of its frames: the whole page.)
+                onPrintRequested: wt.window.printTab(wt)
+                onPrintRequestedByFrame: frame => wt.window.printTab(wt)
+                onPdfPrintingFinished: (path, ok) => wt.app.pdfFinished(wt, path, ok)
+
                 onFindTextFinished: result => wt.window.findResult(result.numberOfMatches, result.activeMatch)
 
                 onRenderProcessTerminated: (status, code) => {

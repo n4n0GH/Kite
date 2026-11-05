@@ -94,6 +94,7 @@ copy_plugins() { # dir under the Qt plugin path
     cp -a "$QT_PLUGINS/$1" "$APPDIR/usr/plugins/$1"
 }
 copy_plugins kf6/kirigami/platform
+copy_plugins printsupport
 for d in wayland-decoration-client wayland-graphics-integration-client wayland-shell-integration; do copy_plugins "$d"; done
 
 # ---- bundle -------------------------------------------------------------------------

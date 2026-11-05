@@ -747,7 +747,9 @@ QQC2.ApplicationWindow {
 
     function showSidebar(which) { sidebar = (sidebar === which ? "" : which) }
 
-    function printTab() { pdfDialog.open() }
+    // (`tab`: a page asking with window.print(), else the current one.)
+    function printTab(tab) { app.printTab(tab || currentTab) }
+    function savePdf() { pdfDialog.open() }
 
     // ---- extension toolbar -------------------------------------------------------
     function refreshToolbar() { toolbarActions = JSON.parse(Extensions.toolbar(currentTab ? currentTab.tabId : -1, privateMode)) }
@@ -1212,14 +1214,13 @@ QQC2.ApplicationWindow {
     }
     FileDialog {
         id: pdfDialog
-        title: "Print to PDF"
+        title: "Save Page as PDF"
         fileMode: FileDialog.SaveFile
         nameFilters: ["PDF (*.pdf)"]
         currentFile: "file://" + app.setting("downloads.directory") + "/" + ((bw.currentTab ? bw.currentTab.title : "page").replace(/[\/\\:*?"<>|]/g, "_") || "page") + ".pdf"
         onAccepted: {
             const path = selectedFile.toString().replace("file://", "")
             bw.currentTab.view.printToPdf(path)
-            bw.toast("Saved " + path, "document-save")
         }
     }
 

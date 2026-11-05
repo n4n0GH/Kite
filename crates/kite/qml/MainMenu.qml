@@ -28,7 +28,8 @@ QQC2.Menu {
     }
     QQC2.MenuItem { text: "Open File…"; icon.name: "document-open"; onTriggered: win.openFile() }
     QQC2.MenuItem { text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: win.savePage() }
-    QQC2.MenuItem { text: "Print to PDF…"; icon.name: "document-print"; onTriggered: win.printTab() }
+    QQC2.MenuItem { text: "Print…"; icon.name: "document-print"; onTriggered: win.printTab() }
+    QQC2.MenuItem { text: "Save Page as PDF…"; icon.name: "application-pdf"; onTriggered: win.savePdf() }
     QQC2.MenuSeparator {}
 
     QQC2.Menu {

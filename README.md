@@ -25,6 +25,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   bookmarks toolbar, an extensions panel with pin/unpin.
 * **Keyboard shortcuts:** every Kite action can get its own keys (Settings → Shortcuts),
   with conflict warnings and reset to the defaults. Extensions keep the keys they declare.
+* **Printing:** the system's print dialog (printer, paper, copies, pages, duplex), with the page
+  laid out for the paper chosen and sent to CUPS as a PDF; also from pages' own print buttons.
+  Or save the page as a PDF without printing.
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.
@@ -214,6 +217,7 @@ own address; a restored session reopens the page itself.
   can be allowed in its details in the add-ons manager. Taking that back leaves its content
   scripts in open private pages until they are reloaded, cut off from the extension.
 * Password manager and form autofill: fields inside iframes are not detected; no card autofill.
+* Printing goes through CUPS' `lp`; a page's print button prints the whole page, also from a frame.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the
   window can only stay on top with a KWin window rule ("Keep above" for the title

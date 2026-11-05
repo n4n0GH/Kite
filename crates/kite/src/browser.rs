@@ -298,6 +298,25 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "scrollbarScript"]
         fn scrollbar_script(self: &Browser) -> QString;
+        /// Printing: Qt's dialog, answered by printChosen (JSON with where to
+        /// put the PDF and for what paper, "" if cancelled).
+        #[qinvokable]
+        #[cxx_name = "printDialog"]
+        fn print_dialog(self: Pin<&mut Browser>, title: &QString);
+        #[qsignal]
+        #[cxx_name = "printChosen"]
+        fn print_chosen(self: Pin<&mut Browser>, json: QString);
+        /// The PDF is there: on to the chosen printer or file; printDone says how it went.
+        #[qinvokable]
+        #[cxx_name = "printSubmit"]
+        fn print_submit(self: &Browser);
+        #[qinvokable]
+        #[cxx_name = "printCancel"]
+        fn print_cancel(self: &Browser);
+        #[qsignal]
+        #[cxx_name = "printDone"]
+        fn print_done(self: Pin<&mut Browser>, ok: bool, message: QString);
+
         /// Reader view: the script that extracts the page's article, for an
         /// isolated world; it returns JSON, or "" without an article.
         #[qinvokable]
@@ -995,6 +1014,20 @@ impl qobject::Browser {
         q(if on { include_str!("js/scrollbars.js") } else { "" })
     }
 
+    fn print_dialog(self: Pin<&mut Self>, title: &QString) {
+        *PRINT_THREAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(self.qt_thread());
+        let Ok(title) = std::ffi::CString::new(title.to_string()) else { return };
+        unsafe { crate::ffi::kite_cpp_print_dialog(title.as_ptr()) }
+    }
+
+    fn print_submit(&self) {
+        unsafe { crate::ffi::kite_cpp_print_submit() }
+    }
+
+    fn print_cancel(&self) {
+        unsafe { crate::ffi::kite_cpp_print_cancel() }
+    }
+
     fn reader_script(&self) -> QString {
         q(concat!("(() => {", include_str!("js/readability/Readability.js"), include_str!("js/reader_extract.js"), "})()"))
     }
@@ -1189,5 +1222,23 @@ mod tests {
         assert_eq!(nodes[0].children[0].name, "KDE & co");
         assert_eq!(nodes[0].children[0].keyword, "kde");
         assert_eq!(nodes[2].url, "https://rust-lang.org/");
+    }
+}
+// Answers from the print dialog and lp (cpp/print.cpp), on the GUI thread.
+static PRINT_THREAD: std::sync::Mutex<Option<cxx_qt::CxxQtThread<qobject::Browser>>> = std::sync::Mutex::new(None);
+
+#[no_mangle]
+pub unsafe extern "C" fn kite_print_chosen(json: *const std::os::raw::c_char) {
+    let json = std::ffi::CStr::from_ptr(json).to_string_lossy().into_owned();
+    if let Some(t) = PRINT_THREAD.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let _ = t.queue(move |o| o.print_chosen(q(json)));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn kite_print_done(ok: i32, message: *const std::os::raw::c_char) {
+    let message = std::ffi::CStr::from_ptr(message).to_string_lossy().into_owned();
+    if let Some(t) = PRINT_THREAD.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let _ = t.queue(move |o| o.print_done(ok != 0, q(message)));
     }
 }

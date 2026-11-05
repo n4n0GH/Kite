@@ -323,6 +323,42 @@ QtObject {
         Extensions.browserEvent("windowFocused", JSON.stringify({windowId: w.windowId}))
     }
 
+    // ---- printing (cpp/print.cpp) --------------------------------------------
+    // The dialog first, as the page is laid out for the paper chosen there.
+    property var _printingTab: null
+    property string _printPdf: ""
+    function printTab(tab) {
+        if (!tab || _printingTab) return
+        _printingTab = tab
+        Browser.printDialog(tab.title)
+    }
+    function pdfFinished(tab, path, ok) {
+        if (path === _printPdf && _printPdf !== "") {
+            _printPdf = ""
+            _printingTab = null
+            if (ok) { Browser.printSubmit(); return }
+            Browser.printCancel()
+            tab.window.toast("The page could not be prepared for printing", "dialog-error")
+            return
+        }
+        tab.window.toast(ok ? "Saved " + path : "Could not save " + path, ok ? "document-save" : "dialog-error")
+    }
+    property Connections _printConn: Connections {
+        target: Browser
+        function onPrintChosen(json) {
+            const t = app._printingTab
+            if (!json || !t) {
+                app._printingTab = null
+                if (json) Browser.printCancel()
+                return
+            }
+            const c = JSON.parse(json)
+            app._printPdf = c.path
+            t.view.printToPdf(c.path, c.pageSize, c.landscape ? WebEngineView.Landscape : WebEngineView.Portrait)
+        }
+        function onPrintDone(ok, message) { if (app.activeWindow) app.activeWindow.toast(message, ok ? "document-print" : "dialog-error") }
+    }
+
     // ---- home and new tab page ----------------------------------------------
     // Each is an address or a local HTML file ("general.homepageMode",
     // "general.newTabPageMode": "url" | "file"). A file is used in place
@@ -619,8 +655,8 @@ QtObject {
             }
             return out
         }
-        case "tabs.print": tabOrThrow(a.tabId).window.printTab(); return null
-        case "tabs.saveAsPDF": tabOrThrow(a.tabId).window.printTab(); return "saved"
+        case "tabs.print": { const t = tabOrThrow(a.tabId); t.window.printTab(t); return null }
+        case "tabs.saveAsPDF": tabOrThrow(a.tabId).window.savePdf(); return "saved"
         case "tabs.toggleReaderMode": throw new Error("Reader mode is not supported")
         case "tabs.capture": {
             const t = tabOrThrow(a.tabId)

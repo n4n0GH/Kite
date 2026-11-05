@@ -27,7 +27,8 @@ QQC2.MenuBar {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "&Open File…"; icon.name: "document-open"; onTriggered: menuBar.win.openFile() }
         QQC2.MenuItem { text: "&Save Page As…"; icon.name: "document-save-as"; onTriggered: menuBar.win.savePage() }
-        QQC2.MenuItem { text: "Print to P&DF…"; icon.name: "document-print"; onTriggered: menuBar.win.printTab() }
+        QQC2.MenuItem { text: "&Print…"; icon.name: "document-print"; onTriggered: menuBar.win.printTab() }
+        QQC2.MenuItem { text: "Save Page as P&DF…"; icon.name: "application-pdf"; onTriggered: menuBar.win.savePdf() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "&Close Tab"; icon.name: "tab-close"; onTriggered: menuBar.win.closeTab(menuBar.win.currentIndex) }
         QQC2.MenuItem { text: "Close W&indow"; icon.name: "window-close"; onTriggered: menuBar.win.close() }
