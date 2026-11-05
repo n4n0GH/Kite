@@ -6,9 +6,8 @@ import org.kde.kirigami as Kirigami
 import org.kde.kite
 
 // Falkon's BrowsingLibrary: History and Bookmarks managers.
-Kirigami.ApplicationWindow {
+ManagerWindow {
     id: w
-    property var app
     property string page: "history"
     title: "Library — Kite"
     width: Kirigami.Units.gridUnit * 52

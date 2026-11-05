@@ -311,7 +311,8 @@ QQC2.ApplicationWindow {
     height: app.setting("window.height")
     minimumWidth: 480
     minimumHeight: 320
-    title: (currentTab && currentTab.title ? currentTab.title + " — " : "") + "Kite" + (privateMode ? " (Private Browsing)" : "")
+    // (Ends in the application's name, or Qt adds it again: QPlatformWindow::formatWindowTitle.)
+    title: (currentTab && currentTab.title ? currentTab.title + " — " : "") + (privateMode ? "Private Browsing — " : "") + "Kite"
     color: Kirigami.Theme.backgroundColor
 
     onActiveChanged: if (active) app.windowActivated(bw)

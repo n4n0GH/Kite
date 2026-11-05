@@ -5,9 +5,8 @@ import org.kde.kirigami as Kirigami
 import org.kde.kite
 
 // Falkon's DownloadManager.
-Kirigami.ApplicationWindow {
+ManagerWindow {
     id: w
-    property var app
     title: "Downloads — Kite"
     width: Kirigami.Units.gridUnit * 34
     height: Kirigami.Units.gridUnit * 26

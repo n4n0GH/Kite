@@ -216,13 +216,12 @@ Item {
                 Layout.alignment: root.pinned ? Qt.AlignHCenter : Qt.AlignLeft
                 Layout.fillWidth: root.pinned
                 QQC2.BusyIndicator { anchors.fill: parent; running: root.loading; visible: root.loading; padding: 0 }
-                Kirigami.Icon {
+                TabIcon {
                     anchors.fill: parent
                     visible: !root.loading
                     // Unloaded tabs are drawn faded.
                     opacity: root.unloaded && !root.current ? 0.5 : 1
-                    source: root.icon !== "" ? root.icon : "text-html"
-                    fallback: "text-html"
+                    source: root.icon
                 }
             }
             QQC2.Label {
@@ -408,7 +407,13 @@ Item {
                 text: (menu.n > 1 ? "Add " + menu.n + " Tabs to “" : "Add to “") + (root.browser.tabGroups[modelData] || {}).name + "”"
                 icon.name: "tag"
                 icon.color: (root.browser.tabGroups[modelData] || {}).color
-                onTriggered: root.browser.addTabsToGroup(menu.targets, modelData)
+                // (Once the menu is closed: this changes the groups it lists, which
+                // would remove this very item while it is being triggered.)
+                onTriggered: {
+                    const targets = menu.targets, group = modelData, browser = root.browser
+                    menu.close()
+                    Qt.callLater(() => browser.addTabsToGroup(targets, group))
+                }
             }
             onObjectAdded: (i, o) => { let at = 0; for (let j = 0; j < menu.count; ++j) if (menu.itemAt(j) === newGroupItem) at = j + 1; menu.insertItem(at + i, o) }
             onObjectRemoved: (i, o) => menu.removeItem(o)

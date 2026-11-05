@@ -7,9 +7,8 @@ import org.kde.kite
 
 // Add-ons manager (Firefox's about:addons): installed extensions and a
 // browser for addons.mozilla.org.
-Kirigami.ApplicationWindow {
+ManagerWindow {
     id: w
-    property var app
     property string page: "installed"
     title: "Add-ons — Kite"
     width: Kirigami.Units.gridUnit * 50
@@ -53,6 +52,8 @@ Kirigami.ApplicationWindow {
             id: ip
             title: "Manage Your Extensions"
             property var exts: JSON.parse(Extensions.list())
+            // Which cards show their details (by id: a change rebuilds the cards).
+            property var expandedIds: ({})
             Connections { target: Extensions; function onChanged(what) { if (what === "extensions") ip.exts = JSON.parse(Extensions.list()) } }
             actions: [
                 Kirigami.Action { text: "Check for Updates"; icon.name: "view-refresh"; onTriggered: Extensions.checkUpdates() },
@@ -86,7 +87,8 @@ Kirigami.ApplicationWindow {
                         id: card
                         required property var modelData
                         Layout.fillWidth: true
-                        property bool expanded: false
+                        readonly property bool expanded: !!ip.expandedIds[modelData.id]
+                        function toggleExpanded() { const o = Object.assign({}, ip.expandedIds); o[modelData.id] = !expanded; ip.expandedIds = o }
                         contentItem: ColumnLayout {
                             RowLayout {
                                 spacing: Kirigami.Units.largeSpacing
@@ -122,7 +124,7 @@ Kirigami.ApplicationWindow {
                                     onClicked: card.modelData.optionsInTab ? w.app.openUrl(card.modelData.optionsUrl, "tab") : w.app.optionsDialog.open(card.modelData.optionsUrl, card.modelData.name)
                                     QQC2.ToolTip.text: "Options"; QQC2.ToolTip.visible: hovered
                                 }
-                                QQC2.ToolButton { icon.name: card.expanded ? "arrow-up" : "arrow-down"; onClicked: card.expanded = !card.expanded; QQC2.ToolTip.text: "Details"; QQC2.ToolTip.visible: hovered }
+                                QQC2.ToolButton { icon.name: card.expanded ? "arrow-up" : "arrow-down"; onClicked: card.toggleExpanded(); QQC2.ToolTip.text: "Details"; QQC2.ToolTip.visible: hovered }
                                 QQC2.ToolButton { icon.name: "edit-delete"; onClicked: removeDialog.open(); QQC2.ToolTip.text: "Remove"; QQC2.ToolTip.visible: hovered }
                             }
                             Kirigami.FormLayout {

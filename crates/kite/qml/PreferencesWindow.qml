@@ -6,9 +6,8 @@ import org.kde.kirigami as Kirigami
 import org.kde.kite
 
 // Falkon's Preferences dialog.
-Kirigami.ApplicationWindow {
+ManagerWindow {
     id: w
-    property var app
     property string page: "general"
     title: "Settings — Kite"
     width: Kirigami.Units.gridUnit * 50

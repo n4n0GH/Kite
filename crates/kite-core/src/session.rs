@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SavedTab {
     pub url: String,
     #[serde(default)]
@@ -18,6 +18,42 @@ pub struct SavedTab {
     pub history: Vec<String>,
     #[serde(default)]
     pub history_index: i64,
+    /// Container tab id ("" = none).
+    #[serde(default)]
+    pub container: String,
+    /// Split view: 0 = left, 1 = right.
+    #[serde(default)]
+    pub pane: i64,
+    /// Tab group id ("" = none); see `SavedWindow::groups`.
+    #[serde(default)]
+    pub group: String,
+    /// Tree-style tabs: the index of the parent tab in the window (-1 = none).
+    #[serde(default = "no_parent", rename = "treeParent")]
+    pub tree_parent: i64,
+    #[serde(default, rename = "treeCollapsed")]
+    pub tree_collapsed: bool,
+}
+
+fn no_parent() -> i64 {
+    -1
+}
+
+impl Default for SavedTab {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            title: String::new(),
+            pinned: false,
+            zoom: 0.0,
+            history: Vec::new(),
+            history_index: 0,
+            container: String::new(),
+            pane: 0,
+            group: String::new(),
+            tree_parent: no_parent(),
+            tree_collapsed: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -29,6 +65,15 @@ pub struct SavedWindow {
     pub geometry: Option<[i32; 4]>,
     #[serde(default)]
     pub maximized: bool,
+    /// Split view: each pane's current tab (index, -1 = none).
+    #[serde(default, rename = "paneCurrent")]
+    pub pane_current: Vec<i64>,
+    /// Split view: the right pane's width as dragged (0 = half).
+    #[serde(default, rename = "splitWidth")]
+    pub split_width: f64,
+    /// Tab groups: id → {name, color, collapsed}.
+    #[serde(default)]
+    pub groups: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -107,5 +152,42 @@ impl SessionStore {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // What BrowserWindow.saveState() sends: everything it holds has to come
+    // back after a restart.
+    #[test]
+    fn window_state_survives_saving() {
+        let json = r##"[{"tabs":[
+            {"url":"https://a.example/","title":"A","pinned":false,"zoom":1.25,"history":[],"history_index":0,"container":"c1","pane":0,"group":"g1","treeParent":-1,"treeCollapsed":true},
+            {"url":"https://b.example/","title":"B","pinned":false,"zoom":1,"history":[],"history_index":0,"container":"","pane":1,"group":"","treeParent":0,"treeCollapsed":false}],
+            "current":1,"paneCurrent":[0,1],"splitWidth":640.5,"groups":{"g1":{"name":"Work","color":"#3daee9","collapsed":false}},
+            "geometry":[1,2,3,4],"maximized":true}]"##;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let mut store = SessionStore::load(path.clone());
+        store.set_windows(serde_json::from_str(json).unwrap()).unwrap();
+
+        let w = &SessionStore::load(path).data.windows[0];
+        assert_eq!(w.pane_current, [0, 1]);
+        assert_eq!(w.split_width, 640.5);
+        assert_eq!(w.groups["g1"]["name"], "Work");
+        assert_eq!((w.tabs[0].container.as_str(), w.tabs[0].group.as_str(), w.tabs[0].tree_collapsed), ("c1", "g1", true));
+        assert_eq!((w.tabs[1].pane, w.tabs[1].tree_parent), (1, 0));
+        // QML reads these names back.
+        let out = serde_json::to_value(w).unwrap();
+        assert_eq!(out["paneCurrent"], serde_json::json!([0, 1]));
+        assert_eq!(out["tabs"][1]["treeParent"], 0);
+    }
+
+    #[test]
+    fn older_session_files_still_load() {
+        let w: SavedWindow = serde_json::from_str(r#"{"tabs":[{"url":"https://a.example/"}]}"#).unwrap();
+        assert_eq!((w.tabs[0].tree_parent, w.tabs[0].pane), (-1, 0));
     }
 }
