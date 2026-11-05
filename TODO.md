@@ -26,8 +26,8 @@
 - [ ] Extension API gaps: `contextualIdentities`, `find`, `tabGroups`, native messaging
 - [ ] Passkeys (WebAuthn)
 - [ ] Sync
+- [ ] Turn picture-in-picture into a plugin, and make it stay on top on Wayland
 - [ ] For internal plugin system, remake vimium as native integration (use similar popup as on ctrl-shift-e for the vomnibar, search uses the same thing)
-- [ ] For internal plugin system, create a cookie notice killer
 
 ## Housekeeping
 
