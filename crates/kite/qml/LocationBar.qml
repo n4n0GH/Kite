@@ -64,7 +64,7 @@ QQC2.TextField {
         selected = -1
         const t = text.trim()
         if (t === "") { popup.close(); return }
-        completions = JSON.parse(Browser.complete(t))
+        completions = JSON.parse(Browser.complete(t, win.privateMode))
         suggestions = []
         // (What is typed in a private window stays here.)
         if (!win.privateMode) Browser.requestSuggestions(t)

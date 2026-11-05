@@ -54,7 +54,7 @@ pub mod qobject {
         #[cxx_name = "resolveInput"]
         fn resolve_input_q(self: &Browser, text: &QString) -> QString;
         #[qinvokable]
-        fn complete(self: &Browser, text: &QString) -> QString;
+        fn complete(self: &Browser, text: &QString, in_private: bool) -> QString;
         #[qinvokable]
         #[cxx_name = "requestSuggestions"]
         fn request_suggestions(self: Pin<&mut Browser>, text: &QString);
@@ -473,7 +473,9 @@ impl qobject::Browser {
     }
 
     /// History + bookmark completions for the location bar popup.
-    fn complete(&self, text: &QString) -> QString {
+    /// (`in_private`: for a private window, where the history only shows if
+    /// "privacy.privateHistorySuggestions" says so; bookmarks always do.)
+    fn complete(&self, text: &QString, in_private: bool) -> QString {
         let text = text.to_string();
         let a = app();
         let mut out = vec![];
@@ -483,7 +485,9 @@ impl qobject::Browser {
                 out.push(json!({"type": "bookmark", "url": b.url, "title": b.name}));
             }
         }
-        for h in kite_core::history::complete(&a.shared.db(), &text, 10).unwrap_or_default() {
+        let from_history = !in_private || a.shared.settings().get_bool("privacy.privateHistorySuggestions");
+        let history = if from_history { kite_core::history::complete(&a.shared.db(), &text, 10).unwrap_or_default() } else { vec![] };
+        for h in history {
             if seen.insert(h.url.clone()) {
                 out.push(json!({"type": "history", "url": h.url, "title": h.title}));
             }

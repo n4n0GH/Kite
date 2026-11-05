@@ -77,13 +77,17 @@ pub fn edit(url: &str, initiator: &str) -> Option<(String, String)> {
 }
 
 /// The speed dial page; `message` and `undo` (a query) show a bar on top.
-pub fn render(message: &str, undo: &str) -> String {
+/// (`in_private`: for a private window, where the history only shows if
+/// "privacy.privateHistoryTiles" says so; the user's own tiles always do.)
+pub fn render(message: &str, undo: &str, in_private: bool) -> String {
     let a = app();
     // The user's tiles first, then the most visited sites not removed.
     let pinned = list("speeddial.pinned");
     let hidden: Vec<String> = list("speeddial.hidden").iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
     let mut sites: Vec<(String, String, bool)> = pinned.iter().filter_map(|p| Some((p["url"].as_str()?.to_owned(), p["title"].as_str().unwrap_or("").to_owned(), true))).collect();
-    for s in kite_core::history::top_sites(&a.shared.db(), MAX_TILES * 3).unwrap_or_default() {
+    let from_history = !in_private || a.shared.settings().get_bool("privacy.privateHistoryTiles");
+    let top_sites = if from_history { kite_core::history::top_sites(&a.shared.db(), MAX_TILES * 3).unwrap_or_default() } else { vec![] };
+    for s in top_sites {
         if sites.len() >= MAX_TILES.max(pinned.len()) {
             break;
         }
@@ -128,7 +132,11 @@ pub fn render(message: &str, undo: &str) -> String {
         })
         .collect();
     if show_tiles { tiles.push_str(r#"<div class="cell"><button class="tile add" type="button" onclick="document.getElementById('addform').hidden=false;document.getElementById('addurl').focus()" title="Add a site"><span class="ic"><b>+</b></span><span class="t">Add site</span></button></div>"#); }
-    let empty = if sites.is_empty() && show_tiles { r#"<p class="empty">Sites you visit often will appear here.</p>"# } else { "" };
+    let empty = match (sites.is_empty() && show_tiles, from_history) {
+        (false, _) => "",
+        (true, true) => r#"<p class="empty">Sites you visit often will appear here.</p>"#,
+        (true, false) => r#"<p class="empty">Sites you add will appear here.</p>"#,
+    };
     let restore = if hidden.is_empty() || !show_tiles { String::new() } else { format!(r#"<p class="foot"><a href="?restoreAll">Show the {} removed site{} again</a></p>"#, hidden.len(), if hidden.len() == 1 { "" } else { "s" }) };
     let bar = if message.is_empty() { String::new() } else {
         let undo = if undo.is_empty() { String::new() } else { format!(r#" <a href="?{}">Undo</a>"#, esc(undo)) };

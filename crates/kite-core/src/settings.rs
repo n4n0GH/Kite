@@ -70,6 +70,10 @@ pub fn defaults() -> Map<String, Value> {
         // Speed dial: tiles the user added ([{url, title}], shown first) and
         // most-visited sites the user removed ([url]).
         "speeddial.showTiles": true,
+        // In private windows, pages from the history: among the start page's
+        // tiles, and among the address bar's suggestions.
+        "privacy.privateHistoryTiles": false,
+        "privacy.privateHistorySuggestions": false,
         "speeddial.pinned": [],
         // The tiles' order after dragging ([url]); others follow.
         "speeddial.order": [],

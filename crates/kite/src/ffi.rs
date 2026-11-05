@@ -142,7 +142,7 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
         return match page {
             "start" | "speeddial" | "newtab" | "home" => {
                 let (msg, undo) = crate::startpage::edit(url, initiator).unwrap_or_default();
-                (200, "text/html".into(), crate::startpage::render(&msg, &undo).into_bytes())
+                (200, "text/html".into(), crate::startpage::render(&msg, &undo, in_private).into_bytes())
             }
             "search" => {
                 // kite:search?q=... from the start page form

@@ -737,6 +737,9 @@ ManagerWindow {
                 Layout.fillWidth: true
                 Check { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; key: "privacy.saveHistory" }
                 Check { text: "Clear history, cookies and cache when Kite closes"; key: "privacy.clearOnExit" }
+                Check { Kirigami.FormData.label: "Private windows:"; text: "Show often visited sites on the start page"; key: "privacy.privateHistoryTiles" }
+                Check { text: "Suggest pages from the history in the address bar"; key: "privacy.privateHistorySuggestions" }
+                QQC2.Label { text: "These show pages from your regular browsing in private windows, where others might see them. What you added yourself, tiles and bookmarks, always shows."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "Cookies:"
                     model: [{k: "all", t: "Allow all cookies"}, {k: "noThirdParty", t: "Block third-party cookies"}, {k: "none", t: "Block all cookies (many sites won't work)"}]
