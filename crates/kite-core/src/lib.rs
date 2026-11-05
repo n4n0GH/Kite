@@ -7,7 +7,9 @@
 //! installation from addons.mozilla.org, storage and API dispatch).
 
 pub mod adblock;
+pub mod backup;
 pub mod bookmarks;
+pub mod browser_import;
 pub mod db;
 pub mod downloads;
 pub mod favicons;

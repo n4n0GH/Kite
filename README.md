@@ -236,7 +236,7 @@ own address; a restored session reopens the page itself.
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the
   window can only stay on top with a KWin window rule ("Keep above" for the title
   "Picture-in-Picture").
-* Not available: sync, translation, passkeys (WebAuthn),
+* Not available: sync (settings and bookmarks can be exported to files to carry over), translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
 * Falkon features not yet ported: cookie/certificate managers. KIO integration is left out on purpose: addresses

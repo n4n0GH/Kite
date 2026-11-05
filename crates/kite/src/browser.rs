@@ -413,6 +413,24 @@ pub mod qobject {
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
         /// The address selected text is written as, or "".
+        // Settings file (Settings → General). Export answers with a message;
+        // preview with what's in a file, or {error}; import with a message.
+        #[qinvokable]
+        #[cxx_name = "exportSettings"]
+        fn export_settings(self: &Browser, path: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "previewSettings"]
+        fn preview_settings(self: &Browser, path: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "importSettings"]
+        fn import_settings(self: Pin<&mut Browser>, path: &QString) -> QString;
+        // Bookmarks of other browsers on this machine.
+        #[qinvokable]
+        #[cxx_name = "bookmarkSources"]
+        fn bookmark_sources(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "importBookmarksFrom"]
+        fn import_bookmarks_from(self: Pin<&mut Browser>, source: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "selectionUrl"]
         fn selection_url(self: &Browser, text: &QString) -> QString;
@@ -749,13 +767,12 @@ impl qobject::Browser {
     /// Import Falkon `bookmarks.json` or a Netscape bookmarks HTML file
     /// (exported by Firefox, Chrome, ...). Imported items go to a new folder.
     fn import_bookmarks(self: Pin<&mut Self>, path: &QString) -> QString {
-        let path = path.to_string();
-        let path = path.strip_prefix("file://").unwrap_or(&path).to_owned();
+        let path = kite_core::util::local_path(&path.to_string());
         let result = (|| -> anyhow::Result<usize> {
             let text = std::fs::read_to_string(&path)?;
             let mut folder = Node::folder("Imported");
             if text.trim_start().starts_with('{') {
-                let other = kite_core::bookmarks::Bookmarks::load(std::path::PathBuf::from(&path));
+                let other = kite_core::bookmarks::Bookmarks::load(path.clone());
                 folder.children = other.root.children.clone();
             } else {
                 folder.children = parse_netscape(&text);
@@ -778,8 +795,7 @@ impl qobject::Browser {
 
     /// Export as Netscape bookmarks HTML (importable by every browser).
     fn export_bookmarks(&self, path: &QString) -> QString {
-        let path = path.to_string();
-        let path = path.strip_prefix("file://").unwrap_or(&path).to_owned();
+        let path = kite_core::util::local_path(&path.to_string()).to_string_lossy().into_owned();
         let b = app().shared.bookmarks();
         fn esc(s: &str) -> String {
             s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
@@ -1199,6 +1215,93 @@ impl qobject::Browser {
     fn plugin_file(&self, path: &QString) -> QString {
         let path = path.to_string();
         q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+    }
+
+    fn export_settings(&self, path: &QString) -> QString {
+        let path = kite_core::util::local_path(&path.to_string());
+        let a = app();
+        let result = (|| -> anyhow::Result<()> {
+            let backup = kite_core::backup::export(&a.shared.settings(), &a.shared.db())?;
+            std::fs::write(&path, serde_json::to_string_pretty(&backup)?)?;
+            Ok(())
+        })();
+        q(match result {
+            Ok(()) => format!("Settings exported to {}", path.display()),
+            Err(e) => format!("Export failed: {e}"),
+        })
+    }
+
+    fn preview_settings(&self, path: &QString) -> QString {
+        let path = kite_core::util::local_path(&path.to_string());
+        let result = std::fs::read_to_string(&path).map_err(anyhow::Error::from).and_then(|t| kite_core::backup::parse(&t));
+        js(&match result {
+            Ok(b) => json!({
+                "settings": b.settings.len(), "engines": b.search_engines.len(), "sites": b.site_settings.len(),
+                // Scripts that would run in those sites.
+                "scripts": b.site_settings.iter().filter(|s| !s.settings.js.is_empty()).map(|s| s.host.clone()).collect::<Vec<_>>(),
+            }),
+            Err(e) => json!({"error": e.to_string()}),
+        })
+    }
+
+    fn import_settings(mut self: Pin<&mut Self>, path: &QString) -> QString {
+        let path = kite_core::util::local_path(&path.to_string());
+        let a = app();
+        let result = (|| -> anyhow::Result<Vec<(String, Value)>> {
+            let backup = kite_core::backup::parse(&std::fs::read_to_string(&path)?)?;
+            // A way back.
+            let before = kite_core::backup::export(&a.shared.settings(), &a.shared.db())?;
+            std::fs::write(a.shared.profile.path("settings-before-import.json"), serde_json::to_string_pretty(&before)?)?;
+            kite_core::backup::apply_to_db(&a.shared.db(), &backup)?;
+            let changes = kite_core::backup::changes(a.shared.settings().all(), &backup);
+            for (key, value) in &changes {
+                a.shared.settings().set(key, value.clone())?;
+            }
+            Ok(changes)
+        })();
+        match result {
+            Ok(changes) => {
+                for (key, value) in &changes {
+                    apply_setting(key, value);
+                    self.as_mut().setting_changed(q(key), js(value));
+                }
+                q(format!("Settings imported. The ones from before are in {}", a.shared.profile.path("settings-before-import.json").display()))
+            }
+            Err(e) => q(format!("Import failed: {e}")),
+        }
+    }
+
+    fn bookmark_sources(&self) -> QString {
+        let Some(dirs) = directories::BaseDirs::new() else { return q("[]") };
+        let sources = kite_core::browser_import::detect(dirs.home_dir(), dirs.config_dir());
+        js(&json!(sources.iter().map(|s| json!({"label": s.label(), "source": s})).collect::<Vec<_>>()))
+    }
+
+    /// Into a new folder in the Bookmarks Menu; what's there already stays out, so
+    /// that importing again only brings what's new.
+    fn import_bookmarks_from(self: Pin<&mut Self>, source: &QString) -> QString {
+        use kite_core::browser_import as import;
+        let result = (|| -> anyhow::Result<String> {
+            let source: import::Source = serde_json::from_str(&source.to_string())?;
+            let nodes = import::read(&source)?;
+            let mut b = app().shared.bookmarks();
+            let mut known = std::collections::HashSet::new();
+            import::urls_in(&b.root.children, &mut known);
+            let (nodes, new, already) = import::select(nodes, &known);
+            let also = if already > 0 { format!(" ({already} you already had stayed out)") } else { String::new() };
+            if new == 0 {
+                return Ok(format!("Nothing new in {}{also}.", source.label()));
+            }
+            let name = format!("Imported from {}", source.label());
+            let mut folder = Node::folder(&name);
+            folder.children = nodes;
+            let menu = b.menu_id();
+            b.insert(menu, None, folder)?;
+            let what = if new == 1 { "1 bookmark".to_owned() } else { format!("{new} bookmarks") };
+            Ok(format!("Imported {what} into \"{name}\" in the Bookmarks Menu{also}."))
+        })();
+        self.bookmarks_changed();
+        q(result.unwrap_or_else(|e| format!("Import failed: {e}")))
     }
 
     fn selection_url(&self, text: &QString) -> QString {

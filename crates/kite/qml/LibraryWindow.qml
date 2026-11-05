@@ -126,7 +126,17 @@ ManagerWindow {
                         Kirigami.SearchField { id: search; Layout.fillWidth: true; onTextChanged: bp.reload() }
                         QQC2.Button { text: "New Folder"; icon.name: "folder-new"; onClicked: { newFolder.text = ""; folderDialog.open() } }
                         QQC2.Button { text: "Separator"; icon.name: "distribute-vertical-center"; onClicked: Browser.addSeparator(bp.folder) }
-                        QQC2.Button { text: "Import…"; icon.name: "document-import"; onClicked: importDialog.open() }
+                        QQC2.Button {
+                            id: importButton
+                            text: "Import…"
+                            icon.name: "document-import"
+                            onClicked: importMenu.popup(importButton, 0, importButton.height)
+                            QQC2.Menu {
+                                id: importMenu
+                                QQC2.MenuItem { text: "From Another Browser…"; icon.name: "internet-web-browser"; onTriggered: browserImport.start() }
+                                QQC2.MenuItem { text: "From a File…"; icon.name: "document-open"; onTriggered: importDialog.open() }
+                            }
+                        }
                         QQC2.Button { text: "Export…"; icon.name: "document-export"; onClicked: exportDialog.open() }
                     }
                 }
@@ -140,6 +150,54 @@ ManagerWindow {
                             text: modelData.title
                             icon.name: index === 0 ? "bookmarks" : "go-next"
                             onClicked: { bp.path = bp.path.slice(0, index + 1); bp.folder = modelData.id; bp.reload() }
+                        }
+                    }
+                }
+            }
+            // The browsers found on this machine, each profile by itself.
+            Kirigami.Dialog {
+                id: browserImport
+                title: "Import Bookmarks from Another Browser"
+                padding: Kirigami.Units.largeSpacing
+                standardButtons: Kirigami.Dialog.NoButton
+                property var sources: []
+                property int chosen: 0
+                function start() {
+                    sources = JSON.parse(Browser.bookmarkSources())
+                    chosen = 0
+                    open()
+                }
+                customFooterActions: [
+                    Kirigami.Action {
+                        text: "Import"
+                        icon.name: "document-import"
+                        enabled: browserImport.sources.length > 0
+                        onTriggered: {
+                            const source = browserImport.sources[browserImport.chosen].source
+                            browserImport.close()
+                            w.app.toast(Browser.importBookmarksFrom(JSON.stringify(source)))
+                        }
+                    },
+                    Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: browserImport.close() }
+                ]
+                ColumnLayout {
+                    spacing: Kirigami.Units.smallSpacing
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 24
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: browserImport.sources.length
+                            ? "They go into a new folder in the Bookmarks Menu. Those you already have stay out, so you can do this again later."
+                            : "No other browsers found on this computer. If yours exports bookmarks to a file, you can import that instead."
+                    }
+                    Repeater {
+                        model: browserImport.sources
+                        delegate: QQC2.RadioButton {
+                            required property var modelData
+                            required property int index
+                            text: modelData.label
+                            checked: browserImport.chosen === index
+                            onToggled: browserImport.chosen = index
                         }
                     }
                 }

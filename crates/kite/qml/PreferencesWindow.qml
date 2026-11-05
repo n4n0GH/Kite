@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
@@ -112,6 +113,67 @@ ManagerWindow {
                 }
             }
         }
+    }
+
+    // ---- the settings file (General) ----
+    FileDialog {
+        id: settingsExport
+        title: "Export Settings"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["Kite settings (*.json)"]
+        currentFile: "file://" + (w.get("downloads.directory") || StandardPaths.writableLocation(StandardPaths.HomeLocation).toString().replace("file://", "")) + "/kite-settings.json"
+        onAccepted: importResult.show(Browser.exportSettings(selectedFile.toString()))
+    }
+    FileDialog {
+        id: settingsImport
+        title: "Import Settings"
+        nameFilters: ["Kite settings (*.json)"]
+        onAccepted: {
+            const preview = JSON.parse(Browser.previewSettings(selectedFile.toString()))
+            if (preview.error) importResult.show(preview.error)
+            else importConfirm.ask(selectedFile.toString(), preview)
+        }
+    }
+    QQC2.Dialog {
+        id: importConfirm
+        property string file: ""
+        property var preview: ({})
+        function ask(f, p) { file = f; preview = p; open() }
+        function count(n, what) { return (n || 0) + " " + what + (n === 1 ? "" : "s") }
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Replace Your Settings?"
+        width: Kirigami.Units.gridUnit * 26
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            QQC2.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: "This file has " + importConfirm.count(importConfirm.preview.settings, "changed setting") + ", " + importConfirm.count(importConfirm.preview.engines, "search engine") + " and settings for " + importConfirm.count(importConfirm.preview.sites, "site") + ". They replace yours; settings it doesn't mention go back to their defaults. A copy of the current ones is kept in your profile."
+            }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: !!importConfirm.preview.scripts && importConfirm.preview.scripts.length > 0
+                type: Kirigami.MessageType.Warning
+                text: "It adds scripts that will run on: " + (importConfirm.preview.scripts || []).join(", ") + ". Those can read and change what you do there, so only go on if the file is your own or you trust who made it."
+            }
+        }
+        footer: QQC2.DialogButtonBox {
+            QQC2.Button { text: "Cancel"; icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole }
+            QQC2.Button { text: "Replace Settings"; icon.name: "document-import"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.AcceptRole }
+        }
+        onAccepted: {
+            const message = Browser.importSettings(file)
+            w.app.installUserScripts()
+            importResult.show(message + " A few, like the proxy, take effect after restarting Kite.")
+        }
+    }
+    Kirigami.PromptDialog {
+        id: importResult
+        function show(text) { subtitle = text; open() }
+        title: "Settings File"
+        standardButtons: Kirigami.Dialog.Close
     }
 
     // A plugin's settings: a submenu each, so the list stays a list.
@@ -508,6 +570,19 @@ ManagerWindow {
                 QQC2.CheckBox { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; checked: w.get("general.searchFromLocationBar"); onToggled: w.set("general.searchFromLocationBar", checked) }
                 QQC2.CheckBox { text: "Show search suggestions"; checked: w.get("general.showSearchSuggestions"); onToggled: w.set("general.showSearchSuggestions", checked) }
                 Item { Kirigami.FormData.isSection: true }
+                RowLayout {
+                    Kirigami.FormData.label: "Settings file:"
+                    QQC2.Button { text: "Export…"; icon.name: "document-export"; onClicked: settingsExport.open() }
+                    QQC2.Button { text: "Import…"; icon.name: "document-import"; onClicked: settingsImport.open() }
+                }
+                QQC2.Label {
+                    // (A set width: a form makes room for a text's whole length otherwise.)
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                    wrapMode: Text.Wrap
+                    opacity: 0.7
+                    font: Kirigami.Theme.smallFont
+                    text: "To carry your settings, search engines and site settings to another computer. Not your window size, download folder, start page files or Safe Browsing key; bookmarks and logins have exports of their own."
+                }
                 QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
 

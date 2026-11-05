@@ -3,9 +3,10 @@
 //! custom CSS and JavaScript (`kite_css`, `kite_js`; see db.rs).
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct SiteSettings {
     /// Zoom in percent, -1 = default.
     pub zoom: i64,
@@ -83,6 +84,16 @@ pub fn set_text(db: &Connection, host: &str, key: &str, value: &str) -> anyhow::
     db.execute("INSERT OR IGNORE INTO site_settings (server) VALUES (?1)", [host])?;
     db.execute(&format!("UPDATE site_settings SET {col} = ?2 WHERE server = ?1"), params![host, value])?;
     Ok(())
+}
+
+/// All of a site's settings at once, in place of what it had.
+pub fn store(db: &Connection, host: &str, s: &SiteSettings) -> anyhow::Result<()> {
+    clear(db, host)?;
+    for (key, value) in [("zoom", s.zoom), ("cookies", s.cookies), ("javascript", s.javascript), ("images", s.images), ("notifications", s.notifications), ("geolocation", s.geolocation), ("darkMode", s.dark_mode), ("fingerprint", s.fingerprint)] {
+        set(db, host, key, value)?;
+    }
+    set_text(db, host, "css", &s.css)?;
+    set_text(db, host, "js", &s.js)
 }
 
 pub fn all(db: &Connection) -> anyhow::Result<Vec<(String, SiteSettings)>> {

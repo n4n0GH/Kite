@@ -19,3 +19,8 @@ pub fn write_atomic(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> 
 pub fn host_of(url: &str) -> String {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
+
+/// A local path from what a file dialog gives: a `file:` URL (with its %20s) or a path.
+pub fn local_path(text: &str) -> std::path::PathBuf {
+    url::Url::parse(text).ok().filter(|u| u.scheme() == "file").and_then(|u| u.to_file_path().ok()).unwrap_or_else(|| text.into())
+}

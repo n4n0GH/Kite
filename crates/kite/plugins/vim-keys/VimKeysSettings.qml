@@ -63,7 +63,8 @@ ColumnLayout {
             onEditingFinished: if (Rules.labels(2, text).length) root.app.setPluginSetting(root.plugin, "hintChars", text)
         }
         QQC2.Label {
-            Layout.fillWidth: true
+            // (A set width: a form makes room for a text's whole length otherwise.)
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 26
             wrapMode: Text.Wrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont
