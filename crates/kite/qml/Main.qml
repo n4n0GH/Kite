@@ -143,7 +143,7 @@ QtObject {
         {id: "muteTab", group: "Tabs", name: "Mute or unmute tab", keys: ["Ctrl+M"]},
         {id: "tabSearch", group: "Tabs", name: "Search tabs", keys: ["Ctrl+Shift+E"]},
         {id: "newWindow", group: "Windows", name: "New window", keys: ["Ctrl+N"]},
-        {id: "newPrivateWindow", group: "Windows", name: "New private window", keys: ["Ctrl+Shift+P"]},
+        {id: "newPrivateWindow", group: "Windows", name: "New private window", keys: ["Ctrl+Shift+N"]},
         {id: "fullScreen", group: "Windows", name: "Full screen", keys: ["F11"]},
         {id: "quit", group: "Windows", name: "Quit Kite", keys: ["Ctrl+Q"]},
         {id: "focusAddress", group: "Navigation", name: "Go to the address bar", keys: ["Ctrl+L", "F6", "Alt+D"]},
