@@ -16,6 +16,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   sideways changes its level (Settings or right-click the tab bar).
 * **Tab search:** the tab bar's list button or Ctrl+Shift+E searches the open tabs of all
   windows by title and address (private and normal windows aren't mixed).
+* **Command palette:** Ctrl+Shift+P or Ctrl+Alt+I finds any action or setting by typing, with
+  fuzzy matching: runs actions, switches settings right there, opens the page of those that take more.
 * **Tab groups:** named and coloured, collapsible; shown as a group tab on horizontal bars
   and as a file tree in vertical lists; dragged as a whole. Ctrl/Shift+click selects
   several tabs for the tab menu.
@@ -66,7 +68,7 @@ qqc2-desktop-style. QtWebEngineQuick *development* headers are optional.
 ```sh
 cargo build --release
 ./target/release/kite [URL...]            # --profile NAME, --private
-cargo test --workspace && node --test crates/kite-core/src/webext/js/api_core.test.js crates/kite/qml/tabtree.test.js
+cargo test --workspace && node --test crates/kite-core/src/webext/js/*.test.js crates/kite/qml/*.test.js
 ```
 
 Developer tools:

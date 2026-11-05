@@ -26,7 +26,7 @@ fn main() {
     files(std::path::Path::new("icons"), &mut icons);
     icons.sort();
     // Plain JavaScript the QML files import (tested with node, not QML types).
-    for js in ["qml/tabtree.js", "qml/fuzzy.js"] {
+    for js in ["qml/tabtree.js", "qml/fuzzy.js", "qml/palette.js"] {
         icons.push(js.to_owned());
     }
     println!("cargo::rerun-if-changed=icons");

@@ -1,0 +1,108 @@
+.pragma library
+// What the command palette (CommandPalette.qml) knows about, apart from the
+// shortcut actions. palette.test.js keeps this in step with the Settings window:
+// a checkbox added there and not here fails it.
+
+// Every checkbox in Settings that plainly switches a setting: the palette
+// switches it too. `text` is the checkbox's own label.
+const TOGGLES = [
+    {page: "general", text: "Show site tiles (sites you visit often and ones you add)", key: "speeddial.showTiles"},
+    {page: "general", text: "Search when input isn't an address", key: "general.searchFromLocationBar"},
+    {page: "general", text: "Show search suggestions", key: "general.showSearchSuggestions"},
+    {page: "appearance", text: "Show bookmarks toolbar", key: "appearance.showBookmarksToolbar"},
+    {page: "appearance", text: "Show menu bar (or tap Alt to show it briefly)", key: "appearance.showMenuBar"},
+    {page: "appearance", text: "Show link targets when hovering links", key: "appearance.showStatusBar"},
+    {page: "appearance", text: "Force dark mode on websites", key: "appearance.forceDarkMode"},
+    {page: "appearance", text: "Overlay scrollbars (thin, widen on hover, hide when idle)", key: "appearance.overlayScrollbars", restart: true},
+    {page: "appearance", text: "Hide the tab bar when only one tab is open", key: "tabs.hideWhenSingle"},
+    {page: "appearance", text: "Stretch tabs across the whole tab bar", key: "tabs.fillWidth"},
+    {page: "appearance", text: "Tree-style tabs in vertical lists", key: "tabs.tree"},
+    {page: "appearance", text: "Open new tabs after the current tab", key: "tabs.newTabAfterActive"},
+    {page: "appearance", text: "Switch to tabs opened from links", key: "tabs.switchToNewTabFromLink"},
+    {page: "appearance", text: "Open popup windows in tabs", key: "tabs.openPopupsInTabs"},
+    {page: "appearance", text: "Close window when the last tab is closed", key: "tabs.closeWindowWithLastTab"},
+    {page: "browsing", text: "Enable JavaScript", key: "web.javascript"},
+    {page: "browsing", text: "Load images automatically", key: "web.autoloadImages"},
+    {page: "browsing", text: "Allow local storage", key: "web.localStorage"},
+    {page: "browsing", text: "Enable plugins (PDF viewer is always on)", key: "web.pluginsEnabled"},
+    {page: "browsing", text: "Smooth scrolling", key: "web.smoothScrolling"},
+    {page: "browsing", text: "Spatial navigation (arrow keys between links)", key: "web.spatialNavigation"},
+    {page: "browsing", text: "Print backgrounds", key: "web.printBackgrounds"},
+    {page: "browsing", text: "Check spelling while typing", key: "web.spellcheck"},
+    {page: "browsing", text: "Unload tabs that haven't been shown for a while", key: "tabs.unloadInactive"},
+    {page: "browsing", text: "Keep pinned tabs loaded", key: "tabs.unloadKeepPinned"},
+    {page: "browsing", text: "Fill in forms with saved addresses", key: "browsing.formFill"},
+    {page: "browsing", text: "Offer to save addresses typed into forms", key: "browsing.formFillSave"},
+    {page: "privacy", text: "Remember browsing history", key: "privacy.saveHistory"},
+    {page: "privacy", text: "Clear history, cookies and cache when Kite closes", key: "privacy.clearOnExit"},
+    {page: "privacy", prefix: "Private windows", text: "Show often visited sites on the start page", key: "privacy.privateHistoryTiles"},
+    {page: "privacy", prefix: "Private windows", text: "Suggest pages from the history in the address bar", key: "privacy.privateHistorySuggestions"},
+    {page: "privacy", text: "Use per-site cookie rules", key: "privacy.siteCookieRules"},
+    {page: "privacy", text: "Send Global Privacy Control", key: "privacy.globalPrivacyControl"},
+    {page: "privacy", text: "Send “Do Not Track”", key: "web.doNotTrack"},
+    {page: "privacy", text: "Remove tracking parameters from addresses", key: "privacy.stripTrackingParams"},
+    {page: "privacy", text: "Block link click pings", key: "privacy.blockPings"},
+    {page: "privacy", text: "Tell sites which page linked to them (referrer)", key: "privacy.sendReferer"},
+    {page: "privacy", text: "Use a common user agent", key: "privacy.genericUserAgent"},
+    {page: "privacy", text: "Hide local network addresses from WebRTC", key: "privacy.webrtcPublicOnly"},
+    {page: "privacy", text: "Allow fingerprint protection", key: "privacy.antiFingerprinting"},
+    {page: "privacy", text: "HTTPS-only mode", key: "privacy.httpsOnly"},
+    {page: "privacy", text: "Look up the addresses of links in advance (DNS prefetching)", key: "web.dnsPrefetch"},
+    {page: "privacy", text: "Use container tabs", key: "privacy.containers"},
+    {page: "passwords", text: "Offer to save passwords", key: "passwords.save"},
+    {page: "passwords", text: "Fill in saved logins automatically", key: "passwords.autofill"},
+    {page: "passwords", text: "Suggest strong passwords on sign-up forms", key: "passwords.generator"},
+    {page: "passwords", text: "Include symbols", key: "passwords.generatorSymbols"},
+    {page: "adblock", text: "Block ads and trackers", key: "adblock.enabled"},
+    {page: "downloads", text: "Always ask where to save files", key: "downloads.askWhereToSave"},
+    {page: "extensions", text: "Enable extensions", key: "extensions.enabled"},
+    {page: "extensions", text: "Identify as Firefox on addons.mozilla.org", key: "extensions.amoSpoofFirefox"},
+]
+
+// Settings that take more than a switch: these open their page.
+const CHOICES = [
+    {page: "general", text: "When Kite starts"},
+    {page: "general", text: "Home page"},
+    {page: "general", text: "New tab page"},
+    {page: "general", text: "Default search engine"},
+    {page: "appearance", text: "Show home button"},
+    {page: "appearance", text: "Default zoom"},
+    {page: "appearance", text: "Tab bar position"},
+    {page: "appearance", text: "Customize toolbar"},
+    {page: "browsing", text: "Mouse wheel scroll distance"},
+    {page: "browsing", text: "Spelling languages"},
+    {page: "browsing", text: "User agent"},
+    {page: "browsing", text: "Saved addresses"},
+    {page: "browsing", text: "Dangerous site protection"},
+    {page: "search", text: "Manage search engines"},
+    {page: "privacy", text: "Cookies"},
+    {page: "privacy", text: "Secure DNS (DNS over HTTPS)"},
+    {page: "privacy", text: "Proxy"},
+    {page: "privacy", text: "Manage containers"},
+    {page: "privacy", text: "Clear recent history"},
+    {page: "passwords", text: "Manage passwords"},
+    {page: "passwords", text: "Password generator length"},
+    {page: "passwords", text: "Where logins are stored (KDE Wallet, master password)"},
+    {page: "adblock", text: "Filter lists and custom rules"},
+    {page: "downloads", text: "Download folder"},
+    {page: "sites", text: "Site settings"},
+    {page: "extensions", text: "Extension settings"},
+    {page: "shortcuts", text: "Keyboard shortcuts"},
+]
+
+const PAGE_TITLES = {
+    general: "General", appearance: "Appearance", browsing: "Browsing", search: "Search Engines", privacy: "Privacy",
+    passwords: "Passwords", adblock: "Content Blocking", downloads: "Downloads", sites: "Site Settings",
+    extensions: "Extensions", shortcuts: "Shortcuts",
+}
+
+// Icons for the shortcut actions (Main.qml's shortcutActions).
+const ACTION_ICONS = {
+    newTab: "tab-new", closeTab: "tab-close", reopenTab: "edit-undo", nextTab: "go-next", previousTab: "go-previous", muteTab: "audio-volume-muted",
+    tabSearch: "search", commandPalette: "search", newWindow: "window-new", newPrivateWindow: "view-private", fullScreen: "view-fullscreen", quit: "application-exit",
+    focusAddress: "go-jump-locationbar", searchWeb: "search", back: "go-previous", forward: "go-next", home: "go-home", reload: "view-refresh",
+    reloadBypass: "view-refresh", find: "edit-find", findNext: "go-down-search", findPrevious: "go-up-search", zoomIn: "zoom-in", zoomOut: "zoom-out",
+    zoomReset: "zoom-original", viewSource: "text-html", print: "document-print", savePage: "document-save-as", openFile: "document-open", devTools: "utilities-terminal",
+    pictureInPicture: "kite-pip", readerView: "view-readermode", bookmarkPage: "bookmark-new", bookmarkAllTabs: "bookmarks", bookmarksSidebar: "view-sidetree",
+    historySidebar: "view-sidetree", bookmarksLibrary: "bookmarks-organize", historyLibrary: "view-history", downloads: "download", addons: "kite-extension", settings: "settings-configure",
+}

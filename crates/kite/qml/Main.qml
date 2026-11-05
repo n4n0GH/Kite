@@ -164,6 +164,7 @@ QtObject {
         {id: "savePage", group: "Page", name: "Save page", keys: ["Ctrl+S"]},
         {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
         {id: "devTools", group: "Page", name: "Developer tools", keys: ["F12", "Ctrl+Shift+I"]},
+        {id: "commandPalette", group: "Tools", name: "Command palette", keys: ["Ctrl+Shift+P", "Ctrl+Alt+I"]},
         {id: "pictureInPicture", group: "Page", name: "Picture-in-picture", keys: ["Ctrl+Shift+]"]},
         {id: "readerView", group: "Page", name: "Reader view", keys: ["Ctrl+Alt+R"]},
         {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},

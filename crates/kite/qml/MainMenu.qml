@@ -104,6 +104,7 @@ QQC2.Menu {
         QQC2.MenuItem { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; onTriggered: win.customizeToolbar() }
     }
     QQC2.MenuItem { text: "Find in Page…"; icon.name: "edit-find"; onTriggered: win.openFindBar() }
+    QQC2.MenuItem { text: "Command Palette…"; icon.name: "search"; onTriggered: win.toggleCommandPalette() }
     QQC2.MenuItem { text: "Settings"; icon.name: "settings-configure"; onTriggered: app.showPreferences() }
     QQC2.MenuSeparator {}
     QQC2.MenuItem { text: "About Kite"; icon.name: "help-about"; onTriggered: aboutDialog.open() }

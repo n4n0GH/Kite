@@ -17,8 +17,8 @@
 - [ ] Named sessions
 - [ ] Mouse gestures
 - [ ] KIO integration
-- [ ] Make the UI on ctrl-shift-e look more like the UI on dolphin and other kde apps when ctrl-alt-i is pressed
-- [ ] Add command palette on ctrl-shift-p and ctrl-alt-i (same visuals and everything as ctrl-shift-e), allowing users to type the setting they want to change, or action they want to take
+- [x] Make the UI on ctrl-shift-e look more like the UI on dolphin and other kde apps when ctrl-alt-i is pressed
+- [x] Add command palette on ctrl-shift-p and ctrl-alt-i (same visuals and everything as ctrl-shift-e), allowing users to type the setting they want to change, or action they want to take
 - [ ] Add internal plugin system for additional features that not all users need or want
 
 ## Bigger projects
@@ -31,5 +31,5 @@
 
 ## Housekeeping
 
-- [ ] README: remove speed dial editing from "not yet ported"
-- [ ] FEATURE_COMPARISON.md: update the table and the commit it is pinned to
+- [x] README: remove speed dial editing from "not yet ported"
+- [x] FEATURE_COMPARISON.md: update the table and the commit it is pinned to

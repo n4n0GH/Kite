@@ -4,7 +4,7 @@ Desktop features, compared on Linux (Kite's only platform).
 
 **Legend:** ✅ built in · ⚠️ partial, hidden or experimental, or only through an extension · ❌ no
 
-The **Kite** column reflects Kite's code as of commit `86bf5ac` (2026-11-04).
+The **Kite** column reflects Kite's code as of commit `ca63eaa` (2026-11-05), and the command palette after it.
 The **Chrome** and **Firefox** columns reflect their stable releases as known in mid-2026. Both
 ship changes every four weeks, so check the newest versions before relying on a single row.
 
@@ -44,6 +44,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
 | Named sessions | ❌ | ❌ | ❌ | All need an extension. |
+| Command palette (find any action or setting by typing) | ✅ | ⚠️ | ⚠️ | Kite: also switches settings. Chrome and Firefox: some actions from the address bar. |
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |
 | Profiles | ✅ | ✅ | ✅ | Kite: a picker at startup and a Profiles menu; each runs in its own process. |
@@ -133,9 +134,11 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Bookmark manager | ✅ | ✅ | ✅ | Kite uses Falkon-compatible files. |
 | History manager | ✅ | ✅ | ✅ | |
 | Bookmarks and history sidebar | ✅ | ⚠️ | ✅ | Chrome's side panel has bookmarks and reading list. |
+| Delete single pages from the history sidebar | ✅ | ❌ | ✅ | Chrome's history side panel varies by version. |
 | Bookmark import and export | ✅ | ✅ | ✅ | Kite imports HTML (as Chrome and Firefox export it) or Falkon's bookmarks.json, and exports HTML. |
 | Import straight from an installed browser | ❌ | ✅ | ✅ | Kite needs an exported file. |
 | Download manager | ✅ | ✅ | ✅ | |
+| Printing with the system dialog | ✅ | ⚠️ | ✅ | Chrome has its own print preview, with the system dialog a step away. |
 | Ask where to save | ✅ | ✅ | ✅ | |
 | Reading list | ❌ | ✅ | ❌ | |
 
@@ -144,6 +147,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Feature | Kite | Chrome | Firefox | Notes |
 |---|---|---|---|---|
 | Password manager | ✅ | ✅ | ✅ | |
+| Logins and form autofill in frames | ✅ | ✅ | ✅ | Kite: another site's frame only fills when picked. |
 | KDE Wallet storage | ✅ | ✅ | ❌ | Kite shares logins with Falkon. |
 | Master password / primary password | ✅ | ❌ | ✅ | |
 | Password import/export (CSV) | ✅ | ✅ | ✅ | Kite also reads Bitwarden CSV and Falkon XML. |
