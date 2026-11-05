@@ -1,0 +1,2 @@
+- [x] when printing in reading view on dark mode, the print background is also dark, it should ignore the dark mode and print black on white, as expected
+- [x] x on history delete is not centered vertically with the list item

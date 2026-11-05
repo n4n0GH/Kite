@@ -4,11 +4,11 @@
 
 - [x] Reader view
 - [x] Tab search
-- [ ] Printing dialog instead of only print to PDF
-- [ ] Default keybind for new private window should be ctrl-shift-n
-- [ ] Add feature to delete individual pages from the history sidebar (similar to tab close function)
-- [ ] Passwords and form autofill in iframes
-- [ ] Profile picker
+- [x] Printing dialog instead of only print to PDF
+- [x] Default keybind for new private window should be ctrl-shift-n
+- [x] Add feature to delete individual pages from the history sidebar (similar to tab close function)
+- [x] Passwords and form autofill in iframes
+- [x] Profile picker
 
 
 ## Setting Kite apart
