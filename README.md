@@ -178,6 +178,10 @@ saved or update an existing entry; never from private windows.
 * **Safety:** credentials are only released for the host of the tab's actual URL
   (taken from the view, never from page JavaScript), only to http(s) pages, never
   to extension pages; nothing is saved from private windows.
+* **Frames:** login and address forms inside iframes work too, for the frame's own site (as Qt
+  reports it). Logins fill by themselves only in frames of the page's site; for another site's
+  frame, which could be hidden or misleading, they wait to be picked from the key menu, which
+  names that site.
 * **Import/export:** Firefox/Chrome/Bitwarden CSV and Falkon XML; exports are 0600.
 
 ## Private windows
@@ -218,7 +222,7 @@ own address; a restored session reopens the page itself.
   see their tabs or requests, and the built-in content blocker stands in for uBlock Origin. Each
   can be allowed in its details in the add-ons manager. Taking that back leaves its content
   scripts in open private pages until they are reloaded, cut off from the extension.
-* Password manager and form autofill: fields inside iframes are not detected; no card autofill.
+* Form autofill: no card autofill. In frames nested inside frames, suggestions open at the pointer.
 * Printing goes through CUPS' `lp`; a page's print button prints the whole page, also from a frame.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the

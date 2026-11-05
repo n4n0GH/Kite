@@ -62,10 +62,126 @@ Item {
         addressPrompt = null
         if (p) FormFill.answer(p.request, choice)
     }
-    function refreshLogins() { logins = loginForm ? JSON.parse(Passwords.logins(web.url.toString())) : [] }
-    function fillLogin(id) {
-        const data = Passwords.fillData(web.url.toString(), id)
-        if (data !== "null") bridge.fillLogin(data)
+    function refreshLogins() {
+        const list = loginForm ? JSON.parse(Passwords.logins(web.url.toString())) : []
+        const top = originOf(web.url.toString())
+        for (const id in loginFrames) {
+            const f = loginFrames[id]
+            if (!f.isValid) continue
+            const url = f.url.toString()
+            // (A frame of another site is named, not to be mistaken for this one.)
+            for (const l of JSON.parse(Passwords.logins(url))) list.push(Object.assign({}, l, {frameId: id, frameHost: originOf(url) === top ? "" : Browser.hostOf(url)}))
+        }
+        logins = list
+    }
+    // (`frameId`: for a login form in that frame.)
+    function fillLogin(id, frameId) {
+        if (frameId === undefined) {
+            const data = Passwords.fillData(web.url.toString(), id)
+            if (data !== "null") bridge.fillLogin(data)
+            return
+        }
+        const f = loginFrames[frameId]
+        if (!f || !f.isValid) return
+        const data = Passwords.fillData(f.url.toString(), id)
+        if (data !== "null") frameDown(f, "fillLogin", data)
+    }
+
+    // ---- forms in frames (webext/js/frame_transport.js) ----
+    // A frame's address comes from Qt, never from the frame or the page. Logins
+    // are filled by themselves only in frames of the page's own site: one of
+    // another site could be hidden, or placed where it fools the user, so that
+    // takes picking it from the key menu.
+    property var loginFrames: ({})      // frame id → frame with a login form
+    property bool frameLoginForm: false
+    property var _knownFrames: ({})     // frame id → frame
+    function originOf(u) { const m = /^(https?:\/\/[^/?#]+)/i.exec(u); return m ? m[1].toLowerCase() : "" }
+    function allFrames(frame, out) {
+        for (const c of frame.children) { out.push(c); allFrames(c, out) }
+        return out
+    }
+    // Find the frame by asking each for the id its script chose.
+    function withFrame(id, then) {
+        const known = _knownFrames[id]
+        if (known && known.isValid) { then(known); return }
+        for (const f of allFrames(web.mainFrame, [])) {
+            f.runJavaScript("globalThis.__kiteFrameId", 1, r => {
+                if (r !== id || _knownFrames[id]) return
+                _knownFrames[id] = f
+                then(f)
+            })
+        }
+    }
+    function frameDown(frame, name, arg) {
+        const call = "globalThis.__kiteFrameDown && __kiteFrameDown(" + JSON.stringify(name) + ", " + JSON.stringify(arg) + ", " + JSON.stringify(originOf(frame.url.toString())) + ")"
+        // (Qt's frames don't run it without a callback.)
+        frame.runJavaScript(call, 1, () => {})
+    }
+    // Where a frame is in the page: its element there, if the top frame can
+    // tell which that is. Nested ones and doubtful cases go by the pointer.
+    function frameOffset(frame, then) {
+        const list = "JSON.stringify(Array.from(document.querySelectorAll('iframe, frame')).map(e => { const r = e.getBoundingClientRect(); return {src: e.src, x: r.left + e.clientLeft, y: r.top + e.clientTop, w: e.clientWidth, h: e.clientHeight} }))"
+        web.runJavaScript(list, 1, json => {
+            const all = JSON.parse(json || "[]")
+            let hits = all.filter(e => e.src === frame.url.toString())
+            if (hits.length !== 1) hits = all.filter(e => e.w === frame.size.width && e.h === frame.size.height)
+            then(hits.length === 1 ? hits[0] : null)
+        })
+    }
+    function frameMessage(text) {
+        const msg = JSON.parse(text)
+        withFrame(msg.f, frame => {
+            if (!frame.isValid) return
+            const url = frame.url.toString()
+            const arg = msg.a[0]
+            switch (msg.m) {
+            case "loginFormFound": {
+                const all = Object.assign({}, loginFrames)
+                all[msg.f] = frame
+                loginFrames = all
+                frameLoginForm = true
+                refreshLogins()
+                const own = logins.find(l => l.frameId === msg.f && !l.frameHost)
+                if (arg && own && originOf(url) === originOf(web.url.toString()) && Passwords.autofillEnabled()) fillLogin(own.id, msg.f)
+                break
+            }
+            case "formSubmitted": {
+                const r = JSON.parse(Passwords.formSubmitted(url, wt.window.privateMode, arg))
+                if (r) savePrompt = r
+                break
+            }
+            case "autofillSubmit": {
+                const r = JSON.parse(FormFill.formSubmitted(url, wt.window.privateMode, arg))
+                if (r) addressPrompt = r
+                break
+            }
+            case "autofillFocus":
+                frameOffset(frame, at => {
+                    const f = JSON.parse(arg)
+                    f.url = url
+                    if (at) { f.x += at.x; f.y += at.y }
+                    else {
+                        const zoom = web.zoomFactor || 1
+                        f.x = pointer.x / zoom; f.y = pointer.y / zoom; f.w = 0; f.h = 0
+                    }
+                    frameBridge.frame = frame
+                    autofillPopup.bridge = frameBridge
+                    autofillPopup.show(f)
+                })
+                break
+            case "autofillBlur": autofillPopup.close(); break
+            case "autofillKey": autofillPopup.key(arg); break
+            case "formDirty": formDirty = arg; break
+            }
+        })
+    }
+    // What the suggestions call on the top frame's bridge, for a frame.
+    QtObject {
+        id: frameBridge
+        property var frame
+        function autofillMenu(open) { if (frame && frame.isValid) wt.frameDown(frame, "autofillMenu", open) }
+        function fillAddress(json) { if (frame && frame.isValid) wt.frameDown(frame, "fillAddress", json) }
+        function fillPassword(password) { if (frame && frame.isValid) wt.frameDown(frame, "fillPassword", password) }
     }
     function answerSavePrompt(choice) {
         const p = savePrompt
@@ -440,6 +556,9 @@ Item {
                         // A wake lock prompt belongs to the page being left.
                         if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
                         wt.loginForm = false
+                        wt.frameLoginForm = false
+                        wt.loginFrames = ({})
+                        wt._knownFrames = ({})
                         wt.logins = []
                         wt.navEvent("onBeforeNavigate", {url: u, parentFrameId: -1})
                         wt.navEvent("onCommitted", {url: u, transitionType: "link", transitionQualifiers: []})
@@ -546,7 +665,10 @@ Item {
                 }
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
-                onJavaScriptConsoleMessage: (level, message, line, source) => wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
+                onJavaScriptConsoleMessage: (level, message, line, source) => {
+                    if (message.startsWith(wt.app.frameSecret)) { wt.frameMessage(message.substring(wt.app.frameSecret.length)); return }
+                    wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
+                }
             }
 
             ReaderControls {
@@ -654,7 +776,7 @@ Item {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r
         }
-        onAutofillFocused: json => autofillPopup.show(JSON.parse(json))
+        onAutofillFocused: json => { autofillPopup.bridge = bridge; autofillPopup.show(JSON.parse(json)) }
         onAutofillBlurred: autofillPopup.close()
         onAutofillKeyPressed: key => autofillPopup.key(key)
         onAutofillSubmitted: json => {
@@ -669,7 +791,8 @@ Item {
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true
             wt.refreshLogins()
-            if (emptyPassword && wt.logins.length > 0 && Passwords.autofillEnabled()) wt.fillLogin(wt.logins[0].id)
+            const own = wt.logins.find(l => l.frameId === undefined)
+            if (emptyPassword && own && Passwords.autofillEnabled()) wt.fillLogin(own.id)
         }
     }
     Connections { target: Passwords; function onChanged() { wt.refreshLogins() } }
@@ -679,10 +802,10 @@ Item {
         id: autofillPopup
         tab: wt; view: web; bridge: bridge
         onPickedAddress: id => {
-            const data = FormFill.fillData(web.url.toString(), id)
-            if (data !== "null") bridge.fillAddress(data)
+            const data = FormFill.fillData((autofillPopup.field && autofillPopup.field.url) || web.url.toString(), id)
+            if (data !== "null") autofillPopup.bridge.fillAddress(data)
         }
-        onPickedPassword: password => bridge.fillPassword(password)
+        onPickedPassword: password => autofillPopup.bridge.fillPassword(password)
         onManage: wt.app.showPreferences("browsing")
     }
     AuthDialog { id: authDialog; tab: wt }

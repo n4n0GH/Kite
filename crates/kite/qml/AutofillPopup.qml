@@ -55,7 +55,7 @@ QQC2.Popup {
         } else {
             if (!FormFill.enabled()) { close(); return }
             if (!FormFill.unlocked) { if (FormFill.count > 0) FormFill.unlock(); close(); return }
-            list = JSON.parse(FormFill.suggestions(view.url.toString(), f.kind, f.value))
+            list = JSON.parse(FormFill.suggestions(f.url || view.url.toString(), f.kind, f.value))
             // Nothing new to offer once the field holds a suggestion.
             if (list.length === 1 && list[0].label.toLowerCase() === f.value.trim().toLowerCase()) list = []
         }

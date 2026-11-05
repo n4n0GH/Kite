@@ -298,6 +298,15 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "scrollbarScript"]
         fn scrollbar_script(self: &Browser) -> QString;
+        /// Forms in frames (webext::scripts::frame_forms_js): the script, and the
+        /// random secret starting its console messages, for this run.
+        #[qinvokable]
+        #[cxx_name = "frameFormsScript"]
+        fn frame_forms_script(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "frameSecret"]
+        fn frame_secret(self: &Browser) -> QString;
+
         /// Printing: Qt's dialog, answered by printChosen (JSON with where to
         /// put the PDF and for what paper, "" if cancelled).
         #[qinvokable]
@@ -1029,6 +1038,14 @@ impl qobject::Browser {
         q(if on { include_str!("js/scrollbars.js") } else { "" })
     }
 
+    fn frame_forms_script(&self) -> QString {
+        q(kite_core::webext::scripts::frame_forms_js(&FRAME_SECRET))
+    }
+
+    fn frame_secret(&self) -> QString {
+        q(&*FRAME_SECRET)
+    }
+
     fn print_dialog(self: Pin<&mut Self>, title: &QString) {
         *PRINT_THREAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(self.qt_thread());
         let Ok(title) = std::ffi::CString::new(title.to_string()) else { return };
@@ -1259,6 +1276,14 @@ mod tests {
         assert_eq!(nodes[2].url, "https://rust-lang.org/");
     }
 }
+
+static FRAME_SECRET: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    // (Random letters and digits: the script holds it in a string.)
+    let mut bytes = [0u8; 24];
+    let _ = getrandom::getrandom(&mut bytes);
+    format!("kiteframe{}:", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
+});
+
 // Answers from the print dialog and lp (cpp/print.cpp), on the GUI thread.
 static PRINT_THREAD: std::sync::Mutex<Option<cxx_qt::CxxQtThread<qobject::Browser>>> = std::sync::Mutex::new(None);
 

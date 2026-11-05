@@ -514,6 +514,8 @@ QtObject {
         for (const p of allProfiles()) {
             // Like Firefox, extensions don't run in private windows unless allowed.
             const wanted = JSON.parse(Extensions.userScripts(p === privateProfile))
+            // Logins and form autofill in a page's frames.
+            wanted.push({name: "kite:frameForms", sourceCode: Browser.frameFormsScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Overlay scrollbars also for pages styling their own.
@@ -594,7 +596,10 @@ QtObject {
     // console::page / console::extension (see kite_log, RUST_LOG).
     property LoggingCategory pageConsole: LoggingCategory { name: "console.page"; defaultLogLevel: LoggingCategory.Debug }
     property LoggingCategory extensionConsole: LoggingCategory { name: "console.extension"; defaultLogLevel: LoggingCategory.Debug }
+    // What frames tell WebTab (it may hold a password): never logged.
+    readonly property string frameSecret: Browser.frameSecret()
     function logConsole(extension, prefix, level, message, source, line) {
+        if (message.startsWith(frameSecret)) return
         const cat = extension ? extensionConsole : pageConsole
         const text = (prefix ? "[" + prefix + "] " : "") + message + (source ? " (" + source + ":" + line + ")" : "")
         if (level === WebEngineView.ErrorMessageLevel) console.error(cat, text)

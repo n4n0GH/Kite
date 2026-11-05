@@ -196,7 +196,7 @@ QQC2.TextField {
             id: keyButton
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
-            visible: field.tab && field.tab.loginForm && (field.tab.logins.length > 0 || Passwords.locked)
+            visible: field.tab && (field.tab.loginForm || field.tab.frameLoginForm) && (field.tab.logins.length > 0 || Passwords.locked)
             icon.name: Passwords.locked ? "object-locked" : "dialog-password"
             onClicked: keyMenu.popup(keyButton, 0, keyButton.height)
             QQC2.ToolTip.text: Passwords.locked ? "Saved logins are locked" : "Saved logins for this site"; QQC2.ToolTip.visible: hovered
@@ -206,9 +206,10 @@ QQC2.TextField {
                     model: field.tab ? field.tab.logins : []
                     delegate: QQC2.MenuItem {
                         required property var modelData
-                        text: modelData.username || "(no username)"
+                        // (From a frame of another site: which one it is for.)
+                        text: (modelData.username || "(no username)") + (modelData.frameHost ? " — " + modelData.frameHost : "")
                         icon.name: "user-identity"
-                        onTriggered: field.tab.fillLogin(modelData.id)
+                        onTriggered: field.tab.fillLogin(modelData.id, modelData.frameId)
                     }
                     onObjectAdded: (i, o) => keyMenu.insertItem(i, o)
                     onObjectRemoved: (i, o) => keyMenu.removeItem(o)

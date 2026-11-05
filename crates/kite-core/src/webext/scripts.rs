@@ -17,6 +17,8 @@ pub const API_CORE: &str = include_str!("js/api_core.js");
 pub const PAGE_TRANSPORT: &str = include_str!("js/page_transport.js");
 pub const CONTENT_TRANSPORT: &str = include_str!("js/content_transport.js");
 pub const BRIDGE: &str = include_str!("js/bridge.js");
+pub const FORMS: &str = include_str!("js/forms.js");
+pub const FRAME_TRANSPORT: &str = include_str!("js/frame_transport.js");
 pub const CORS_SHIM: &str = include_str!("js/cors_shim.js");
 /// Loaded right after Qt's qwebchannel.js (see the file).
 pub const QWEBCHANNEL_PATCH: &str = include_str!("js/qwebchannel_patch.js");
@@ -76,8 +78,14 @@ pub fn content_prelude(ext: &Extension, token: &str) -> String {
 pub fn bridge_js(tokens: &[String], qwebchannel_js: &str) -> String {
     format!(
         "(function(){{\n{qwebchannel_js}\n;{QWEBCHANNEL_PATCH}\n;{}\n}})();",
-        BRIDGE.replace("__KITE_TOKENS__", &serde_json::to_string(tokens).unwrap())
+        BRIDGE.replace("__KITE_TOKENS__", &serde_json::to_string(tokens).unwrap()).replace("// __KITE_FORMS__", FORMS)
     )
+}
+
+/// Logins and form autofill in the frames of a page (world CONTENT_WORLD, all
+/// frames but the main one, which has the bridge). `secret` marks its messages.
+pub fn frame_forms_js(secret: &str) -> String {
+    format!("(function(){{\nif (window === top) return;\n{FORMS}\n{}\n}})();", FRAME_TRANSPORT.replace("__KITE_FRAME_SECRET__", secret))
 }
 
 /// Convert a match pattern into a Greasemonkey glob (for exclude_matches).
