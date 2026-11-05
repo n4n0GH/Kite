@@ -24,6 +24,7 @@ QQC2.Menu {
     onAboutToShow: {
         for (let i = 0; i < positionItems.count; ++i) positionItems.objectAt(i).checked = menu.positions[i].k === menu.browser.tabPosition
         hideSingle.checked = !!menu.browser.app.liveSettings["tabs.hideWhenSingle"]
+        treeStyle.checked = !!menu.browser.app.liveSettings["tabs.tree"]
     }
 
     QQC2.MenuItem {
@@ -71,5 +72,11 @@ QQC2.Menu {
         text: "Hide When Only One Tab Is Open"
         checkable: true
         onTriggered: Browser.setSetting("tabs.hideWhenSingle", JSON.stringify(checked))
+    }
+    QQC2.MenuItem {
+        id: treeStyle
+        text: "Tree-Style Tabs in Vertical Lists"
+        checkable: true
+        onTriggered: Browser.setSetting("tabs.tree", JSON.stringify(checked))
     }
 }

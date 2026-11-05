@@ -50,7 +50,7 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: menu.tab.window.savePage() }
 
     // Links
-    QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, container: menu.tab.container}) }
+    QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, fromLink: true, container: menu.tab.container}) }
     // Split view: in the other pane (starting split view), shown there while
     // this pane stays the active one.
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, openerTabId: menu.tab.tabId, container: menu.tab.container}) }

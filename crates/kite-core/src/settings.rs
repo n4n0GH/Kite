@@ -59,6 +59,8 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
+        // Links open as children of their tab, in vertical tab lists.
+        "tabs.tree": false,
         // Reader view: text size (px), line length (em), "sans" | "serif",
         // "auto" (the KDE colours) | "light" | "sepia" | "dark".
         "reader.fontSize": 20,

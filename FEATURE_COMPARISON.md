@@ -40,6 +40,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Container tabs (separate cookies) | ✅ | ❌ | ⚠️ | Firefox: through Mozilla's Multi-Account Containers add-on. Chrome uses profiles instead. |
 | Reopen closed tabs and windows | ✅ | ✅ | ✅ | |
 | List all tabs / tab search | ✅ | ✅ | ✅ | Kite searches the tabs of all windows by title and address. |
+| Tree-style nested tabs | ✅ | ❌ | ⚠️ | Kite: an option for vertical lists. Firefox: through an add-on. |
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
 | Named sessions | ❌ | ❌ | ❌ | All need an extension. |
@@ -184,7 +185,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 **Where Kite goes further:**
 - Tab bar anywhere: above, between, below, or vertical on either side.
 - Split view with a tab strip for each side.
-- Tab groups drawn as a file tree in vertical lists.
+- Tab groups drawn as a file tree in vertical lists, and optional tree-style tabs without an add-on.
 - Per-site dark mode, CSS, JavaScript and fingerprint protection.
 - Built-in container tabs and built-in ad blocking.
 - Full uBlock Origin on a Chromium engine, which Chrome itself no longer allows.

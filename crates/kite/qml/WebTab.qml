@@ -220,7 +220,7 @@ Item {
 
     function setPinned(p) {
         // Pinned tabs aren't in groups (leaving one can move the tab).
-        if (p) window.removeFromGroup(tabId)
+        if (p) { window.removeFromGroup(tabId, true); window.detachFromTree(tabId) }
         const i = window.indexOfTab(tabId)
         pinned = p
         window.setTabProperty(tabId, "pinned", p)
@@ -262,7 +262,7 @@ Item {
     }
 
     function saveState() {
-        return {url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container, pane: pane, group: window.groupOf(tabId)}
+        return Object.assign({url: url, title: title, pinned: pinned, zoom: web.zoomFactor, history: [], history_index: 0, container: container, pane: pane, group: window.groupOf(tabId)}, window.treeState(tabId))
     }
 
     function extInfo() {
@@ -497,7 +497,7 @@ Item {
                         return
                     }
                     const bg = dest === WebEngineNewWindowRequest.InNewBackgroundTab
-                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, container: wt.container})
+                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, fromLink: true, container: wt.container})
                 }
 
                 onWindowCloseRequested: wt.close()

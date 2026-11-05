@@ -7,6 +7,7 @@ import QtWebEngine
 import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "tabtree.js" as TabTree
 
 // A browser window (Falkon's BrowserWindow): tab strip, navigation toolbar
 // with location bar and extension buttons, bookmarks toolbar, sidebar,
@@ -53,14 +54,18 @@ QQC2.ApplicationWindow {
         return ids
     }
     // Group actions for several tabs.
+    // (In a tree, a tab brings its descendants along, wherever they go:
+    // `treeRoots` keeps one from being moved twice.)
+    function treeRoots(ids) { return treeEnabled ? TabTree.roots(treeRows(), ids) : ids }
     function newGroupFor(ids) {
-        const gid = newGroup(ids[0])
-        if (gid) for (const id of ids.slice(1)) addToGroup(id, gid)
+        const roots = treeRoots(ids)
+        const gid = newGroup(roots[0])
+        if (gid) for (const id of roots.slice(1)) addToGroup(id, gid)
         selectedTabs = []
         return gid
     }
-    function addTabsToGroup(ids, gid) { for (const id of ids) addToGroup(id, gid); selectedTabs = [] }
-    function removeTabsFromGroup(ids) { for (const id of ids.slice().reverse()) removeFromGroup(id); selectedTabs = [] }
+    function addTabsToGroup(ids, gid) { for (const id of treeRoots(ids)) addToGroup(id, gid); selectedTabs = [] }
+    function removeTabsFromGroup(ids) { for (const id of treeRoots(ids).reverse()) removeFromGroup(id); selectedTabs = [] }
     function closeTabs(ids) { selectedTabs = []; for (const id of ids.slice().reverse()) closeTab(indexOfTab(id)) }
     function moveTabsToOtherPane(ids) { selectedTabs = []; for (const id of ids) moveToOtherPane(id) }
 
@@ -105,36 +110,56 @@ QQC2.ApplicationWindow {
         all[gid] = {name: "Group " + (Object.keys(all).length + 1), color: color, collapsed: false}
         tabGroups = all
         removeFromGroup(tabId)
-        tabModel.setProperty(indexOfTab(tabId), "group", gid)
+        const moving = treeTabs(tabId)
+        // A group can't sit inside a tree (it would cut off the tabs after it):
+        // a tab with a parent moves to the end of the tree it leaves.
+        const top = TabTree.ancestors(treeRows(), tabId).pop()
+        if (treeEnabled && top !== undefined) {
+            const from = indexOfTab(tabId), end = indexOfTab(top) + tabModel.get(indexOfTab(top)).treeCount
+            tabModel.setProperty(from, "treeParent", -1)
+            if (from + moving.length - 1 < end) moveRangeTo(from, from + moving.length - 1, end)
+        }
+        for (const id of moving) tabModel.setProperty(indexOfTab(id), "group", gid)
         groupsVersion++
+        updateTree()
         return gid
     }
     // Into a group: the tab moves after the group's last tab (and to its pane).
     function addToGroup(tabId, gid) {
         const members = groupTabs(gid)
         if (!members.length || members.includes(tabId) || tabModel.get(indexOfTab(tabId)).pinned) return
+        // With its descendants; only its link to a parent outside the group goes.
+        const moving = treeTabs(tabId)
+        tabModel.setProperty(indexOfTab(tabId), "treeParent", -1)
         removeFromGroup(tabId)
         const from = indexOfTab(tabId)
         const pane = tabModel.get(indexOfTab(members[0])).pane
-        if (tabModel.get(from).pane !== pane) { tabModel.setProperty(from, "pane", pane); countPane1() }
-        let to = indexOfTab(members[members.length - 1])
-        if (from > to) to++
-        moveTab(from, to, true)
-        tabModel.setProperty(indexOfTab(tabId), "group", gid)
+        if (tabModel.get(from).pane !== pane) {
+            for (const id of moving) tabModel.setProperty(indexOfTab(id), "pane", pane)
+            countPane1()
+        }
+        const end = indexOfTab(members[members.length - 1])
+        moveRangeTo(from, from + moving.length - 1, from > end ? end + 1 : end)
+        for (const id of moving) tabModel.setProperty(indexOfTab(id), "group", gid)
         if (tabGroups[gid].collapsed) updateGroup(gid, {collapsed: false})
         groupsVersion++
+        updateTree()
     }
-    // Out of its group: a tab in the middle moves after the group's end.
-    function removeFromGroup(tabId) {
+    // Out of its group: a tab in the middle moves after the group's end, with
+    // its descendants (`alone`: without them, for a tab leaving the tree too).
+    function removeFromGroup(tabId, alone) {
         const i = indexOfTab(tabId)
         if (i < 0) return
         const gid = tabModel.get(i).group
         if (!gid) return
         const members = groupTabs(gid)
         const last = indexOfTab(members[members.length - 1])
-        tabModel.setProperty(i, "group", "")
-        if (i !== last && members.indexOf(tabId) !== 0) moveTab(i, last, true)
+        const leaving = alone ? [tabId] : treeTabs(tabId)
+        for (const id of leaving) tabModel.setProperty(indexOfTab(id), "group", "")
+        const end = i + leaving.length - 1
+        if (end !== last && members.indexOf(tabId) !== 0) moveRangeTo(i, end, last)
         dropEmptyGroups()
+        if (!alone) updateTree()
     }
     function ungroup(gid) {
         for (const id of groupTabs(gid)) tabModel.setProperty(indexOfTab(id), "group", "")
@@ -185,32 +210,152 @@ QQC2.ApplicationWindow {
             const members = groupTabs(g)
             to = indexOfTab(members[to > last ? members.length - 1 : 0])
         }
+        // The same for a collapsed tree (its descendants are out of sight).
+        if (to > last && tabModel.get(to).treeCollapsed) to += tabModel.get(to).treeCount
         return to
     }
     // Move a group's tabs as one, its first tab to `to` (dragging left) or
     // its last one (dragging right).
     function moveGroupTo(gid, to) {
-        let members = groupTabs(gid)
-        let first = indexOfTab(members[0]), last = indexOfTab(members[members.length - 1])
-        // The neighbours in the way go to the group's other side, one by one.
+        const members = groupTabs(gid)
+        moveRangeTo(indexOfTab(members[0]), indexOfTab(members[members.length - 1]), to)
+    }
+    // (The same for any tabs next to each other: a tab and its descendants.)
+    function moveRangeTo(first, last, to) {
+        // The neighbours in the way go to the other side, one by one.
         while (to > last) { moveTab(last + 1, first, true); first++; last++ }
         while (to < first) { moveTab(first - 1, last, true); first--; last-- }
+    }
+    // While a tab (with its descendants) is dragged, its group follows it, so
+    // the headers show where it would land. Crossing a tab of a group takes it
+    // into that group (not a collapsed one: that is passed as a whole). It stays
+    // in until it is no longer next to the group's tabs, or if it is all there
+    // is of the group. (`movedDown`: which way it just moved.)
+    function dragGroupPreview(id, movedDown) {
+        const i = indexOfTab(id)
+        if (i < 0 || tabModel.get(i).pinned) return
+        const end = i + tabModel.get(i).treeCount
+        const prev = i > 0 ? tabModel.get(i - 1).group : "", next = end < tabModel.count - 1 ? tabModel.get(end + 1).group : ""
+        const crossed = movedDown ? prev : next
+        const cur = tabModel.get(i).group
+        let g = ""
+        if (crossed && tabGroups[crossed] && !tabGroups[crossed].collapsed) {
+            g = crossed
+        } else if (cur) {
+            let others = 0
+            for (let j = 0; j < tabModel.count; ++j) if ((j < i || j > end) && tabModel.get(j).group === cur) others++
+            if (prev === cur || next === cur || others === 0) g = cur
+        }
+        if (cur === g) return
+        for (let j = i; j <= end; ++j) tabModel.setProperty(j, "group", g)
+        groupsVersion++
     }
     // A drag ended: groups follow where the tab (id, or -1 for a group) was
     // dropped. A tab dragged away from its group leaves it (not the ones
     // left behind); one dropped between two tabs of a group joins it.
-    function finishTabDrag(id) {
+    // (In a tree, the tab's descendants come along, and `treeDepth` is the
+    // depth it was dragged to.)
+    function finishTabDrag(id, treeDepth) {
+        treeDragging = false
         const i = indexOfTab(id)
         if (i >= 0) {
-            const g = tabModel.get(i).group
-            const prev = i > 0 ? tabModel.get(i - 1).group : "", next = i < tabModel.count - 1 ? tabModel.get(i + 1).group : ""
-            if (g && prev !== g && next !== g && groupTabs(g).length > 1) tabModel.setProperty(i, "group", "")
+            const end = i + tabModel.get(i).treeCount
+            let g = tabModel.get(i).group
+            const prev = i > 0 ? tabModel.get(i - 1).group : "", next = end < tabModel.count - 1 ? tabModel.get(end + 1).group : ""
+            if (g && prev !== g && next !== g && groupTabs(g).length > end - i + 1) g = ""
+            // (Dropped between two tabs of a group, descendants and all.)
+            if (!g && prev && prev === next && !tabModel.get(i).pinned) g = prev
+            for (let j = i; j <= end; ++j) if (tabModel.get(j).group !== g) tabModel.setProperty(j, "group", g)
+            if (treeEnabled) tabModel.setProperty(i, "treeParent", TabTree.dropParent(treeRows(), i, end, treeDepth))
         }
         normalizeGroups()
+        updateTree()
     }
 
     function openGroupMenu(gid, item) { groupMenu.gid = gid; groupMenu.popup(item, 0, item.height) }
     function renameGroup(gid) { groupRename.gid = gid; groupRename.open() }
+
+    // ---- tree-style tabs ("tabs.tree") ---------------------------------------
+    // In vertical lists, a link opens as a child of its tab. The "treeParent"
+    // role holds the links (a tab id, -1 = none) and "treeCollapsed" whether a
+    // tab's descendants are hidden; tabtree.js gives the rest ("treeDepth",
+    // "treeCount", "treeHidden"). A tab's descendants are always right after it.
+    // Other tab bars show a flat list; the links wait for the list to return.
+    readonly property bool treeEnabled: !!app.liveSettings["tabs.tree"] && (tabPosition === "vertical" || tabPosition === "verticalRight")
+    onTreeEnabledChanged: updateTree()
+    // While dragging (any tab, in any tab bar), tabs pass through places they
+    // don't belong.
+    property bool treeDragging: false
+    // While a window's tabs are restored, one by one (a collapsed tab would
+    // lose that for not having its descendants yet).
+    property bool treeRestoring: false
+    onGroupsVersionChanged: Qt.callLater(updateTree)
+    function treeRows() {
+        const rows = []
+        for (let i = 0; i < tabModel.count; ++i) {
+            const r = tabModel.get(i)
+            rows.push({id: r.tabId, parent: r.treeParent, collapsed: r.treeCollapsed, pinned: r.pinned, pane: r.pane, group: r.group})
+        }
+        return rows
+    }
+    function updateTree() {
+        if (treeDragging || treeRestoring) return
+        const tree = treeEnabled ? TabTree.compute(treeRows()) : null
+        for (let i = 0; i < tabModel.count; ++i) {
+            const r = tabModel.get(i)
+            const t = tree ? tree[i] : {parent: r.treeParent, depth: 0, hidden: false, count: 0, collapsed: r.treeCollapsed}
+            if (r.treeParent !== t.parent) tabModel.setProperty(i, "treeParent", t.parent)
+            if (r.treeDepth !== t.depth) tabModel.setProperty(i, "treeDepth", t.depth)
+            if (r.treeHidden !== t.hidden) tabModel.setProperty(i, "treeHidden", t.hidden)
+            if (r.treeCount !== t.count) tabModel.setProperty(i, "treeCount", t.count)
+            if (r.treeCollapsed !== t.collapsed) tabModel.setProperty(i, "treeCollapsed", t.collapsed)
+        }
+    }
+    // The tab with its descendants (ids, in order).
+    function treeTabs(id) {
+        const i = indexOfTab(id)
+        const ids = []
+        if (i >= 0) for (let j = i; j <= i + tabModel.get(i).treeCount; ++j) ids.push(tabModel.get(j).tabId)
+        return ids
+    }
+    function setTreeCollapsed(id, collapsed) {
+        const i = indexOfTab(id)
+        if (i < 0) return
+        if (collapsed) {
+            // A pane showing one of the tabs that go shows the tab itself.
+            const pane = tabModel.get(i).pane
+            if (treeTabs(id).includes(paneTab[pane]) && paneTab[pane] !== id) {
+                if (pane === activePane) setCurrentIndex(i)
+                else setPaneTab(pane, id)
+            }
+        }
+        tabModel.setProperty(i, "treeCollapsed", collapsed)
+        updateTree()
+    }
+    // A tab leaves the tree where it is: its children move up a level.
+    function detachFromTree(id) {
+        const i = indexOfTab(id)
+        if (i < 0) return
+        const parent = tabModel.get(i).treeParent
+        for (let j = 0; j < tabModel.count; ++j) if (tabModel.get(j).treeParent === id) tabModel.setProperty(j, "treeParent", parent)
+        tabModel.setProperty(i, "treeParent", -1)
+    }
+    function expandTreeTo(id) {
+        for (const up of TabTree.ancestors(treeRows(), id)) tabModel.setProperty(indexOfTab(up), "treeCollapsed", false)
+        updateTree()
+    }
+    // A saved tab's place in the tree: the parent as an index in the window.
+    function treeState(id) {
+        const i = indexOfTab(id)
+        if (i < 0) return {treeParent: -1, treeCollapsed: false}
+        return {treeParent: indexOfTab(tabModel.get(i).treeParent), treeCollapsed: tabModel.get(i).treeCollapsed}
+    }
+    // The depth tabs dropped at first..last end up at, given the one asked for.
+    function treeDropDepth(first, last, wanted) {
+        if (!treeEnabled) return 0
+        const parent = TabTree.dropParent(treeRows(), first, last, wanted)
+        return parent < 0 ? 0 : tabModel.get(indexOfTab(parent)).treeDepth + 1
+    }
 
     // ---- split view ------------------------------------------------------------
     // Each tab is in a pane ("pane" role): 0 = left, 1 = right. With tabs in
@@ -243,8 +388,9 @@ QQC2.ApplicationWindow {
         if (i < 0) return
         const from = tabModel.get(i).pane, to = 1 - from
         if (from === 0 && paneTabs(0).length === 1 && !split) return   // nothing would be left
-        // Groups aren't split: the tab leaves its group.
-        removeFromGroup(id)
+        // Groups and trees aren't split: the tab leaves them.
+        removeFromGroup(id, true)
+        detachFromTree(id)
         tabModel.setProperty(indexOfTab(id), "pane", to)
         countPane1()
         // The pane it left shows its next tab, or ends.
@@ -376,7 +522,12 @@ QQC2.ApplicationWindow {
     function tabById(id) { return tabItems[id] || null }
     function tabAt(i) { return i >= 0 && i < tabModel.count ? tabById(tabModel.get(i).tabId) : null }
     function indexOfTab(id) { for (let i = 0; i < tabModel.count; ++i) if (tabModel.get(i).tabId === id) return i; return -1 }
-    function setTabProperty(id, key, value) { const i = indexOfTab(id); if (i >= 0) tabModel.setProperty(i, key, value) }
+    // A tab's view starts up while its row is being inserted, before the tab
+    // strip has moved its other rows along: a change now would reach the tab
+    // the new one pushes down, and stay there (its own value doesn't change
+    // again). The row starts with these values anyway.
+    property bool insertingTab: false
+    function setTabProperty(id, key, value) { if (insertingTab) return; const i = indexOfTab(id); if (i >= 0) tabModel.setProperty(i, key, value) }
 
     // Where a tab opened from `tab` (a link, its context menu) goes: next to
     // it ("tabs.newTabAfterActive"), or at the end.
@@ -398,8 +549,26 @@ QQC2.ApplicationWindow {
         let group = opts.group || ""
         if (!group && opts.openerTabId !== undefined && opts.openerTabId >= 0 && idx === indexOfTab(opts.openerTabId) + 1 && paneOf(opts.openerTabId) === pane) group = groupOf(opts.openerTabId)
         if (opts.pinned) group = ""
-        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, unloaded: false, container: container, pane: pane, group: group})
+        // Its parent: its opener, if a link opened it (after the opener's other
+        // descendants, in its group); else what the place it opens in calls for.
+        let treeParent = opts.treeParent !== undefined ? opts.treeParent : -1
+        if (treeEnabled && !opts.pinned && opts.treeParent === undefined) {
+            const opener = opts.fromLink ? indexOfTab(opts.openerTabId) : -1
+            if (opener >= 0 && !tabModel.get(opener).pinned && tabModel.get(opener).pane === pane) {
+                treeParent = opts.openerTabId
+                idx = opener + tabModel.get(opener).treeCount + 1
+                group = tabModel.get(opener).group
+                if (tabModel.get(opener).treeCollapsed) setTreeCollapsed(opts.openerTabId, false)
+            } else {
+                treeParent = TabTree.parentAt(treeRows(), idx)
+            }
+        }
+        insertingTab = true
+        tabModel.insert(idx, {tabId: id, title: opts.title || "New Tab", url: url || "", icon: "", loading: false, pinned: !!opts.pinned, audible: false, muted: false, unloaded: false, container: container, pane: pane, group: group,
+                              treeParent: treeParent, treeCollapsed: !!opts.treeCollapsed, treeDepth: 0, treeCount: 0, treeHidden: false})
+        insertingTab = false
         if (group && tabGroups[group] && tabGroups[group].collapsed) updateGroup(group, {collapsed: false})
+        updateTree()
         groupsVersion++
         countPane1()
         // (showInPane: its pane shows it, even in the background.)
@@ -416,8 +585,12 @@ QQC2.ApplicationWindow {
         return t
     }
 
-    function restoreTab(saved) {
-        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container, pane: saved.pane === 1 ? 1 : 0, group: saved.group || ""})
+    // (`inWindow`: restoring a whole window, in order, so its tree comes back
+    // too: a parent's saved index is where it is now.)
+    function restoreTab(saved, inWindow) {
+        const parent = inWindow && saved.treeParent >= 0 && saved.treeParent < tabModel.count ? tabModel.get(saved.treeParent).tabId : -1
+        const t = openTab(saved.url, {background: true, lazy: true, pinned: saved.pinned, title: saved.title, container: saved.container, pane: saved.pane === 1 ? 1 : 0, group: saved.group || "",
+                                      treeParent: parent, treeCollapsed: inWindow && !!saved.treeCollapsed})
         t.restoreLook(saved.title, saved.url)
         if (saved.zoom > 0) t.view.zoomFactor = saved.zoom
         return t
@@ -437,7 +610,9 @@ QQC2.ApplicationWindow {
         const at = before.indexOf(id)
         let next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
         if (t && t.openerTabId >= 0 && before.includes(t.openerTabId)) next = t.openerTabId
+        detachFromTree(id)
         tabModel.remove(index)
+        updateTree()
         countPane1()
         dropEmptyGroups()
         if (selectedTabs.includes(id)) selectedTabs = selectedTabs.filter(x => x !== id)
@@ -488,6 +663,8 @@ QQC2.ApplicationWindow {
         const row = tabModel.get(i)
         // A tab in a collapsed group opens the group.
         if (row.group && tabGroups[row.group] && tabGroups[row.group].collapsed) updateGroup(row.group, {collapsed: false})
+        // So does a tab under a collapsed tab.
+        if (row.treeHidden) expandTreeTo(row.tabId)
         // The tab's pane shows it and becomes the active one.
         setPaneTab(row.pane, row.tabId)
         activePane = row.pane
@@ -505,6 +682,8 @@ QQC2.ApplicationWindow {
     function tabModel_get(i) { return tabModel.get(i) }
     // After a session's tabs are back: each pane's current tab.
     function restorePanes(saved) {
+        treeRestoring = false
+        updateTree()
         if (saved.splitWidth > 0) rightPaneWidth = saved.splitWidth
         if (saved.groups) { tabGroups = saved.groups; dropEmptyGroups() }
         const pc = saved.paneCurrent || []
@@ -529,7 +708,8 @@ QQC2.ApplicationWindow {
 
     // Ctrl+Tab and friends: within the active pane.
     function nextTab(step) {
-        const ids = paneTabs(activePane)
+        // (Not the tabs hidden in collapsed trees.)
+        const ids = paneTabs(activePane).filter(id => !tabModel.get(indexOfTab(id)).treeHidden)
         if (!ids.length) return
         const at = Math.max(0, ids.indexOf(currentTab ? currentTab.tabId : -1))
         setCurrentIndex(indexOfTab(ids[(at + step + ids.length) % ids.length]))

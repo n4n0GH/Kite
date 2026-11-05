@@ -488,6 +488,8 @@ ManagerWindow {
             QQC2.Label { text: "Also available by right-clicking the tab bar."; opacity: 0.7; font: Kirigami.Theme.smallFont }
             QQC2.CheckBox { enabled: tabPos.currentIndex < 3; text: "Stretch tabs across the whole tab bar"; checked: w.get("tabs.fillWidth"); onToggled: w.set("tabs.fillWidth", checked) }
             QQC2.Label { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+            QQC2.CheckBox { text: "Tree-style tabs in vertical lists"; checked: w.get("tabs.tree"); onToggled: w.set("tabs.tree", checked) }
+            QQC2.Label { text: "Links open as children of their tab. Drag a tab sideways to change its level; its children move with it."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
             QQC2.CheckBox { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; checked: w.get("tabs.newTabAfterActive"); onToggled: w.set("tabs.newTabAfterActive", checked) }
             QQC2.CheckBox { text: "Switch to tabs opened from links"; checked: w.get("tabs.switchToNewTabFromLink"); onToggled: w.set("tabs.switchToNewTabFromLink", checked) }
             QQC2.CheckBox { text: "Open popup windows in tabs"; checked: w.get("tabs.openPopupsInTabs"); onToggled: w.set("tabs.openPopupsInTabs", checked) }

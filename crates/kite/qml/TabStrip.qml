@@ -186,7 +186,10 @@ Rectangle {
             // Width for tabs in the vertical list: the scroll bar, when shown,
             // gets its own lane instead of covering the close buttons.
             readonly property real itemWidth: width - (verticalScrollBar.visible ? verticalScrollBar.width : 0)
-            moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
+            // Tabs slide aside for a dragged tab. Only then: moves by the group
+            // logic can come with a tab growing a group's header, and a tab
+            // still sliding would miss that and stay where it was headed.
+            moveDisplaced: Transition { enabled: stripRoot.browser.treeDragging; NumberAnimation { properties: "x,y"; duration: Kirigami.Units.shortDuration } }
             readonly property bool overflowing: !stripRoot.vertical && contentWidth > width + 0.5
             readonly property real maxContentX: originX + Math.max(0, contentWidth - width)
             readonly property real maxContentY: originY + Math.max(0, contentHeight - height)

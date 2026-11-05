@@ -11,6 +11,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Tabs:** the tab bar above or below the address bar, below the page, or as a vertical
   list on either side (hidden with a single tab if wanted); pinned tabs, scroll arrows and
   wheel scrolling, drag to reorder, links/images/text dropped on the bar open in new tabs.
+* **Tree-style tabs (optional, for vertical lists):** links open as children of their tab,
+  shown nested with guide lines; trees collapse, move and close as a whole, and dragging a tab
+  sideways changes its level (Settings or right-click the tab bar).
 * **Tab search:** the tab bar's list button or Ctrl+Shift+E searches the open tabs of all
   windows by title and address (private and normal windows aren't mixed).
 * **Tab groups:** named and coloured, collapsible; shown as a group tab on horizontal bars
@@ -57,7 +60,7 @@ qqc2-desktop-style. QtWebEngineQuick *development* headers are optional.
 ```sh
 cargo build --release
 ./target/release/kite [URL...]            # --profile NAME, --private
-cargo test --workspace && node --test crates/kite-core/src/webext/js/api_core.test.js
+cargo test --workspace && node --test crates/kite-core/src/webext/js/api_core.test.js crates/kite/qml/tabtree.test.js
 ```
 
 Developer tools:
@@ -207,4 +210,4 @@ own address; a restored session reopens the page itself.
   `--profile`).
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
 * Falkon features not yet ported: named session manager, speed-dial editing,
-  cookie/certificate managers, mouse gestures, tree-style (nested) tabs, KIO integration.
+  cookie/certificate managers, mouse gestures, KIO integration.

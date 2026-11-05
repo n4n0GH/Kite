@@ -51,14 +51,26 @@ Item {
     readonly property real groupTabWidth: groupFirst && !vertical ? Kirigami.Units.gridUnit * 8 : 0
     readonly property real headerHeight: groupFirst && vertical ? Kirigami.Units.gridUnit * 1.8 : 0
     readonly property real indent: groupInfo && vertical ? Kirigami.Units.gridUnit * 1.4 : 0
-    visible: inStrip && !hiddenInGroup
 
-    width: !inStrip || hiddenInGroup ? 0 : vertical ? tabList.itemWidth : collapsedTab ? groupTabWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth + groupTabWidth
-    height: !inStrip || hiddenInGroup ? 0 : vertical ? (collapsedTab ? headerHeight : Kirigami.Units.gridUnit * 2 + headerHeight) : tabList.height
+    // Tree-style tabs (BrowserWindow): how deep the tab is, how many tabs are
+    // under it, and whether they are hidden or it is. (Deep trees stop
+    // indenting so the tabs stay readable.)
+    required property int treeDepth
+    required property int treeCount
+    required property bool treeCollapsed
+    required property bool treeHidden
+    readonly property real treeStep: Kirigami.Units.gridUnit * 0.9
+    readonly property int shownDepth: Math.min(treeDepth, 6)
+    readonly property bool hiddenTab: hiddenInGroup || treeHidden
+    visible: inStrip && !hiddenTab
+
+    width: !inStrip || hiddenTab ? 0 : vertical ? tabList.itemWidth : collapsedTab ? groupTabWidth : pinned ? Kirigami.Units.gridUnit * 2.4 : tabList.normalWidth + groupTabWidth
+    height: !inStrip || hiddenTab ? 0 : vertical ? (collapsedTab ? headerHeight : Kirigami.Units.gridUnit * 2 + headerHeight) : tabList.height
     z: dragHandler.active ? 10 : 0
 
     // The tab's face: its slot, after the group's chip or header.
-    readonly property rect face: vertical ? Qt.rect(indent, headerHeight, width - indent, Kirigami.Units.gridUnit * 2) : Qt.rect(groupTabWidth, 0, width - groupTabWidth, height)
+    readonly property real treeIndent: shownDepth * treeStep
+    readonly property rect face: vertical ? Qt.rect(indent + treeIndent, headerHeight, width - indent - treeIndent, Kirigami.Units.gridUnit * 2) : Qt.rect(groupTabWidth, 0, width - groupTabWidth, height)
 
     function toggleGroup() { browser.setGroupCollapsed(group, !groupCollapsed) }
 
@@ -125,11 +137,27 @@ Item {
         color: root.groupInfo ? root.groupInfo.color : "transparent"
     }
 
+    // Tree-style tabs: a guide line for each level above the tab.
+    Repeater {
+        model: root.vertical && !root.hiddenTab ? root.shownDepth : 0
+        delegate: Rectangle {
+            required property int index
+            x: root.indent + (index + 0.5) * root.treeStep
+            y: root.headerHeight
+            width: 1
+            height: root.height - root.headerHeight
+            color: Kirigami.Theme.textColor
+            opacity: 0.2
+        }
+    }
+
     // Drop slot: while a tab is dragged, its place in the strip (which moves
     // as the other tabs slide aside) shows where it will land.
+    // (In a tree, at the depth it would get.)
     Rectangle {
-        x: root.face.x + 1; y: root.face.y + 1
-        width: root.face.width - 2; height: root.face.height - 2
+        readonly property real slotX: root.browser.treeEnabled ? root.indent + Math.min(dragHandler.dropDepth, 6) * root.treeStep : root.face.x
+        x: slotX + 1; y: root.face.y + 1
+        width: root.face.x + root.face.width - slotX - 2; height: root.face.height - 2
         visible: dragHandler.active
         radius: Kirigami.Units.cornerRadius
         color: Qt.alpha(Kirigami.Theme.highlightColor, 0.12)
@@ -145,7 +173,8 @@ Item {
         readonly property bool lifted: dragHandler.active
         readonly property real dragOffset: lifted ? dragHandler.pos - (root.vertical ? root.y : root.x) : 0
         x: root.face.x + (root.vertical ? 0 : dragOffset)
-        y: root.face.y + (root.vertical ? dragOffset : 0)
+        // (Lifted, it stays under the pointer as a group's header comes or goes.)
+        y: lifted ? dragHandler.startFaceY + (root.vertical ? dragOffset : 0) : root.face.y
         width: root.face.width
         height: root.face.height
         Behavior on x { enabled: !bg.lifted; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
@@ -210,6 +239,20 @@ Item {
             anchors.leftMargin: Kirigami.Units.smallSpacing * 2
             anchors.rightMargin: Kirigami.Units.smallSpacing
             spacing: Kirigami.Units.smallSpacing
+            // Tree-style tabs: collapse or expand what is under the tab.
+            Kirigami.Icon {
+                visible: root.treeCount > 0
+                source: root.treeCollapsed ? "arrow-right" : "arrow-down"
+                opacity: twistyHover.hovered ? 1 : 0.7
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Layout.preferredWidth
+                Accessible.role: Accessible.Button
+                Accessible.name: root.treeCollapsed ? "Expand Tree" : "Collapse Tree"
+                Accessible.onPressAction: root.browser.setTreeCollapsed(root.tabId, !root.treeCollapsed)
+                HoverHandler { id: twistyHover }
+                // Exclusive, so this doesn't also select the tab.
+                TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.browser.setTreeCollapsed(root.tabId, !root.treeCollapsed) }
+            }
             Item {
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
@@ -232,6 +275,8 @@ Item {
                 opacity: root.current ? 1 : root.unloaded ? 0.55 : 0.8
                 font.italic: root.unloaded && !root.current
             }
+            // How many tabs a collapsed tree holds.
+            QQC2.Label { visible: root.treeCollapsed && root.treeCount > 0; text: root.treeCount; opacity: 0.6; font: Kirigami.Theme.smallFont }
             QQC2.ToolButton {
                 visible: root.audible || root.muted
                 icon.name: root.muted ? "audio-volume-muted" : "audio-volume-high"
@@ -305,7 +350,8 @@ Item {
     DragHandler {
         id: dragHandler
         target: null
-        xAxis.enabled: !root.vertical
+        // (In a tree, sideways too: that changes the tab's depth.)
+        xAxis.enabled: !root.vertical || root.browser.treeEnabled
         yAxis.enabled: root.vertical
         cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
         // Position along the strip at drag start, distance dragged, and how
@@ -319,10 +365,20 @@ Item {
         // Dragging the whole group: a collapsed group, or an open one by its
         // chip or tree header.
         property bool wholeGroup: false
+        // Tree-style tabs: the depth at drag start, the one asked for by
+        // dragging sideways, and the one the tab would get here.
+        // Where its face was in it at drag start.
+        property real startFaceY: 0
+        property int startDepth: 0
+        property int wantedDepth: 0
+        property int dropDepth: 0
         readonly property real along: root.vertical ? activeTranslation.y : activeTranslation.x
         readonly property real size: root.vertical ? root.height : root.width
         onActiveChanged: {
             if (active) {
+                startFaceY = root.face.y
+                startDepth = wantedDepth = dropDepth = root.treeDepth
+                root.browser.treeDragging = true
                 startPos = root.vertical ? root.y : root.x
                 startScroll = root.tabList.scrollPos
                 pos = startPos
@@ -331,10 +387,11 @@ Item {
                 if (!wholeGroup) root.browser.setCurrentIndex(root.index)
             } else {
                 root.tabList.autoScroll = 0
-                root.browser.finishTabDrag(wholeGroup ? -1 : root.tabId)
+                root.browser.finishTabDrag(wholeGroup ? -1 : root.tabId, wantedDepth)
             }
         }
         onAlongChanged: if (active) Qt.callLater(update)
+        onActiveTranslationChanged: if (active && root.browser.treeEnabled) Qt.callLater(update)
         function update() {
             if (!active) return
             pos = startPos + along + root.tabList.scrollPos - startScroll
@@ -348,9 +405,17 @@ Item {
                 to = root.browser.dragTarget(first, last, to)
                 if (to >= 0) root.browser.moveGroupTo(root.group, to)
             } else {
-                to = root.browser.dragTarget(root.index, root.index, to)
-                // (Group membership follows when the drag ends.)
-                if (to >= 0) root.browser.moveTab(root.index, to, true)
+                // (Its descendants come along. Group membership and the place
+                // in the tree follow when the drag ends.)
+                const last = root.index + root.treeCount
+                to = root.browser.dragTarget(root.index, last, to)
+                if (to >= 0) {
+                    const down = to > root.index
+                    root.browser.moveRangeTo(root.index, last, to)
+                    root.browser.dragGroupPreview(root.tabId, down)
+                }
+                wantedDepth = startDepth + Math.round(activeTranslation.x / root.treeStep)
+                dropDepth = root.browser.treeDropDepth(root.index, root.index + root.treeCount, wantedDepth)
             }
             // Near an end of a crowded strip, scroll it (faster the further
             // the tab is pulled past the edge).
@@ -432,6 +497,21 @@ Item {
             parentMenu: menu
             after: duplicateItem
             onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
+        }
+        // Tree-style tabs.
+        QQC2.MenuItem {
+            visible: root.treeCount > 0
+            height: visible ? implicitHeight : 0
+            text: root.treeCollapsed ? "Expand Tree" : "Collapse Tree"
+            icon.name: root.treeCollapsed ? "arrow-down" : "arrow-right"
+            onTriggered: root.browser.setTreeCollapsed(root.tabId, !root.treeCollapsed)
+        }
+        QQC2.MenuItem {
+            visible: root.treeCount > 0
+            height: visible ? implicitHeight : 0
+            text: "Close Tree (" + (root.treeCount + 1) + " Tabs)"
+            icon.name: "tab-close"
+            onTriggered: root.browser.closeTabs(root.browser.treeTabs(root.tabId))
         }
         QQC2.MenuItem { text: root.pinned ? "Unpin Tab" : "Pin Tab"; icon.name: "window-pin"; onTriggered: root.browser.tabById(root.tabId).setPinned(!root.pinned) }
         QQC2.MenuItem {

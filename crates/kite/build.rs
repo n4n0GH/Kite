@@ -25,6 +25,8 @@ fn main() {
     let mut icons = Vec::new();
     files(std::path::Path::new("icons"), &mut icons);
     icons.sort();
+    // Plain JavaScript the QML files import (tested with node, not a QML type).
+    icons.push("qml/tabtree.js".to_owned());
     println!("cargo::rerun-if-changed=icons");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml))
