@@ -31,6 +31,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   the page laid out for the paper chosen and sent to CUPS as a PDF; also from pages' own print
   buttons. It offers the paper of your locale and half-inch margins, whatever the driver's defaults.
   Or save the page as a PDF without printing.
+* **Sessions:** open windows and tabs saved under a name, with their groups, trees, containers and
+  split view, to open beside what is open or switch to (Sessions menu, or the command palette).
 * **Profiles:** each with its own bookmarks, history, logins and add-ons; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Picture-in-picture:** a page's video in a small window above others (address bar
@@ -234,7 +236,6 @@ own address; a restored session reopens the page itself.
 * Not available: sync, translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
-* Falkon features not yet ported: named session manager,
-  cookie/certificate managers, mouse gestures. KIO integration is left out on purpose: addresses
+* Falkon features not yet ported: cookie/certificate managers, mouse gestures. KIO integration is left out on purpose: addresses
   like `smb://` and `sftp://` open in the app the desktop has for them (the file manager), which
   does more with them. Typed ones open directly; a page's links ask first.

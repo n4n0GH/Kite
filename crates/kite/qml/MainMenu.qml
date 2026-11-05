@@ -27,6 +27,7 @@ QQC2.Menu {
         onChosen: c => menu.win.openTab(menu.app.newTabUrl(), {background: false, container: c}).focusLocationBar()
     }
     ProfileMenu {}
+    SessionMenu { win: menu.win }
     QQC2.MenuItem { text: "Open File…"; icon.name: "document-open"; onTriggered: win.openFile() }
     QQC2.MenuItem { text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: win.savePage() }
     QQC2.MenuItem { text: "Print…"; icon.name: "document-print"; onTriggered: win.printTab() }

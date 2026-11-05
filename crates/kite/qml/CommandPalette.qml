@@ -35,6 +35,11 @@ CommandBar {
             const place = where
             out.push({prefix: "Tab bar", title: name, icon: "tab-duplicate", current: false, checked: win.tabPosition === place, run: () => win.setTabPosition(place)})
         }
+        for (const s of JSON.parse(Browser.namedSessions())) {
+            const name = s.name
+            out.push({prefix: "Sessions", title: "Open " + name, icon: "document-open", detail: s.tabs + (s.tabs === 1 ? " tab" : " tabs"), run: () => app.openNamedSession(name, false)})
+            out.push({prefix: "Sessions", title: "Switch to " + name, icon: "document-open", detail: "closes the windows open now", run: () => app.openNamedSession(name, true)})
+        }
         const here = Browser.currentProfile()
         for (const p of JSON.parse(Browser.profiles())) {
             if (p.name === here || p.inUse) continue

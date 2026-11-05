@@ -298,6 +298,23 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "scrollbarScript"]
         fn scrollbar_script(self: &Browser) -> QString;
+        /// Sessions kept under a name (session::NamedSessions). What changes one
+        /// answers with an error message, or "". The windows are as saveSession's.
+        #[qinvokable]
+        #[cxx_name = "namedSessions"]
+        fn named_sessions(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "namedSession"]
+        fn named_session(self: &Browser, name: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "saveNamedSession"]
+        fn save_named_session(self: &Browser, name: &QString, windows: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "renameNamedSession"]
+        fn rename_named_session(self: &Browser, from: &QString, to: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "deleteNamedSession"]
+        fn delete_named_session(self: &Browser, name: &QString) -> QString;
         /// An address for another program (search::is_external_url).
         #[qinvokable]
         #[cxx_name = "isExternalUrl"]
@@ -1042,6 +1059,31 @@ impl qobject::Browser {
         q(if on { include_str!("js/scrollbars.js") } else { "" })
     }
 
+    fn named_sessions(&self) -> QString {
+        js(&json!(named_sessions().list()))
+    }
+
+    fn named_session(&self, name: &QString) -> QString {
+        js(&named_sessions().get(&name.to_string()).map_or(json!([]), |s| json!(s.windows)))
+    }
+
+    fn save_named_session(&self, name: &QString, windows: &QString) -> QString {
+        // (A Kite started with --private keeps nothing.)
+        if app().private {
+            return q("A private Kite doesn't keep sessions.");
+        }
+        let result = serde_json::from_str(&windows.to_string()).map_err(anyhow::Error::from).and_then(|w| named_sessions().save(&name.to_string(), w, kite_core::util::now_ms()));
+        q(result.err().map(|e| e.to_string()).unwrap_or_default())
+    }
+
+    fn rename_named_session(&self, from: &QString, to: &QString) -> QString {
+        q(named_sessions().rename(&from.to_string(), &to.to_string()).err().map(|e| e.to_string()).unwrap_or_default())
+    }
+
+    fn delete_named_session(&self, name: &QString) -> QString {
+        q(named_sessions().delete(&name.to_string()).err().map(|e| e.to_string()).unwrap_or_default())
+    }
+
     fn is_external_url(&self, url: &QString) -> bool {
         search::is_external_url(&url.to_string())
     }
@@ -1283,6 +1325,10 @@ mod tests {
         assert_eq!(nodes[0].children[0].keyword, "kde");
         assert_eq!(nodes[2].url, "https://rust-lang.org/");
     }
+}
+
+fn named_sessions() -> kite_core::session::NamedSessions {
+    kite_core::session::NamedSessions::load(app().shared.profile.path("sessions.json"))
 }
 
 static FRAME_SECRET: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {

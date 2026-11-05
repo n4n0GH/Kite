@@ -164,6 +164,8 @@ QtObject {
         {id: "savePage", group: "Page", name: "Save page", keys: ["Ctrl+S"]},
         {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
         {id: "devTools", group: "Page", name: "Developer tools", keys: ["F12", "Ctrl+Shift+I"]},
+        {id: "saveSession", group: "Windows", name: "Save current session", keys: []},
+        {id: "manageSessions", group: "Windows", name: "Manage sessions", keys: []},
         {id: "commandPalette", group: "Tools", name: "Command palette", keys: ["Ctrl+Shift+P", "Ctrl+Alt+I"]},
         {id: "pictureInPicture", group: "Page", name: "Picture-in-picture", keys: ["Ctrl+Shift+]"]},
         {id: "readerView", group: "Page", name: "Reader view", keys: ["Ctrl+Alt+R"]},
@@ -303,6 +305,22 @@ QtObject {
 
     function restoreWindow(saved) {
         return newWindow({tabs: saved.tabs, current: saved.current, saved: saved, geometry: saved.geometry, maximized: saved.maximized})
+    }
+
+    // ---- sessions kept under a name (SessionMenu.qml, SessionDialogs.qml) ------
+    // The regular windows, as for the session restored at startup; answers with
+    // an error message, or "".
+    function saveNamedSession(name) {
+        return Browser.saveNamedSession(name, JSON.stringify(windows.filter(w => !w.privateMode).map(w => w.saveState())))
+    }
+    // Its windows beside the open ones, or instead of them (`replace`; private
+    // windows stay, and the others go to Recently Closed as usual).
+    function openNamedSession(name, replace) {
+        const saved = JSON.parse(Browser.namedSession(name)).filter(w => w.tabs.length > 0)
+        if (!saved.length) return
+        const before = windows.filter(w => !w.privateMode)
+        for (const w of saved) restoreWindow(w)
+        if (replace) for (const w of before) w.close()
     }
 
     function windowClosed(w) {

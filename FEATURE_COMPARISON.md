@@ -43,7 +43,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Tree-style nested tabs | ✅ | ❌ | ⚠️ | Kite: an option for vertical lists. Firefox: through an add-on. |
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
-| Named sessions | ❌ | ❌ | ❌ | All need an extension. |
+| Named sessions | ✅ | ❌ | ❌ | Chrome and Firefox need an extension. |
 | Command palette (find any action or setting by typing) | ✅ | ⚠️ | ⚠️ | Kite: also switches settings. Chrome and Firefox: some actions from the address bar. |
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |

@@ -99,7 +99,7 @@ const PAGE_TITLES = {
 // Icons for the shortcut actions (Main.qml's shortcutActions).
 const ACTION_ICONS = {
     newTab: "tab-new", closeTab: "tab-close", reopenTab: "edit-undo", nextTab: "go-next", previousTab: "go-previous", muteTab: "audio-volume-muted",
-    tabSearch: "search", commandPalette: "search", newWindow: "window-new", newPrivateWindow: "view-private", fullScreen: "view-fullscreen", quit: "application-exit",
+    saveSession: "document-save", manageSessions: "configure", tabSearch: "search", commandPalette: "search", newWindow: "window-new", newPrivateWindow: "view-private", fullScreen: "view-fullscreen", quit: "application-exit",
     focusAddress: "go-jump-locationbar", searchWeb: "search", back: "go-previous", forward: "go-next", home: "go-home", reload: "view-refresh",
     reloadBypass: "view-refresh", find: "edit-find", findNext: "go-down-search", findPrevious: "go-up-search", zoomIn: "zoom-in", zoomOut: "zoom-out",
     zoomReset: "zoom-original", viewSource: "text-html", print: "document-print", savePage: "document-save-as", openFile: "document-open", devTools: "utilities-terminal",

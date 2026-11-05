@@ -805,6 +805,8 @@ QQC2.ApplicationWindow {
         case "muteTab": if (t) t.view.audioMuted = !t.view.audioMuted; break
         case "tabSearch": tabSearch.toggle(); break
         case "commandPalette": commandPalette.toggle(); break
+        case "saveSession": saveSessionAs(); break
+        case "manageSessions": manageSessions(); break
         case "newWindow": app.newWindow(); break
         case "newPrivateWindow": app.newWindow({privateMode: true}); break
         case "fullScreen": visibility === Window.FullScreen ? showNormal() : showFullScreen(); break
@@ -1118,6 +1120,9 @@ QQC2.ApplicationWindow {
     CommandPalette { id: commandPalette; win: bw }
     function toggleTabSearch() { tabSearch.toggle() }
     function toggleCommandPalette() { commandPalette.toggle() }
+    SessionDialogs { id: sessionDialogs; win: bw }
+    function saveSessionAs() { sessionDialogs.save() }
+    function manageSessions() { sessionDialogs.manage() }
 
     // A tab group's menu (its chip or header).
     QQC2.Menu {

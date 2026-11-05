@@ -14,7 +14,7 @@
 ## Setting Kite apart
 
 - [x] Tree-style nested tabs
-- [ ] Named sessions
+- [x] Named sessions
 - [ ] Mouse gestures
 - [x] Hand `smb://`, `sftp://` and similar addresses to the system (instead of KIO integration)
 - [x] Make the UI on ctrl-shift-e look more like the UI on dolphin and other kde apps when ctrl-alt-i is pressed

@@ -26,6 +26,7 @@ QQC2.MenuBar {
         QQC2.MenuItem { text: "New &Private Window"; icon.name: "view-private"; onTriggered: menuBar.app.newWindow({privateMode: true}) }
         QQC2.MenuSeparator {}
         ProfileMenu {}
+        SessionMenu { win: menuBar.win }
         QQC2.MenuItem { text: "&Open File…"; icon.name: "document-open"; onTriggered: menuBar.win.openFile() }
         QQC2.MenuItem { text: "&Save Page As…"; icon.name: "document-save-as"; onTriggered: menuBar.win.savePage() }
         QQC2.MenuItem { text: "&Print…"; icon.name: "document-print"; onTriggered: menuBar.win.printTab() }
