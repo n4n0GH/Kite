@@ -105,6 +105,6 @@ const ACTION_ICONS = {
     focusAddress: "go-jump-locationbar", searchWeb: "search", back: "go-previous", forward: "go-next", home: "go-home", reload: "view-refresh",
     reloadBypass: "view-refresh", find: "edit-find", findNext: "go-down-search", findPrevious: "go-up-search", zoomIn: "zoom-in", zoomOut: "zoom-out",
     zoomReset: "zoom-original", viewSource: "text-html", print: "document-print", savePage: "document-save-as", openFile: "document-open", devTools: "utilities-terminal",
-    pictureInPicture: "kite-pip", readerView: "view-readermode", bookmarkPage: "bookmark-new", bookmarkAllTabs: "bookmarks", bookmarksSidebar: "view-sidetree",
+    readerView: "view-readermode", bookmarkPage: "bookmark-new", bookmarkAllTabs: "bookmarks", bookmarksSidebar: "view-sidetree",
     historySidebar: "view-sidetree", bookmarksLibrary: "bookmarks-organize", historyLibrary: "view-history", downloads: "download", addons: "kite-extension", settings: "settings-configure",
 }

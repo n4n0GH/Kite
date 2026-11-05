@@ -1,0 +1,23 @@
+{
+    "id": "pip",
+    "name": "Picture-in-Picture",
+    "description": "A page's video in a small window above the others, from the address bar, the video's menu or Ctrl+Shift+]. It stays on top and follows you between virtual desktops.",
+    "icon": "kite-pip",
+    "defaultEnabled": true,
+    "window": "plugins/pip/PipPluginWindow.qml",
+    "settingsPage": "plugins/pip/PipSettings.qml",
+    "actions": [
+        {"id": "pip.toggle", "group": "Page", "name": "Picture-in-picture", "keys": ["Ctrl+Shift+]"], "icon": "kite-pip"}
+    ],
+    "pageScripts": [
+        {
+            "files": ["plugins/pip/page.js"],
+            "worldId": 1,
+            "runsOnSubFrames": false,
+            "injectionPoint": 0
+        }
+    ],
+    "settings": {
+        "allDesktops": true
+    }
+}

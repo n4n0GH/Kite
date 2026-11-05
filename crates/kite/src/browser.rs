@@ -448,6 +448,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "certExceptions"]
         fn cert_exceptions(self: &Browser) -> QString;
+        /// Wayland: see kite_core::kwin.
+        #[qinvokable]
+        #[cxx_name = "placePipWindow"]
+        fn place_pip_window(self: &Browser, title: &QString, min_width: i32, all_desktops: bool);
         // Settings file (Settings → General). Export answers with a message;
         // preview with what's in a file, or {error}; import with a message.
         #[qinvokable]
@@ -1252,6 +1256,10 @@ impl qobject::Browser {
         q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
     }
 
+    fn place_pip_window(&self, title: &QString, min_width: i32, all_desktops: bool) {
+        kite_core::kwin::place_pip_window(&title.to_string(), min_width, all_desktops);
+    }
+
     fn cookies_by_site(&self) -> QString {
         let cookies = app().shared.cookies().clone();
         let sites = kite_core::shared::cookies_by_site(&cookies, &crate::ffi::site_of);
@@ -1543,6 +1551,7 @@ fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
     kite_core::plugins::parse_all(&[
         include_str!("../plugins/gestures/plugin.json"),
         include_str!("../plugins/vim-keys/plugin.json"),
+        include_str!("../plugins/pip/plugin.json"),
     ])
     .expect("plugin.json")
 }
@@ -1551,6 +1560,7 @@ fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
 const PLUGIN_FILES: &[(&str, &str)] = &[
     ("plugins/vim-keys/keys.js", include_str!("../plugins/vim-keys/keys.js")),
     ("plugins/vim-keys/page.js", include_str!("../plugins/vim-keys/page.js")),
+    ("plugins/pip/page.js", include_str!("../plugins/pip/page.js")),
 ];
 
 #[cfg(test)]

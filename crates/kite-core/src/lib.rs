@@ -16,6 +16,7 @@ pub mod downloads;
 pub mod favicons;
 pub mod history;
 pub mod kwallet;
+pub mod kwin;
 pub mod formfill;
 pub mod passwords;
 pub mod plugins;

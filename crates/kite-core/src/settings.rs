@@ -161,6 +161,12 @@ fn migrate(values: &mut Map<String, Value>) {
             values.insert("tabs.switchToNewTabFromLink".into(), Value::Bool(true));
         }
     }
+    // Picture-in-picture became a plugin: its action has a new name.
+    if let Some(Value::Object(keys)) = values.get_mut("shortcuts") {
+        if let Some(mine) = keys.remove("pictureInPicture") {
+            keys.insert("pip.toggle".into(), mine);
+        }
+    }
     // Settings nothing reads.
     for old in ["tabs.showCloseButtons", "downloads.closeManagerOnFinish"] {
         values.remove(old);
@@ -229,6 +235,20 @@ impl Settings {
             .collect();
         crate::util::write_atomic(&self.path, serde_json::to_string_pretty(&changed)?.as_bytes())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod pip_shortcut {
+    use super::*;
+
+    #[test]
+    fn a_changed_key_for_picture_in_picture_survives_its_new_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        std::fs::write(&p, r#"{"shortcuts": {"pictureInPicture": ["Ctrl+Y"], "newTab": ["Ctrl+U"]}}"#).unwrap();
+        let s = Settings::load(p);
+        assert_eq!(s.get("shortcuts"), json!({"pip.toggle": ["Ctrl+Y"], "newTab": ["Ctrl+U"]}));
     }
 }
 

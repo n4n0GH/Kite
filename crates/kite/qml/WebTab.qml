@@ -282,7 +282,7 @@ Item {
     onReaderLookChanged: if (isReader) web.runJavaScript(Browser.readerApplyScript(), readerWorld)
 
     // ---- picture-in-picture (Main.qml startPip) ----
-    // The page has a video to offer (bridge.js), and the page is in the
+    // The page has a video to offer (plugins/pip/), and the page is in the
     // picture-in-picture window.
     property bool hasVideo: false
     readonly property bool inPip: app.pipTab === wt
@@ -887,8 +887,6 @@ Item {
         onWakeLockRequested: id => wt.requestWakeLock(id)
         onWakeLockReleased: wt.setWakeLock(false)
         onFormEdited: dirty => wt.formDirty = dirty
-        onVideoFoundInPage: wt.hasVideo = true
-        onPipEndedInPage: if (wt.inPip) wt.app.stopPip(true)
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true
             wt.refreshLogins()

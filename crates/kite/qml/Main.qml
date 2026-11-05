@@ -116,6 +116,8 @@ QtObject {
     // One at a time: the tab whose page is shown in the picture-in-picture
     // window. Its WebEngineView moves into the window and back.
     property var pipTab: null
+    readonly property var pipPlugin: plugins.find(p => p.id === "pip")
+    readonly property bool pipAvailable: pluginActions.some(a => a.id === "pip.toggle")
     property PipWindow pipWindow: null
     property Component _pipComp: Component { PipWindow {} }
     // Show the video at (x, y) of the tab's page (CSS px; -1: its main video).
@@ -143,6 +145,8 @@ QtObject {
             tab.moveViewTo(pipWindow.area)
             pipWindow.show()
             pipWindow.raise()
+            // Wayland doesn't let a window ask for any of this by itself.
+            Browser.placePipWindow(pipWindow.title, pipWindow.minimumWidth, pluginSetting(pipPlugin, "allDesktops"))
         })
     }
     // `back`: show the tab again (the video keeps playing); `pause`: closed.
@@ -206,7 +210,6 @@ QtObject {
         {id: "saveSession", group: "Windows", name: "Save current session", keys: []},
         {id: "manageSessions", group: "Windows", name: "Manage sessions", keys: []},
         {id: "commandPalette", group: "Tools", name: "Command palette", keys: ["Ctrl+Shift+P", "Ctrl+Alt+I"]},
-        {id: "pictureInPicture", group: "Page", name: "Picture-in-picture", keys: ["Ctrl+Shift+]"]},
         {id: "readerView", group: "Page", name: "Reader view", keys: ["Ctrl+Alt+R"]},
         {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},
         {id: "bookmarkAllTabs", group: "Bookmarks and history", name: "Bookmark all tabs", keys: ["Ctrl+Shift+D"]},

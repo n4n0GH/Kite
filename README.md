@@ -235,9 +235,8 @@ own address; a restored session reopens the page itself.
 * Form autofill: no card autofill. In frames nested inside frames, suggestions open at the pointer.
 * Printing goes through CUPS' `lp`; a page's print button prints the whole page, also from a frame.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
-  own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland the
-  window can only stay on top with a KWin window rule ("Keep above" for the title
-  "Picture-in-Picture").
+  own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland its
+  window only stays on top under KDE Plasma, which is asked to keep it there.
 * Not available: sync (settings and bookmarks can be exported to files to carry over), translation, passkeys (WebAuthn),
   card autofill, browser themes.
 * Proxy changes, overlay scrollbars and the Chromium flags behind them apply after a restart.
