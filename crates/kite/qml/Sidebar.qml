@@ -50,7 +50,7 @@ QQC2.Pane {
             model: rows
             function reload() {
                 if (root.mode === "history") {
-                    rows = JSON.parse(Browser.history(search.text, 0, 0, 300)).map(h => ({type: "url", title: h.title || h.url, url: h.url, sub: new Date(h.date).toLocaleString(Qt.locale(), Locale.ShortFormat)}))
+                    rows = JSON.parse(Browser.history(search.text, 0, 0, 300)).map(h => ({type: "url", id: h.id, title: h.title || h.url, url: h.url, sub: new Date(h.date).toLocaleString(Qt.locale(), Locale.ShortFormat)}))
                 } else if (root.mode === "bookmarks") {
                     if (search.text !== "") { rows = JSON.parse(Browser.searchBookmarks(search.text)); return }
                     if (folder === "") rows = JSON.parse(Browser.bookmarkRoots()).roots
@@ -58,10 +58,19 @@ QQC2.Pane {
                 }
             }
             Connections { target: root; function onModeChanged() { list.folder = ""; list.reload() } }
-            Connections { target: Browser; function onBookmarksChanged() { list.reload() } function onHistoryChanged() { if (root.mode === "history") list.reload() } }
+            Connections { target: Browser; function onBookmarksChanged() { list.reload() } function onHistoryChanged() {
+                if (root.mode !== "history") return
+                // (Deleting pages one after another keeps the list where it is.)
+                const y = list.contentY
+                list.reload()
+                list.forceLayout()
+                list.contentY = Math.max(list.originY, Math.min(y, list.originY + Math.max(0, list.contentHeight - list.height)))
+            } }
             Component.onCompleted: reload()
             delegate: QQC2.ItemDelegate {
+                id: row
                 required property var modelData
+                readonly property bool deletable: root.mode === "history" && modelData.id !== undefined
                 width: ListView.view.width
                 visible: modelData.type !== "separator"
                 height: visible ? implicitHeight : 0
@@ -76,6 +85,32 @@ QQC2.Pane {
                     else if (root.win.currentTab) root.win.currentTab.load(modelData.url)
                 }
                 TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: if (modelData.url) root.win.openTab(modelData.url, {background: true}) }
+                HoverHandler { id: rowHover }
+                // Laid out with the × in it, so it lines up with the text, which
+                // stops short of it, without touching the row's padding (the
+                // theme's highlight follows that). Its place is kept when hidden.
+                contentItem: RowLayout {
+                    spacing: Kirigami.Units.smallSpacing * 2
+                    Kirigami.Icon {
+                        source: row.icon.name
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                        Layout.preferredHeight: Layout.preferredWidth
+                    }
+                    QQC2.Label {
+                        text: row.text
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    CloseButton {
+                        visible: row.deletable
+                        opacity: rowHover.hovered ? 1 : 0
+                        enabled: rowHover.hovered
+                        text: "Delete from History"
+                        Layout.preferredWidth: implicitWidth
+                        Layout.preferredHeight: implicitHeight
+                        onClicked: Browser.deleteHistory(JSON.stringify([row.modelData.id]))
+                    }
+                }
             }
         }
         Loader {
