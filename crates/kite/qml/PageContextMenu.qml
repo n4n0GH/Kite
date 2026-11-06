@@ -47,9 +47,9 @@ QQC2.Menu {
     function act(a) { tab.view.triggerWebAction(a) }
 
     // Navigation (page)
+    QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Reload"; icon.name: "view-refresh"; onTriggered: menu.tab.view.reload() }
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Back"; icon.name: "go-previous"; enabled: menu.tab && menu.tab.view.canGoBack; onTriggered: menu.tab.view.goBack() }
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Forward"; icon.name: "go-next"; enabled: menu.tab && menu.tab.view.canGoForward; onTriggered: menu.tab.view.goForward() }
-    QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Reload"; icon.name: "view-refresh"; onTriggered: menu.tab.view.reload() }
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Bookmark Page"; icon.name: "bookmark-new"; onTriggered: { Browser.addBookmark(menu.tab.url, menu.tab.title, ""); menu.tab.window.toast("Bookmarked", "bookmarks") } }
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: menu.tab.window.savePage() }
 
