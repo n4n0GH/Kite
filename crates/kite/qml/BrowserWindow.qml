@@ -1006,19 +1006,37 @@ QQC2.ApplicationWindow {
             id: content
             QQC2.SplitView.fillWidth: true
             QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 12
-            Repeater {
-                model: tabModel
-                // Each tab's view sits in its pane's area; each pane shows its
-                // current tab.
-                delegate: WebTab {
-                    required property int index
-                    tabIndex: index
+            // Each tab's view sits in its pane's area; each pane shows its
+            // current tab. (z: under what's shown over the page, wherever it moves.)
+            Component {
+                id: webTabComponent
+                WebTab {
                     window: bw
                     app: bw.app
+                    z: -1
                     parent: bw.paneArea(pane)
                     width: parent ? parent.width : 0
                     height: parent ? parent.height - (findBar.visible && findBar.parent === parent ? findBar.height : 0) : 0
                     visible: tabId === bw.paneTab[pane]
+                }
+            }
+            // A tab's row only starts and ends its view. The view can't be the
+            // Repeater's delegate itself: a removed delegate loses its QML context
+            // at once but is deleted a moment later, and the result of a script
+            // arriving in between crashes Qt (it asks that view for its engine).
+            Repeater {
+                model: tabModel
+                delegate: Item {
+                    required property int index
+                    required property int tabId
+                    required property string container
+                    required property int pane
+                    visible: false
+                    property var tab: null
+                    onIndexChanged: if (tab) tab.tabIndex = index
+                    onPaneChanged: if (tab) tab.pane = pane
+                    Component.onCompleted: tab = webTabComponent.createObject(bw, {tabId: tabId, container: container, pane: pane, tabIndex: index})
+                    Component.onDestruction: if (tab) tab.retire()
                 }
             }
 

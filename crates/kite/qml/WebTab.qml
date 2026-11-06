@@ -134,7 +134,8 @@ Item {
     // `each(frame, result)` with what each answers. (Qt's frames don't run it
     // without a callback.)
     function runInFrames(code, each) {
-        if (!web.mainFrame) return
+        // (A tab not loaded has no page to run it in.)
+        if (!web.mainFrame || unloaded) return
         for (const f of [web.mainFrame].concat(allFrames(web.mainFrame, []))) {
             const frame = f
             frame.runJavaScript(code, 1, r => { if (each) each(frame, r) })
@@ -300,9 +301,23 @@ Item {
     // favicon provider (which would crash reading it) and the tab shows the
     // cached icon until the page is back.
     onDiscardedChanged: {
-        Browser.faviconTrack(web.objectName, !discarded)
-        if (discarded) { const c = Browser.cachedFavicon(url); if (c !== "") window.setTabProperty(tabId, "icon", c) }
-        else window.setTabProperty(tabId, "icon", web.icon.toString())
+        if (!discarded) return
+        Browser.faviconTrack(web.objectName, false)
+        faviconOut = true
+        const c = Browser.cachedFavicon(url)
+        if (c !== "") window.setTabProperty(tabId, "icon", c)
+    }
+    // Out of Qt's favicon provider for good, once unloaded: the page it gets when it
+    // wakes up has no favicon helper (Qt only makes one with the view), and reading
+    // its icon crashes. It doesn't report new icons either, so after each load its
+    // tab gets the page's icon by its address.
+    property bool faviconOut: false
+    function iconFromPage() {
+        const page = web.url.toString()
+        web.runJavaScript("(document.querySelector('link[rel~=\"icon\"]') || {}).href || location.origin + '/favicon.ico'", 1, href => {
+            if (web.url.toString() !== page || isReader) return
+            window.setTabProperty(tabId, "icon", /^https?:/.test(page) && /^(https?:|data:image\/)/.test(String(href)) ? href : "")
+        })
     }
     // Text typed into the page that wasn't submitted (it would be lost).
     property bool formDirty: false
@@ -447,7 +462,17 @@ Item {
     }
 
     Component.onCompleted: window.registerTab(wt)
-    Component.onDestruction: { if (app.pipTab === wt) app.stopPip(false); setWakeLock(false); window.unregisterTab(wt) }
+    // Its row is gone: it's no longer a tab, and its view goes once this turn is over.
+    function retire() { leave(); destroy() }
+    property bool retired: false
+    function leave() {
+        if (retired) return
+        retired = true
+        if (app.pipTab === wt) app.stopPip(false)
+        setWakeLock(false)
+        window.unregisterTab(wt)
+    }
+    Component.onDestruction: leave()
 
     onUrlChanged: window.setTabProperty(tabId, "url", url)
     onTitleChanged: window.setTabProperty(tabId, "title", title)
@@ -589,7 +614,7 @@ Item {
                     if (!loading) Browser.updateTitle(url.toString(), title, wt.window.privateMode)
                 }
                 onIconChanged: {
-                    const s = icon.toString()
+                    const s = wt.faviconOut ? icon.toString().replace(/^image:\/\/favicon\//, "") : icon.toString()
                     // (Reader view: a kite: page has none; the site's is kept.)
                     if (wt.isReader) { wt.showSiteIcon(); return }
                     wt.window.setTabProperty(wt.tabId, "icon", s)
@@ -621,6 +646,7 @@ Item {
                         wt.sendUpdate({status: "loading", url: u})
                         break
                     case WebEngineView.LoadSucceededStatus:
+                        if (wt.faviconOut) wt.iconFromPage()
                         wt.navEvent("onDOMContentLoaded", {url: u})
                         wt.navEvent("onCompleted", {url: u})
                         Browser.recordVisit(u, title, wt.window.privateMode)
