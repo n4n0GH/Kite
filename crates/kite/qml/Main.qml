@@ -913,6 +913,14 @@ QtObject {
     // came first, it's only a question too many.)
     property double askUntil: 0
     function askBeforeNextDownload() { askUntil = Date.now() + 60000 }
+    function fileUrl(path) { return "file://" + encodeURI(path).replace(/[?#]/g, encodeURIComponent) }
+    function notifyDownloadComplete(path) {
+        const open = () => Qt.openUrlExternally(fileUrl(path))
+        showNotification("Download complete", path.substring(path.lastIndexOf("/") + 1), "", open, null, [
+            {label: "Open", run: open},
+            {label: "Open Folder", run: () => Qt.openUrlExternally(fileUrl(path.substring(0, path.lastIndexOf("/")) || "/"))},
+        ])
+    }
     function onDownloadRequested(download) {
         const url = download.url.toString()
         // Firefox add-ons: install instead of saving.
@@ -958,14 +966,19 @@ QtObject {
             last = now
             Browser.downloadUpdate(JSON.stringify({id: id, received: download.receivedBytes, total: download.totalBytes}))
         })
-        download.isFinishedChanged.connect(() => {
-            if (!download.isFinished) return
+        let ended = false
+        const end = () => {
+            if (ended) return
+            ended = true
             const st = download.state === WebEngineDownloadRequest.DownloadCompleted ? "complete"
                      : download.state === WebEngineDownloadRequest.DownloadCancelled ? "cancelled" : "interrupted"
             Browser.downloadUpdate(JSON.stringify({id: id, received: download.receivedBytes, total: download.totalBytes, state: st}))
             delete activeDownloads[id]
-            if (st === "complete") showNotification("Download complete", download.downloadFileName, "", () => Qt.openUrlExternally("file://" + download.downloadDirectory + "/" + download.downloadFileName))
-        })
+            if (st === "complete") notifyDownloadComplete(download.downloadDirectory + "/" + download.downloadFileName)
+        }
+        download.isFinishedChanged.connect(() => { if (download.isFinished) end() })
+        // (Interrupted, as by a lost connection, it never counts as finished.)
+        download.stateChanged.connect(() => { if (download.state === WebEngineDownloadRequest.DownloadInterrupted) end() })
         if (activeWindow) activeWindow.downloadStarted()
     }
 
@@ -983,11 +996,19 @@ QtObject {
             autoDelete: true
         }
     }
-    function showNotification(title, text, iconUrl, onClick, onClose) {
+    property Component notificationActionComponent: Component { NotificationAction {} }
+    // `buttons`: a list of {label, run}.
+    function showNotification(title, text, iconUrl, onClick, onClose, buttons) {
         const n = notificationComponent.createObject(app, {title: title, text: text})
         if (onClick) {
-            const action = n.defaultAction
-            if (action) action.activated.connect(onClick)
+            const action = notificationActionComponent.createObject(n, {label: "Open"})
+            action.activated.connect(onClick)
+            n.defaultAction = action
+        }
+        for (const b of buttons || []) {
+            const action = notificationActionComponent.createObject(n, {label: b.label})
+            action.activated.connect(b.run)
+            n.actions.push(action)
         }
         if (onClose) n.closed.connect(onClose)
         n.sendEvent()
