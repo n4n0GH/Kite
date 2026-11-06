@@ -905,6 +905,11 @@ QtObject {
 
     // Downloads from private windows, until startDownload takes them.
     property var _privateDownloads: []
+    // "Save … As" in a page's menu asks where to, whatever the setting says. Qt doesn't
+    // say which download came from it, but it comes soon after. (If something else
+    // came first, it's only a question too many.)
+    property double askUntil: 0
+    function askBeforeNextDownload() { askUntil = Date.now() + 60000 }
     function onDownloadRequested(download) {
         const url = download.url.toString()
         // Firefox add-ons: install instead of saving.
@@ -920,13 +925,15 @@ QtObject {
             if (activeWindow) activeWindow.toast("Download blocked: " + Browser.hostOf(url) + " is listed for " + (threat === "phishing" ? "phishing" : threat === "unwanted" ? "unwanted software" : "malware"), "dialog-warning")
             return
         }
+        const asked = Date.now() < askUntil
+        askUntil = 0
         const dir = setting("downloads.directory")
         const name = pendingDownloadNames[url] || download.suggestedFileName || download.downloadFileName
         delete pendingDownloadNames[url]
         const path = Browser.uniqueDownloadPath(dir, name)
         download.downloadDirectory = path.substring(0, path.lastIndexOf("/"))
         download.downloadFileName = path.substring(path.lastIndexOf("/") + 1)
-        if (setting("downloads.askWhereToSave")) {
+        if (asked || setting("downloads.askWhereToSave")) {
             saveDialog.ask(download)
             return
         }

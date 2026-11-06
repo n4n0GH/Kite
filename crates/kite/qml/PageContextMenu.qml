@@ -45,6 +45,7 @@ QQC2.Menu {
     }
 
     function act(a) { tab.view.triggerWebAction(a) }
+    function saveAs(a) { tab.app.askBeforeNextDownload(); act(a) }
 
     // Navigation (page)
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Reload"; icon.name: "view-refresh"; onTriggered: menu.tab.view.reload() }
@@ -69,7 +70,7 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: menu.tab.window.privateMode}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark Link"; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save Link As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadLinkToDisk) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save Link As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadLinkToDisk) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
 
     // Media
@@ -83,8 +84,8 @@ QQC2.Menu {
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadImageToDisk) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Save Media As…"; icon.name: "document-save"; onTriggered: menu.act(WebEngineView.DownloadMediaToDisk) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadImageToDisk) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Save Media As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadMediaToDisk) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Copy Media Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyMediaUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Play / Pause"; icon.name: "media-playback-start"; onTriggered: menu.act(WebEngineView.ToggleMediaPlayPause) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo; height: visible ? implicitHeight : 0; text: "Show Controls"; checkable: true; onTriggered: menu.act(WebEngineView.ToggleMediaControls) }
