@@ -102,7 +102,7 @@ Scripts run in Chromium's isolated worlds, which the page can't reach:
 
 | World | Used by |
 |---|---|
-| `0`, the page's own | Only what pages must see, such as `navigator.wakeLock`. Never anything secret |
+| `0`, the page's own | Only what pages must see, such as `navigator.wakeLock`, and what's only there, such as `navigator.mediaSession`. Never anything secret |
 | `1`, Kite's | Password and form scripts, plugin page scripts, the extension bridge |
 | Others | One each per extension, for its content scripts |
 

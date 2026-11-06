@@ -1,7 +1,7 @@
 # Native plugins
 
-Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys and
-Picture-in-Picture are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
+Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys,
+Picture-in-Picture and Plasma Integration are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
 hand it out as a file, and users install it with **Settings → Plugins & Extensions → Install Plugin
 from File…**. Users switch plugins on and off there, or in the toolbar's extensions panel.
 
@@ -72,7 +72,7 @@ Paths have the form `plugins/<id>/…`, and must be inside the plugin's folder.
 | Field | Meaning |
 |---|---|
 | `files` | One or more files, joined in order into one script |
-| `worldId` | Which isolated world it runs in. Use `1`, Kite's own. `0`, the page's world, is refused because the page could read the plugin's secret |
+| `worldId` | Which world it runs in. Use `1`, Kite's own. `0` is the page's own, for what only exists there, like `navigator.mediaSession`: the page can reach it, so it gets neither `KITE_PLUGIN_SETTINGS` nor `kitePluginSend` |
 | `runsOnSubFrames` | Whether it also runs in frames |
 | `injectionPoint` | **Kite's own numbering**: `0` as the document is created, `1` when it's ready, anything else later. Not the numbering of Qt's enum |
 
@@ -94,6 +94,12 @@ it can't cover the page. Anything it shows, it has to put up itself. It's given 
 | `plugin` | The manifest, as a JavaScript object |
 
 If the plugin has actions, this item needs a `runAction(id)` function.
+
+To add to a page's context menu, give it a `contextItems(info)` function. `info` says what the menu was
+opened on (`linkUrl`, `srcUrl`, `mediaType`, `selectionText`, `editable`, `pageUrl`), and it returns a list
+of `{title, iconName, run}` or `{title, iconName, children}`.
+
+`win.tabClosed(tabId)` tells it when a tab closes.
 
 ### The settings page
 
@@ -131,7 +137,7 @@ open need a reload, unless the plugin handles them itself (Vim Keys does).
 | Window to page script | `tab.runInMainFrame(code)`, or `tab.runInFrames(code, (frame, result) => …)` for all frames with their results |
 
 **Page content is untrusted.** The page can't forge the messages, but what your script reads from it
-can be anything. Treat it as text. Never put it into code you run, or into markup.
+can be anything, and it can imitate whatever a world `0` script tells yours through the DOM. Treat it as text. Never put it into code you run, or into markup.
 
 ## Handing out a plugin
 
@@ -319,6 +325,7 @@ The existing plugins are the best reference:
 | `plugins/pip/` | A small window item, a separate window shared by the whole browser, and a page script reporting what it finds |
 | `plugins/gestures/` | The window item using a hook in `bootstrap.cpp`, tested logic in `strokes.js`, and a large settings page |
 | `plugins/vim-keys/` | Frames, updating already open tabs, its own `VimBar.qml`, and a page script built from several files |
+| `plugins/plasma-integration/` | A page script in the page's own world beside one in Kite's, context menu items, and talking to the desktop (`kite_core::plasma`) |
 
 If a plugin needs something Kite doesn't offer, add it to Kite (a hook in `BrowserWindow.qml`, say) and
 use it from the plugin. For a plugin shipped with Kite, put the feature's logic in the plugin's folder, so

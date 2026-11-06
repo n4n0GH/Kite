@@ -1,0 +1,28 @@
+{
+    "id": "plasma-integration",
+    "name": "Plasma Integration",
+    "description": "Connects Kite to the desktop: control what's playing with Plasma's media controls and media keys, and send pages and links to devices with KDE Connect.",
+    "icon": "plasma",
+    "defaultEnabled": true,
+    "window": "plugins/plasma-integration/PlasmaWindow.qml",
+    "settingsPage": "plugins/plasma-integration/PlasmaSettings.qml",
+    "pageScripts": [
+        {
+            "files": ["plugins/plasma-integration/page-world.js"],
+            "worldId": 0,
+            "runsOnSubFrames": true,
+            "injectionPoint": 0
+        },
+        {
+            "files": ["plugins/plasma-integration/page.js"],
+            "worldId": 1,
+            "runsOnSubFrames": true,
+            "injectionPoint": 0
+        }
+    ],
+    "settings": {
+        "mediaControls": true,
+        "privateWindows": false,
+        "kdeConnect": true
+    }
+}

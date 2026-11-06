@@ -40,7 +40,7 @@ QQC2.Menu {
         info = {contexts: contexts, pageUrl: tab.url, frameUrl: tab.url, linkUrl: linkUrl || undefined, linkText: request.linkText || undefined,
                 srcUrl: mediaUrl || undefined, selectionText: selection || undefined, editable: editable,
                 mediaType: mediaType === ContextMenuRequest.MediaTypeImage ? "image" : mediaType === ContextMenuRequest.MediaTypeVideo ? "video" : mediaType === ContextMenuRequest.MediaTypeAudio ? "audio" : undefined}
-        extItems = tab.isExtensionPage ? [] : JSON.parse(Extensions.menus(JSON.stringify(Object.assign({incognito: tab.window.privateMode}, info))))
+        extItems = tab.isExtensionPage ? [] : tab.window.pluginContextItems(info).concat(JSON.parse(Extensions.menus(JSON.stringify(Object.assign({incognito: tab.window.privateMode}, info)))))
         popup()
     }
 
@@ -121,13 +121,16 @@ QQC2.Menu {
                 : modelData.type === "separator" ? sepComp.createObject(null) : extItemComp.createObject(null, {node: modelData, ctxMenu: menu})
         }
         onObjectAdded: (i, o) => {
-            const at = menu.count
+            // (Before the last section: its separator, source and Inspect.)
+            const at = menu.count - 3
             if (o.item instanceof QQC2.Menu) menu.insertMenu(at, o.item); else menu.insertItem(at, o.item)
         }
         onObjectRemoved: (i, o) => { if (o.item instanceof QQC2.Menu) menu.removeMenu(o.item); else menu.removeItem(o.item); o.item.destroy() }
     }
     function clickExt(node) {
-        Extensions.menuClicked(node.ext, node.id, JSON.stringify(info), tab.tabId)
+        // (From a plugin, pluginContextItems: it does what it does.)
+        if (node.run) node.run()
+        else Extensions.menuClicked(node.ext, node.id, JSON.stringify(info), tab.tabId)
     }
     property Component extItemComp: Component {
         QQC2.MenuItem {
@@ -138,7 +141,8 @@ QQC2.Menu {
             checkable: node.type === "checkbox" || node.type === "radio"
             checked: !!node.checked
             icon.source: node.icon || ""
-            icon.color: "transparent"
+            icon.name: node.iconName || ""
+            icon.color: node.iconName ? palette.text : "transparent"
             onTriggered: ctxMenu.clickExt(node)
         }
     }
@@ -149,7 +153,8 @@ QQC2.Menu {
             property var ctxMenu
             title: node.title
             icon.source: node.icon || ""
-            icon.color: "transparent"
+            icon.name: node.iconName || ""
+            icon.color: node.iconName ? palette.text : "transparent"
             Instantiator {
                 model: sub.node.children
                 delegate: QtObject {

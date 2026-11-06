@@ -141,9 +141,14 @@ fn main() {
     // ("appearance.overlayScrollbars"; js/scrollbars.js extends them to pages
     // that style their own) and the proxy ("privacy.proxy"). Flags the user
     // gives in QTWEBENGINE_CHROMIUM_FLAGS come last, so they win.
+    //
+    // Chromium's own media player on the bus stays off: it would be a second entry
+    // beside the Plasma Integration plugin's, one the desktop can't connect to Kite's
+    // window, and it knows nothing of private windows. So with the plugin off, nothing
+    // of what plays reaches the desktop.
     {
         let s = state::app().shared.settings();
-        let mut flags = vec!["--enable-gpu-rasterization".to_owned()];
+        let mut flags = vec!["--enable-gpu-rasterization".to_owned(), "--disable-features=HardwareMediaKeyHandling".to_owned()];
         if s.get_bool("appearance.overlayScrollbars") {
             flags.push("--enable-features=FluentOverlayScrollbar".into());
         }

@@ -618,6 +618,7 @@ QQC2.ApplicationWindow {
         dropEmptyGroups()
         if (selectedTabs.includes(id)) selectedTabs = selectedTabs.filter(x => x !== id)
         Extensions.browserEvent("tabRemoved", JSON.stringify({tabId: id, windowId: windowId, windowClosing: false}))
+        tabClosed(id)
         if (tabModel.count === 0) {
             if (app.setting("tabs.closeWindowWithLastTab") || app.windows.length > 1) { bw.close(); return }
             paneTab = [-1, -1]
@@ -1183,6 +1184,18 @@ QQC2.ApplicationWindow {
     function findStep(backward) { findBar.step(backward) }
     // A plugin's page script told the window something: {plugin, m}.
     signal pluginMessage(var tab, var message)
+    signal tabClosed(int tabId)
+    // What plugins add to a page's context menu, for what it was opened on (`info`, as
+    // extensions get it). A plugin's window item offers them with contextItems(info):
+    // a list of {title, iconName, run} or {title, iconName, children}.
+    function pluginContextItems(info) {
+        let items = []
+        for (let i = 0; i < pluginWindows.count; ++i) {
+            const loader = pluginWindows.itemAt(i)
+            if (loader.item && loader.item.contextItems) items = items.concat(loader.item.contextItems(info))
+        }
+        return items
+    }
     function runPluginAction(id) {
         for (let i = 0; i < pluginWindows.count; ++i) {
             const loader = pluginWindows.itemAt(i)

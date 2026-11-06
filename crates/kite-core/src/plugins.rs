@@ -111,9 +111,6 @@ impl Plugin {
         anyhow::ensure!(p.actions.is_empty() || p.window.is_some(), "plugin {}: actions need a window item to run them", p.id);
         for script in &p.page_scripts {
             anyhow::ensure!(!script.files.is_empty(), "plugin {}: a page script without files", p.id);
-            // The page's own world can be reached by the page, and would see the
-            // secret its messages to the window are marked with.
-            anyhow::ensure!(script.world_id != 0, "plugin {}: page scripts run in their own world", p.id);
         }
         Ok(p)
     }
@@ -286,7 +283,7 @@ mod tests {
         assert!(with(&format!(r#""id": "b", "window": "plugins/b/W.qml", {action}"#)).is_err(), "another's id");
         let script = |world: u32, file: &str| format!(r#""id": "a", "pageScripts": [{{"files": ["{file}"], "worldId": {world}, "runsOnSubFrames": true, "injectionPoint": 0}}]"#);
         assert!(with(&script(1, "plugins/a/p.js")).is_ok());
-        assert!(with(&script(0, "plugins/a/p.js")).is_err(), "the page's world");
+        assert!(with(&script(0, "plugins/a/p.js")).is_ok(), "the page's world: Main.qml gives it nothing secret");
         assert!(with(&script(1, "plugins/b/p.js")).is_err(), "another's file");
     }
 

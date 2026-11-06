@@ -119,9 +119,12 @@ QtObject {
             for (const key of Object.keys(p.settings)) settings[key] = pluginSetting(p, key)
             p.pageScripts.forEach((s, i) => {
                 const files = s.files.map(f => Browser.pluginFile(f).replace(".pragma library", "")).join("\n")
+                // The page's own world gets neither: the page could read them there,
+                // and would then be able to imitate the plugin's messages.
                 const send = "const kitePluginSend = m => console.debug(" + JSON.stringify(frameSecret + "plugin:") + " + JSON.stringify({plugin: " + JSON.stringify(p.id) + ", m}));"
+                const given = s.worldId === 0 ? "" : "const KITE_PLUGIN_SETTINGS = " + JSON.stringify(settings) + ";\n" + send + "\n"
                 out.push({name: "kite:plugin:" + p.id + ":" + i, worldId: s.worldId, runsOnSubFrames: s.runsOnSubFrames, injectionPoint: s.injectionPoint,
-                          sourceCode: "(() => {\nconst KITE_PLUGIN_SETTINGS = " + JSON.stringify(settings) + ";\n" + send + "\n" + files + "\n})();"})
+                          sourceCode: "(() => {\n" + given + files + "\n})();"})
             })
         }
         return out

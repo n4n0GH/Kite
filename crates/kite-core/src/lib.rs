@@ -24,6 +24,7 @@ pub mod passwords;
 pub mod plugins;
 pub mod privacy;
 pub mod paths;
+pub mod plasma;
 pub mod profiles;
 pub mod reader;
 pub mod screensaver;

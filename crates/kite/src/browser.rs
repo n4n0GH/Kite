@@ -291,6 +291,30 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setWakeLock"]
         fn set_wake_lock(self: &Browser, tab_id: i32, on: bool, site: &QString) -> bool;
+        /// Plasma Integration: what a frame of a tab is playing, or "null" for nothing.
+        #[qinvokable]
+        #[cxx_name = "plasmaMedia"]
+        fn plasma_media(self: &Browser, tab_id: i32, frame: &QString, state: &QString);
+        #[qinvokable]
+        #[cxx_name = "plasmaForgetTab"]
+        fn plasma_forget_tab(self: &Browser, tab_id: i32);
+        /// What the desktop asks of what's playing (kite_core::plasma::mpris::Command).
+        #[qsignal]
+        #[cxx_name = "plasmaCommand"]
+        fn plasma_command(self: Pin<&mut Browser>, command: QString);
+        /// KDE Connect devices as of the last refresh: [{id, name, icon}].
+        #[qinvokable]
+        #[cxx_name = "plasmaDevices"]
+        fn plasma_devices(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "plasmaRefreshDevices"]
+        fn plasma_refresh_devices(self: &Browser);
+        #[qinvokable]
+        #[cxx_name = "plasmaCanSend"]
+        fn plasma_can_send(self: &Browser, url: &QString) -> bool;
+        #[qinvokable]
+        #[cxx_name = "plasmaShare"]
+        fn plasma_share(self: &Browser, device: &QString, url: &QString);
         /// Page-world script providing navigator.wakeLock (js/wakelock.js).
         #[qinvokable]
         #[cxx_name = "wakeLockScript"]
@@ -1286,6 +1310,55 @@ impl qobject::Browser {
         q(crate::ffi::key_native(&sequence.to_string()))
     }
 
+    // ---- Plasma Integration (plugins/plasma-integration) --------------------
+    fn plasma_mpris(&self) -> &'static kite_core::plasma::mpris::Mpris {
+        static MPRIS: std::sync::OnceLock<kite_core::plasma::mpris::Mpris> = std::sync::OnceLock::new();
+        MPRIS.get_or_init(|| {
+            let thread = self.qt_thread();
+            kite_core::plasma::mpris::Mpris::start(move |command| {
+                let _ = thread.queue(move |o| o.plasma_command(js(&json!(command))));
+            })
+        })
+    }
+    fn plasma_media(&self, tab_id: i32, frame: &QString, state: &QString) {
+        // (From the page: anything that doesn't fit counts as nothing being there.)
+        let report = serde_json::from_str(&state.to_string()).unwrap_or(None);
+        self.plasma_mpris().report(tab_id, frame.to_string(), report);
+    }
+    fn plasma_forget_tab(&self, tab_id: i32) {
+        self.plasma_mpris().forget_tab(tab_id);
+    }
+    fn plasma_devices(&self) -> QString {
+        js(&json!(*PLASMA_DEVICES.lock().unwrap_or_else(|e| e.into_inner())))
+    }
+    fn plasma_refresh_devices(&self) {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        // Only one at a time: a stuck daemon shouldn't collect threads.
+        static ASKING: AtomicBool = AtomicBool::new(false);
+        if ASKING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        std::thread::spawn(|| {
+            let devices = kite_core::plasma::kdeconnect::devices().unwrap_or_else(|e| {
+                log::debug!("KDE Connect: {e}");
+                Vec::new()
+            });
+            *PLASMA_DEVICES.lock().unwrap_or_else(|e| e.into_inner()) = devices;
+            ASKING.store(false, Ordering::SeqCst);
+        });
+    }
+    fn plasma_can_send(&self, url: &QString) -> bool {
+        kite_core::plasma::kdeconnect::can_send(&url.to_string())
+    }
+    fn plasma_share(&self, device: &QString, url: &QString) {
+        let (device, url) = (device.to_string(), url.to_string());
+        std::thread::spawn(move || {
+            if let Err(e) = kite_core::plasma::kdeconnect::share(&device, &url) {
+                log::warn!("KDE Connect: {e}");
+            }
+        });
+    }
+
     fn plugins(&self) -> QString {
         q(serde_json::to_string(&all_plugins()).unwrap_or_else(|_| "[]".into()))
     }
@@ -1738,6 +1811,7 @@ fn builtin_plugins() -> Vec<kite_core::plugins::Plugin> {
         include_str!("../plugins/gestures/plugin.json"),
         include_str!("../plugins/vim-keys/plugin.json"),
         include_str!("../plugins/pip/plugin.json"),
+        include_str!("../plugins/plasma-integration/plugin.json"),
     ])
     .expect("plugin.json");
     for p in &mut plugins {
@@ -1747,10 +1821,14 @@ fn builtin_plugins() -> Vec<kite_core::plugins::Plugin> {
 }
 
 /// The files of plugins' page scripts (see the same test).
+static PLASMA_DEVICES: std::sync::Mutex<Vec<kite_core::plasma::kdeconnect::Device>> = std::sync::Mutex::new(Vec::new());
+
 const PLUGIN_FILES: &[(&str, &str)] = &[
     ("plugins/vim-keys/keys.js", include_str!("../plugins/vim-keys/keys.js")),
     ("plugins/vim-keys/page.js", include_str!("../plugins/vim-keys/page.js")),
     ("plugins/pip/page.js", include_str!("../plugins/pip/page.js")),
+    ("plugins/plasma-integration/page-world.js", include_str!("../plugins/plasma-integration/page-world.js")),
+    ("plugins/plasma-integration/page.js", include_str!("../plugins/plasma-integration/page.js")),
 ];
 
 #[cfg(test)]
