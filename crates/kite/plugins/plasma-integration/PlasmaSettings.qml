@@ -59,6 +59,14 @@ ColumnLayout {
             onToggled: root.app.setPluginSetting(root.plugin, modelData.key, checked)
         }
     }
+    QQC2.Label {
+        Layout.fillWidth: true
+        Layout.leftMargin: Kirigami.Units.gridUnit
+        text: "The first time, KRunner has to be restarted to know of Kite: systemctl --user restart plasma-krunner. The launcher needs you to log in again."
+        wrapMode: Text.WordWrap
+        font: Kirigami.Theme.smallFont
+        opacity: 0.8
+    }
     QQC2.CheckBox {
         Layout.topMargin: Kirigami.Units.smallSpacing
         text: "Include private windows"

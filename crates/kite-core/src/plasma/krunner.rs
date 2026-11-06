@@ -3,7 +3,8 @@
 //!
 //! The interface is `org.kde.krunner1`. KRunner learns of it from a small file in
 //! `krunner/dbusplugins`, which names the service with a wildcard: each running Kite
-//! has a name of its own, and with none running nothing is asked.
+//! has a name of its own, and with none running nothing is asked. It only reads that
+//! folder when it starts, so the first time it has to be restarted to know of Kite.
 //! <https://develop.kde.org/docs/plasma/krunner/>
 
 use crate::shared::Shared;
@@ -195,33 +196,21 @@ fn data_home() -> Option<PathBuf> {
     }
 }
 
-/// Whether it had to be written.
-fn install(data_home: &Path) -> std::io::Result<bool> {
+fn install(data_home: &Path) -> std::io::Result<()> {
     let dir = data_home.join("krunner/dbusplugins");
     let file = dir.join(FILE_NAME);
     if std::fs::read_to_string(&file).is_ok_and(|t| t == RUNNER_FILE) {
-        return Ok(false);
+        return Ok(());
     }
     std::fs::create_dir_all(&dir)?;
-    std::fs::write(file, RUNNER_FILE)?;
-    Ok(true)
+    std::fs::write(file, RUNNER_FILE)
 }
 
-/// Whether there was one.
-fn uninstall(data_home: &Path) -> std::io::Result<bool> {
+fn uninstall(data_home: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(data_home.join("krunner/dbusplugins").join(FILE_NAME)) {
-        Ok(()) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
     }
-}
-
-/// KRunner reads that folder when it starts. Its configuration changing should make it
-/// read it again, which is what this says, as System Settings would.
-fn tell_krunner() -> zbus::Result<()> {
-    let connection = Connection::session()?;
-    let changed: HashMap<&str, Vec<Vec<u8>>> = HashMap::from([("Plugins", vec![b"org.kde.kiteEnabled".to_vec()])]);
-    connection.emit_signal(None::<&str>, "/kconfig/krunnerrc", "org.kde.kconfig.notify", "ConfigChanged", &(changed,))
 }
 
 type RemoteMatch = (String, String, String, i32, f64, HashMap<String, OwnedValue>);
@@ -352,15 +341,8 @@ impl Runner {
                         connection = None;
                     }
                     if let Some(home) = data_home() {
-                        let changed = if config.any() { install(&home) } else { uninstall(&home) };
-                        match changed {
-                            Ok(true) => {
-                                if let Err(e) = tell_krunner() {
-                                    log::debug!("KRunner: {e}");
-                                }
-                            }
-                            Ok(false) => {}
-                            Err(e) => log::warn!("KRunner: {e}"),
+                        if let Err(e) = if config.any() { install(&home) } else { uninstall(&home) } {
+                            log::warn!("KRunner: {e}");
                         }
                     }
                 }
@@ -479,12 +461,15 @@ mod tests {
     fn the_file_for_krunner_comes_and_goes() {
         let dir = std::env::temp_dir().join(format!("kite-krunner-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(install(&dir).unwrap());
-        assert!(!install(&dir).unwrap(), "already there");
+        let file = dir.join("krunner/dbusplugins").join(FILE_NAME);
+        install(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), RUNNER_FILE);
+        install(&dir).unwrap();
         assert!(RUNNER_FILE.contains(&format!("X-Plasma-DBusRunner-Service={NAME}*")));
         assert!(RUNNER_FILE.contains(&format!("X-Plasma-DBusRunner-Path={PATH}")));
-        assert!(uninstall(&dir).unwrap());
-        assert!(!uninstall(&dir).unwrap(), "already gone");
+        uninstall(&dir).unwrap();
+        assert!(!file.exists());
+        uninstall(&dir).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

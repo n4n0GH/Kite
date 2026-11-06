@@ -42,6 +42,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   keys (MPRIS), follow, pause and open downloads in the notification area, find tabs,
   bookmarks and history from KRunner, share with KDE's share menu (the Web Share API), and
   send pages and links to devices with KDE Connect. Private windows are left out by default.
+  KRunner needs restarting once to find Kite (`systemctl --user restart plasma-krunner`), and
+  the application launcher a new login.
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.
