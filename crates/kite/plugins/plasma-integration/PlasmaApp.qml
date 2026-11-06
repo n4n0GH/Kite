@@ -15,7 +15,8 @@ Item {
     Connections {
         target: root.app
         function onDownloadBegan(id, download, inPrivate) {
-            if (!root.setting("downloads") || (inPrivate && !root.setting("privateWindows"))) return
+            // (In a private window a job is a notification, which Privacy settings decide on.)
+            if (!root.setting("downloads") || (inPrivate && !(root.setting("privateWindows") && root.app.setting("privacy.privateNotifications")))) return
             const path = download.downloadDirectory + "/" + download.downloadFileName
             root.jobs[id] = path
             root.app.claimedDownloads[id] = true

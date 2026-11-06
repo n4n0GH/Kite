@@ -746,6 +746,10 @@ Item {
                 }
 
                 onPermissionRequested: permission => {
+                    if (permission.permissionType === WebEnginePermission.PermissionType.Notifications && wt.window.privateMode && !wt.app.setting("privacy.privateNotifications")) {
+                        permission.deny()
+                        return
+                    }
                     wt.pendingPermissions = wt.pendingPermissions.concat([{permission: permission, origin: Browser.hostOf(permission.origin.toString()) || permission.origin.toString()}])
                 }
 

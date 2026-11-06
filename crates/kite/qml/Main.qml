@@ -333,7 +333,7 @@ QtObject {
             if (p === privateProfile) _privateDownloads.push(d)
             onDownloadRequested(d)
         })
-        p.presentNotification.connect(onWebNotification)
+        p.presentNotification.connect(n => onWebNotification(n, p === privateProfile))
     }
 
     // Called (queued) by the C++ bootstrap once the profiles are hooked up.
@@ -938,9 +938,11 @@ QtObject {
     signal downloadEnded(int id, var download, string state)
     property var claimedDownloads: ({})
     function fileUrl(path) { return "file://" + encodeURI(path).replace(/[?#]/g, encodeURIComponent) }
-    function notifyDownloadComplete(path) {
+    // `nameless`: from a private window, whose file names stay out of the desktop's
+    // notification history. (What the buttons open isn't told to it.)
+    function notifyDownloadComplete(path, nameless) {
         const open = () => Qt.openUrlExternally(fileUrl(path))
-        showNotification("Download complete", path.substring(path.lastIndexOf("/") + 1), "", open, null, [
+        showNotification("Download complete", nameless ? "" : path.substring(path.lastIndexOf("/") + 1), "", open, null, [
             {label: "Open", run: open},
             {label: "Open Folder", run: () => Qt.openUrlExternally(fileUrl(path.substring(0, path.lastIndexOf("/")) || "/"))},
         ])
@@ -1002,7 +1004,7 @@ QtObject {
             Browser.downloadUpdate(JSON.stringify({id: id, received: download.receivedBytes, total: download.totalBytes, state: st}))
             delete activeDownloads[id]
             downloadEnded(id, download, st)
-            if (st === "complete" && !claimedDownloads[id]) notifyDownloadComplete(download.downloadDirectory + "/" + download.downloadFileName)
+            if (st === "complete" && !claimedDownloads[id] && (!inPrivate || setting("privacy.privateNotifications"))) notifyDownloadComplete(download.downloadDirectory + "/" + download.downloadFileName, inPrivate)
             delete claimedDownloads[id]
         }
         download.isFinishedChanged.connect(() => { if (download.isFinished) end() })
@@ -1012,7 +1014,10 @@ QtObject {
     }
 
     // ---- notifications ------------------------------------------------------------
-    function onWebNotification(n) {
+    function onWebNotification(n, inPrivate) {
+        // (Pages aren't let ask for this either, see WebTab. One that was allowed before
+        // the setting changed still gets here.)
+        if (inPrivate && !setting("privacy.privateNotifications")) { n.close(); return }
         showNotification(n.title, n.message, "", () => n.click(), () => n.close())
         n.show()
     }

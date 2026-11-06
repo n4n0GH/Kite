@@ -76,6 +76,7 @@ pub fn defaults() -> Map<String, Value> {
         // tiles, and among the address bar's suggestions.
         "privacy.privateHistoryTiles": false,
         "privacy.privateHistorySuggestions": false,
+        "privacy.privateNotifications": false,  // from pages and downloads in private windows
         "speeddial.pinned": [],
         // The tiles' order after dragging ([url]); others follow.
         "speeddial.order": [],

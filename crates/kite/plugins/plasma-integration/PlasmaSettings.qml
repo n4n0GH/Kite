@@ -76,7 +76,7 @@ ColumnLayout {
     QQC2.Label {
         Layout.fillWidth: true
         Layout.leftMargin: Kirigami.Units.gridUnit
-        text: "The desktop, and paired devices, would see what plays there, the titles of its tabs, and what it downloads."
+        text: "The desktop, and paired devices, would see what plays there and the titles of its tabs. Its downloads show here too if Settings → Privacy allows notifications from private windows."
         wrapMode: Text.WordWrap
         font: Kirigami.Theme.smallFont
         opacity: 0.8
