@@ -23,7 +23,7 @@
 
 ## Bigger projects
 
-- [ ] Extension API gaps: `contextualIdentities`, `find`, `tabGroups`, native messaging
+- [ ] Extension API gaps: `contextualIdentities`, `find`, `tabGroups`
 - [ ] Passkeys (WebAuthn)
 - [x] Export and import settings to a file (instead of sync: single-machine use, rsync the file if needed)
 - [x] Import bookmarks directly from other browsers

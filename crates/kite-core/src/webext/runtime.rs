@@ -11,6 +11,7 @@
 //! its content-script world). Calls carry the token, so a web page or another
 //! extension cannot impersonate it.
 
+use super::native::NativeOp;
 use super::blocking::BlockingHub;
 use super::dnr::{self, RuleSet};
 use super::matchpattern::MatchSet;
@@ -40,6 +41,9 @@ pub enum Effect {
     Deliver { view: String, ctxs: Vec<String>, payload: Value },
     /// Ask the GUI to perform `method`; it must answer via `Runtime::ui_reply`.
     Ui { view: String, ctx: String, call_id: i64, ext: String, method: String, args: Value },
+    /// Start, write to or end a native messaging host. It answers through
+    /// `Runtime::native_message` and `Runtime::native_closed`.
+    Native(super::native::NativeOp),
     /// Some UI-visible state changed: "actions", "menus", "scripts",
     /// "extensions", "commands", "background", "bookmarks", "history".
     Changed(String),
@@ -75,6 +79,8 @@ struct PendingMsg {
 struct Port {
     opener: String,
     others: Vec<String>,
+    /// The other end is a native messaging host (`others` is empty).
+    native: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -997,10 +1003,29 @@ impl Runtime {
         Handled::Later(self.deliver(&targets, json!({"type": kind, "msgId": id, "message": message, "sender": sender})))
     }
 
+    /// A native messaging host's message for its port.
+    pub fn native_message(&mut self, port: &str, message: Value) -> Vec<Effect> {
+        let Some(p) = self.ports.get(port).filter(|p| p.native) else { return vec![] };
+        let opener = p.opener.clone();
+        self.deliver(&[opener], json!({"type": "portMessage", "portId": port, "message": message}))
+    }
+
+    /// A native messaging host is gone. (Not after its port closed: nobody's left to tell.)
+    pub fn native_closed(&mut self, port: &str, error: Option<String>) -> Vec<Effect> {
+        let Some(p) = self.ports.get(port).filter(|p| p.native) else { return vec![] };
+        let opener = p.opener.clone();
+        self.ports.remove(port);
+        self.deliver(&[opener], json!({"type": "portDisconnect", "portId": port, "error": error}))
+    }
+
     fn port_disconnect_from(&mut self, port: &str, from: &str, error: Option<String>) -> Vec<Effect> {
         let Some(p) = self.ports.get_mut(port) else { return vec![] };
         log::debug!("port {port}: disconnect from {from} (opener {}, others {:?})", p.opener, p.others);
         let payload = json!({"type": "portDisconnect", "portId": port, "error": error});
+        if p.native {
+            self.ports.remove(port);
+            return vec![Effect::Native(NativeOp::Close { port: port.to_owned() })];
+        }
         if p.opener == from {
             let others = p.others.clone();
             self.ports.remove(port);
@@ -1498,6 +1523,12 @@ impl Runtime {
                 let port = arg_str(args, 0);
                 log::debug!("port {port}: post from {ctx} (known: {})", self.ports.contains_key(&port));
                 let Some(p) = self.ports.get(&port) else { return now!(Err("Attempt to postMessage on disconnected port".into())) };
+                if p.native {
+                    if p.opener != ctx {
+                        return now!(Err("Attempt to postMessage on disconnected port".into()));
+                    }
+                    return Handled::With(Ok(Value::Null), vec![Effect::Native(NativeOp::Post { port, message: arg(args, 1) })]);
+                }
                 let targets = if p.opener == ctx { p.others.clone() } else { vec![p.opener.clone()] };
                 Handled::With(Ok(Value::Null), self.deliver(&targets, json!({"type": "portMessage", "portId": port, "message": arg(args, 1)})))
             }
@@ -1575,7 +1606,7 @@ impl Runtime {
                     return Handled::With(Ok(Value::Null), fx);
                 }
                 log::debug!("port {port}: {ctx} connected to {targets:?}");
-                self.ports.insert(port.clone(), Port { opener: ctx.into(), others: targets.clone() });
+                self.ports.insert(port.clone(), Port { opener: ctx.into(), others: targets.clone(), native: false });
                 let fx = self.deliver(&targets, json!({"type": "connect", "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id)}));
                 Handled::With(Ok(Value::Null), fx)
             }
@@ -1608,7 +1639,27 @@ impl Runtime {
             ("runtime", "getBackgroundPage") | ("extension", "getBackgroundPage") => {
                 now!(Err("getBackgroundPage() is not supported in Kite; use runtime.sendMessage".into()))
             }
-            ("runtime", "sendNativeMessage") | ("runtime", "connectNative") => now!(Err("Native messaging is not supported".into())),
+            // (Content scripts have to ask their background page, as in Firefox.)
+            ("runtime", "connectNative") | ("runtime", "sendNativeMessage") if self.ctxs.get(ctx).is_none_or(|c| c.kind == "content") => {
+                now!(Err("Native messaging isn't available to content scripts".into()))
+            }
+            ("runtime", "connectNative") => {
+                if let Err(err) = self.require(e, "nativeMessaging") {
+                    return now!(Err(err));
+                }
+                let port = arg_str(args, 0);
+                if self.ports.contains_key(&port) {
+                    return now!(Err("That port is in use".into()));
+                }
+                self.ports.insert(port.clone(), Port { opener: ctx.into(), others: vec![], native: true });
+                Handled::With(Ok(Value::Null), vec![Effect::Native(NativeOp::Connect { port, ext: ext_id.to_owned(), host: arg_str(args, 1) })])
+            }
+            ("runtime", "sendNativeMessage") => {
+                if let Err(err) = self.require(e, "nativeMessaging") {
+                    return now!(Err(err));
+                }
+                self.ui(origin, ctx, call_id, ext_id, "native.send", json!({"host": arg_str(args, 0), "message": arg(args, 1)}))
+            }
             ("runtime", "getContexts") => now!(Ok(Value::Array(
                 self.ctxs
                     .values()
@@ -2812,6 +2863,85 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { view, payload, .. } if view == "tab:5" && payload["message"] == 42)));
         let fx = rt.view_closed("tab:5");
         assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { view, payload, .. } if view == "bg:t@x" && payload["type"] == "portDisconnect")));
+    }
+
+    #[test]
+    fn native_messaging_needs_its_permission_and_a_page() {
+        let (_d, mut rt, tok) = setup();
+        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        // ("t@x" didn't ask for it.)
+        assert!(reply(&rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "h"]), 2)).unwrap_err().contains("nativeMessaging"));
+        assert!(reply(&rt.call(&bg, &tok, "bg", "runtime.sendNativeMessage", json!(["h", {}]), 3)).unwrap_err().contains("nativeMessaging"));
+    }
+
+    fn native_setup() -> (tempfile::TempDir, Runtime, String, Origin) {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = Shared::temporary(dir.path()).unwrap();
+        let mut rt = Runtime::new(shared).unwrap();
+        let xpi = make_xpi(&[(
+            "manifest.json",
+            r#"{"manifest_version":2,"name":"N","version":"1","browser_specific_settings":{"gecko":{"id":"n@x"}},
+               "permissions":["nativeMessaging"],"background":{"scripts":["bg.js"]}}"#,
+        )]);
+        rt.registry.install_xpi(&xpi, "file", "").unwrap();
+        rt.on_installed("n@x", false, "", false);
+        let tok = rt.token_of("n@x").unwrap().to_owned();
+        let bg = Origin { view: "bg:n@x".into(), tab_id: -1, window_id: -1 };
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        (dir, rt, tok, bg)
+    }
+
+    fn native_ops(fx: &[Effect]) -> Vec<NativeOp> {
+        fx.iter().filter_map(|e| if let Effect::Native(op) = e { Some(op.clone()) } else { None }).collect()
+    }
+
+    #[test]
+    fn native_port_carries_messages_both_ways() {
+        let (_d, mut rt, tok, bg) = native_setup();
+        let fx = rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "org.host"]), 2);
+        assert_eq!(native_ops(&fx), vec![NativeOp::Connect { port: "n1".into(), ext: "n@x".into(), host: "org.host".into() }]);
+        assert_eq!(reply(&fx), Ok(Value::Null));
+        let fx = rt.call(&bg, &tok, "bg", "_.portPost", json!(["n1", {"a": 1}]), 3);
+        assert_eq!(native_ops(&fx), vec![NativeOp::Post { port: "n1".into(), message: json!({"a": 1}) }]);
+        let fx = rt.native_message("n1", json!({"b": 2}));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { view, payload, .. } if view == "bg:n@x" && payload["type"] == "portMessage" && payload["message"]["b"] == 2)));
+        // Disconnecting ends the host, and nothing arrives after.
+        let fx = rt.call(&bg, &tok, "bg", "_.portDisconnect", json!(["n1"]), 4);
+        assert_eq!(native_ops(&fx), vec![NativeOp::Close { port: "n1".into() }]);
+        assert!(rt.native_message("n1", json!(1)).is_empty());
+        assert!(rt.native_closed("n1", None).is_empty());
+        assert!(reply(&rt.call(&bg, &tok, "bg", "_.portPost", json!(["n1", 1]), 5)).is_err());
+    }
+
+    #[test]
+    fn native_host_ends_or_its_page_does() {
+        let (_d, mut rt, tok, bg) = native_setup();
+        rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "h"]), 2);
+        let fx = rt.native_closed("n1", Some("boom".into()));
+        assert!(fx.iter().any(|e| matches!(e, Effect::Deliver { payload, .. } if payload["type"] == "portDisconnect" && payload["error"] == "boom")));
+        assert!(native_ops(&rt.call(&bg, &tok, "bg", "_.portPost", json!(["n1", 1]), 3)).is_empty());
+        // A page closing takes its host along.
+        rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n2", "h"]), 4);
+        let fx = rt.view_closed("bg:n@x");
+        assert_eq!(native_ops(&fx), vec![NativeOp::Close { port: "n2".into() }]);
+    }
+
+    #[test]
+    fn native_ports_cant_be_reused_or_reached_by_content_scripts() {
+        let (_d, mut rt, tok, bg) = native_setup();
+        rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "h"]), 2);
+        assert!(reply(&rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "other"]), 3)).is_err());
+        let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1 };
+        rt.call(&tab, &tok, "cs", "_.register", json!([{"kind": "content", "frameId": 0, "url": "https://a/"}]), 4);
+        let fx = rt.call(&tab, &tok, "cs", "runtime.connectNative", json!(["n3", "h"]), 5);
+        assert!(reply(&fx).is_err());
+        assert!(native_ops(&fx).is_empty());
+        assert!(reply(&rt.call(&tab, &tok, "cs", "runtime.sendNativeMessage", json!(["h", {}]), 6)).is_err());
+        // Nor write to the background page's.
+        let fx = rt.call(&tab, &tok, "cs", "_.portPost", json!(["n1", {"x": 1}]), 7);
+        assert!(reply(&fx).is_err());
+        assert!(native_ops(&fx).is_empty());
     }
 
     #[test]

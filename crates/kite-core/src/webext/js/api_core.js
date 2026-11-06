@@ -267,7 +267,11 @@ function __kiteMakeAPI(cfg, transport) {
     onSuspendCanceled: ev('runtime.onSuspendCanceled'), onUpdateAvailable: ev('runtime.onUpdateAvailable'), onRestartRequired: ev('runtime.onRestartRequired'),
     ...stub('runtime', ['getPlatformInfo', 'getBrowserInfo', 'openOptionsPage', 'setUninstallURL', 'requestUpdateCheck', 'getBackgroundPage', 'sendNativeMessage', 'getContexts']),
     reload() { call('runtime.reload').catch(() => {}); },
-    connectNative() { throw new Error('Native messaging is not supported by Kite'); },
+    connectNative(host) {
+      const p = new Port(newPortId(), host);
+      call('runtime.connectNative', p._id, host).catch((e) => dispatch({ type: 'portDisconnect', portId: p._id, error: e && e.message || String(e) }));
+      return p;
+    },
     get lastError() { return lastError; },
   };
   const i18n = { getMessage, getUILanguage: () => cfg.locale.replace('_', '-'), ...stub('i18n', ['getAcceptLanguages', 'detectLanguage']) };

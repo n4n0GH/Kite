@@ -294,6 +294,14 @@ impl qobject::Extensions {
                         apply_effects_async(fx);
                     });
                 }
+                Effect::Ui { view, ctx, call_id, ext, method, args } if method == "native.send" => {
+                    std::thread::spawn(move || {
+                        let result = crate::native_hosts::send_once(&ext, &args);
+                        let fx = app().runtime().ui_reply(&view, &ctx, call_id, result);
+                        apply_effects_async(fx);
+                    });
+                }
+                Effect::Native(op) => crate::native_hosts::run(op),
                 Effect::Ui { view, ctx, call_id, ext, method, args } => {
                     if let Some(result) = handle_ui_in_rust(&method, &args) {
                         let more = app().runtime().ui_reply(&view, &ctx, call_id as i64, result);

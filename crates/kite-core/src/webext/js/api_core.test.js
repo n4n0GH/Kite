@@ -129,3 +129,32 @@ test('blocking webRequest listeners answer over the hub socket', async () => {
   assert.deepStrictEqual(seen, ['https://ok.test/']);
   delete globalThis.WebSocket;
 });
+
+test('native messaging: a port to the host, and one-off messages', async () => {
+  const { api, calls } = make();
+  const port = api.browser.runtime.connectNative('org.host');
+  assert.strictEqual(port.name, 'org.host');
+  assert.strictEqual(calls[0][0], 'runtime.connectNative');
+  assert.strictEqual(calls[0][1][1], 'org.host');
+  const got = [];
+  port.onMessage.addListener((m) => got.push(m));
+  api.dispatch({ type: 'portMessage', portId: port._id, message: { a: 1 } });
+  assert.deepStrictEqual(got, [{ a: 1 }]);
+  port.postMessage({ b: 2 });
+  assert.deepStrictEqual(calls[1], ['_.portPost', [port._id, { b: 2 }]]);
+  await api.browser.runtime.sendNativeMessage('org.host', { c: 3 });
+  assert.deepStrictEqual(calls[2], ['runtime.sendNativeMessage', ['org.host', { c: 3 }]]);
+  // chrome.*: a port too, not a promise.
+  const chromePort = api.chrome.runtime.connectNative('org.host');
+  assert.ok(chromePort.postMessage);
+});
+
+test('native messaging: a refused host disconnects the port with the reason', async () => {
+  const calls = [];
+  const transport = { call: (m) => { calls.push(m); return m === 'runtime.connectNative' ? Promise.reject(new Error('no such host')) : Promise.resolve(null); }, listen() {} };
+  const api = __kiteMakeAPI({ id: 'x@y', uuid: 'abcd-1234', token: 't', kind: 'background', locale: 'en_US', manifest: {}, messages: {} }, transport);
+  const port = api.browser.runtime.connectNative('nope');
+  const seen = await new Promise((res) => port.onDisconnect.addListener((p) => res([p.error, api.browser.runtime.lastError])));
+  assert.deepStrictEqual(seen, [{ message: 'no such host' }, { message: 'no such host' }]);
+  assert.throws(() => port.postMessage(1));
+});

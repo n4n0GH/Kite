@@ -27,6 +27,7 @@ pub mod dnr;
 pub mod i18n;
 pub mod manifest;
 pub mod matchpattern;
+pub mod native;
 pub mod registry;
 pub mod runtime;
 pub mod scripts;

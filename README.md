@@ -224,10 +224,19 @@ own address; a restored session reopens the page itself.
 * Blocking `webRequest` listeners are only asked about `onBeforeRequest`, and must answer
   within 250 ms (Qt's request interceptor is synchronous); header changes from blocking
   `onBeforeSendHeaders`/`onHeadersReceived` listeners aren't applied.
-* `webRequest.filterResponseData`, native messaging, `runtime.getBackgroundPage`, the
+* `webRequest.filterResponseData`, `runtime.getBackgroundPage`, the
   containers (`contextualIdentities`) API, `find`, `dns`, `tabGroups` and themes are not
   implemented. Tabs report their container (`cookieStoreId`), but extensions can't list or
   manage containers, and the `cookies` API covers the main container only.
+* Native messaging (`runtime.connectNative`, `runtime.sendNativeMessage`) works as in Firefox, for
+  extensions with the `nativeMessaging` permission, from their pages rather than content scripts.
+  It uses Firefox's host manifests, so a password manager set up for Firefox also works in Kite.
+  They're looked for in `~/.local/share/kite/native-messaging-hosts/`, then
+  `~/.mozilla/native-messaging-hosts/`, `/usr/lib64/mozilla/native-messaging-hosts/` and
+  `/usr/lib/mozilla/native-messaging-hosts/`; the first one found decides, and it has to name the
+  extension in `allowed_extensions`. Extensions get the same answer whatever the reason a host
+  can't be used, and the reason goes in the log. Whether a program accepts Kite is its own decision:
+  some check which browser is calling.
 * Extensions are off in private windows by default (like Firefox): they don't run there and can't
   see their tabs or requests, and the built-in content blocker stands in for uBlock Origin. Each
   can be allowed in its details in the Extensions window. Taking that back leaves its content

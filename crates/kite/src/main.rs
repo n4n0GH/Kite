@@ -10,6 +10,7 @@ mod browser;
 mod extensions;
 mod ffi;
 mod formfill;
+mod native_hosts;
 mod passwords;
 mod rpc;
 mod startpage;

@@ -122,7 +122,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Extension store | addons.mozilla.org | Chrome Web Store | addons.mozilla.org | Kite installs Firefox add-ons. |
 | Manifest V2 | ✅ | ❌ | ✅ | |
 | Manifest V3 | ✅ | ✅ | ✅ | |
-| API coverage | ⚠️ | ✅ | ✅ | Kite has 30+ namespaces but no containers, `find`, `dns`, themes or `filterResponseData`, and no native messaging. |
+| API coverage | ⚠️ | ✅ | ✅ | Kite has 30+ namespaces but no containers, `find`, `dns`, themes or `filterResponseData`. |
 | Extensions in private windows | ⚠️ | ⚠️ | ⚠️ | All three: off by default, allowed per extension. |
 | Unified extensions panel with pin/unpin | ✅ | ✅ | ✅ | |
 | Extension sidebars | ✅ | ✅ | ✅ | |
