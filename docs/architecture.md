@@ -271,6 +271,7 @@ everything, byte for byte.
 | A property can't be called `left`, `right`, `top` and so on | They're `FINAL` on `Item`, and the file fails to load |
 | `kite_intercept` runs on the UI thread | Keep it fast |
 | Blocking third-party cookies also denies those frames all storage | Chromium has one check for both, and Qt's cookie filter can't tell them apart. `src/js/third_party_storage.js` gives such frames `localStorage` and `sessionStorage` in memory only, so embedded players don't crash. IndexedDB and the Cache API stay refused |
+| A redirect from the request interceptor never finishes on a page a service worker answers for | The tab stays blank. So page loads are decided first, in `WebTab.onNavigationRequested` through `ffi::page_load_redirect`, which rejects them and loads the new address. The interceptor keeps redirecting only what can't be loaded again, like form posts |
 | Only a shown tab may hold a certificate warning open | Chromium holds the site's other requests meanwhile (`WebTab.shownInPane`) |
 
 ## On disk

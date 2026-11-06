@@ -418,6 +418,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
+        /// Where a page load should go instead, or "" (ffi::page_load_redirect).
+        #[qinvokable]
+        #[cxx_name = "pageLoadRedirect"]
+        fn page_load_redirect(self: &Browser, url: &QString, in_private: bool) -> QString;
         /// A change from the kite:config page (WebTab): its answer, as JSON.
         #[qinvokable]
         #[cxx_name = "configCommand"]
@@ -1296,6 +1300,10 @@ impl qobject::Browser {
             log::warn!("plugin: {e}");
             String::new()
         }))
+    }
+
+    fn page_load_redirect(&self, url: &QString, in_private: bool) -> QString {
+        q(crate::ffi::page_load_redirect(&url.to_string(), in_private))
     }
 
     fn config_command(mut self: Pin<&mut Self>, message: &QString) -> QString {

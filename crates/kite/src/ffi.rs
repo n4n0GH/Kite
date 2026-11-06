@@ -369,6 +369,120 @@ fn stand_in(to: &str, rtype: &str) -> String {
     format!("redirect:{to}")
 }
 
+/// Where Kite itself sends a page load instead: to a warning about a dangerous site,
+/// without tracking parameters, over https (privacy.*).
+fn builtin_page_redirect(url: &str) -> Option<String> {
+    let a = app();
+    if let Some(threat) = a.safe_browsing.check(url) {
+        log::info!("safebrowsing: {} listed as {}", url, threat.as_str());
+        let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+        return Some(format!("kite:dangerous?threat={}&url={}", threat.as_str(), enc(url)));
+    }
+    if a.privacy.strip_params.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(clean) = kite_core::privacy::strip_tracking_params(url) {
+            log::debug!("privacy: removed tracking parameters from {url}");
+            return Some(clean);
+        }
+    }
+    if let Some(secure) = a.privacy.upgrade(url) {
+        log::debug!("privacy: upgraded {url} to https");
+        return Some(secure);
+    }
+    None
+}
+
+enum ListenersSay {
+    Nothing,
+    Block,
+    Redirect(String),
+}
+
+/// What extensions' webRequest listeners want done with a request.
+fn ask_web_request_listeners(url: &str, first_party: &str, initiator: &str, rtype: &str, method: &str, in_private: bool) -> ListenersSay {
+    let a = app();
+    let mut rt = a.runtime();
+    if !rt.has_web_request_listeners() {
+        return ListenersSay::Nothing;
+    }
+    let tab = rt.tab_for_first_party(first_party, in_private);
+    static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let frame = kite_core::webext::blocking::frame_context(url, rtype, first_party, initiator);
+    let mut details = serde_json::json!({
+        "requestId": REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(), "url": url, "method": method,
+        "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame.frame_id,
+        "parentFrameId": frame.parent_frame_id, "originUrl": initiator, "frameAncestors": frame.frame_ancestors,
+        "timeStamp": kite_core::util::now_ms(), "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party) && !first_party.is_empty(),
+        "incognito": a.private || in_private, "cookieStoreId": if in_private { "firefox-private" } else { "firefox-default" },
+    });
+    if let Some(doc) = frame.document_url {
+        details["documentUrl"] = doc.into();
+    }
+    let (fx, ask) = rt.web_request(&details, in_private);
+    let hub = rt.blocking.clone();
+    drop(rt);
+    crate::extensions::apply_effects_async(fx);
+    // Never ask extensions about their own requests: the background
+    // page would be waiting for itself.
+    let from_extension = initiator.starts_with("moz-extension:") || first_party.starts_with("moz-extension:");
+    if ask.is_empty() || from_extension {
+        return ListenersSay::Nothing;
+    }
+    let t0 = std::time::Instant::now();
+    let replies = hub.ask(&ask, "onBeforeRequest", &details, BLOCKING_TIMEOUT);
+    log::trace!("webRequest: asked {ask:?} about {url} (tab {tab}, {rtype}) in {:?}: {replies:?}", t0.elapsed());
+    let d = kite_core::webext::blocking::combine(&replies);
+    if d.cancel {
+        log::debug!("webRequest: blocked {url}");
+        return ListenersSay::Block;
+    }
+    if let Some((ext, to)) = d.redirect {
+        log::debug!("webRequest: {ext} redirected {url} to {to}");
+        return ListenersSay::Redirect(to);
+    }
+    ListenersSay::Nothing
+}
+
+/// Page loads onNavigationRequested went through, to not ask extensions twice.
+static DECIDED_PAGE_LOADS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn take_decided_page_load(url: &str) -> bool {
+    let mut decided = DECIDED_PAGE_LOADS.lock().unwrap_or_else(|e| e.into_inner());
+    match decided.iter().position(|u| u == url) {
+        Some(i) => {
+            decided.remove(i);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Where a page load should go instead, or "". For WebTab's onNavigationRequested,
+/// as a redirect from the request interceptor never finishes on a page a service
+/// worker answers for: the page just stays blank. Before the load starts, there's
+/// nothing to get in the way.
+pub fn page_load_redirect(url: &str, in_private: bool) -> String {
+    if !(url.starts_with("http:") || url.starts_with("https:")) || kite_core::webext::amo::is_amo_download(url) {
+        return String::new();
+    }
+    if let Some(to) = builtin_page_redirect(url) {
+        return to;
+    }
+    match ask_web_request_listeners(url, "", "", "mainFrame", "GET", in_private) {
+        ListenersSay::Redirect(to) if to != url => to,
+        // (Blocking is the interceptor's: it asks again.)
+        ListenersSay::Block | ListenersSay::Redirect(_) => String::new(),
+        ListenersSay::Nothing => {
+            let mut decided = DECIDED_PAGE_LOADS.lock().unwrap_or_else(|e| e.into_inner());
+            // (A load that never reached the interceptor stays here: this keeps them few.)
+            if decided.len() >= 64 {
+                decided.remove(0);
+            }
+            decided.push(url.to_owned());
+            String::new()
+        }
+    }
+}
+
 /// Network request interceptor. Returns "" (allow), "block",
 /// "redirect:<url>" or "headers:<json [[name, value], ...]>".
 #[no_mangle]
@@ -391,68 +505,24 @@ pub unsafe extern "C" fn kite_intercept(
         if kite_core::webext::amo::is_amo_download(url) {
             return String::new();
         }
-        // Page loads: known dangerous sites get a warning page instead.
-        if rtype == "mainFrame" {
-            if let Some(threat) = a.safe_browsing.check(url) {
-                log::info!("safebrowsing: {} listed as {}", url, threat.as_str());
-                let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
-                return format!("redirect:kite:dangerous?threat={}&url={}", threat.as_str(), enc(url));
-            }
-        }
-        // Page loads: without tracking parameters, over https (privacy.*).
-        if rtype == "mainFrame" {
-            if a.privacy.strip_params.load(std::sync::atomic::Ordering::Relaxed) {
-                if let Some(clean) = kite_core::privacy::strip_tracking_params(url) {
-                    log::debug!("privacy: removed tracking parameters from {url}");
-                    return format!("redirect:{clean}");
-                }
-            }
-            if let Some(secure) = a.privacy.upgrade(url) {
-                log::debug!("privacy: upgraded {url} to https");
-                return format!("redirect:{secure}");
+        // Page loads: what onNavigationRequested already went through isn't asked again.
+        let decided = rtype == "mainFrame" && take_decided_page_load(url);
+        if rtype == "mainFrame" && !decided {
+            if let Some(to) = builtin_page_redirect(url) {
+                return format!("redirect:{to}");
             }
         }
         // (From a private window, only extensions allowed there are involved.)
         let in_private = in_private != 0;
-        let mut rt = a.runtime();
         // webRequest listeners
-        if rt.has_web_request_listeners() {
-            let tab = rt.tab_for_first_party(first_party, in_private);
-            static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            let frame = kite_core::webext::blocking::frame_context(url, rtype, first_party, initiator);
-            let mut details = serde_json::json!({
-                "requestId": REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string(), "url": url, "method": method,
-                "type": kite_core::webext::dnr::resource_type(rtype), "tabId": tab, "frameId": frame.frame_id,
-                "parentFrameId": frame.parent_frame_id, "originUrl": initiator, "frameAncestors": frame.frame_ancestors,
-                "timeStamp": kite_core::util::now_ms(), "thirdParty": kite_core::util::host_of(url) != kite_core::util::host_of(first_party),
-                "incognito": a.private || in_private, "cookieStoreId": if in_private { "firefox-private" } else { "firefox-default" },
-            });
-            if let Some(doc) = frame.document_url {
-                details["documentUrl"] = doc.into();
+        if !decided {
+            match ask_web_request_listeners(url, first_party, initiator, rtype, method, in_private) {
+                ListenersSay::Block => return "block".into(),
+                ListenersSay::Redirect(to) => return stand_in(&to, rtype),
+                ListenersSay::Nothing => {}
             }
-            let (fx, ask) = rt.web_request(&details, in_private);
-            let hub = rt.blocking.clone();
-            drop(rt);
-            crate::extensions::apply_effects_async(fx);
-            // Never ask extensions about their own requests: the background
-            // page would be waiting for itself.
-            let from_extension = initiator.starts_with("moz-extension:") || first_party.starts_with("moz-extension:");
-            if !ask.is_empty() && !from_extension {
-                let t0 = std::time::Instant::now();
-                let replies = hub.ask(&ask, "onBeforeRequest", &details, BLOCKING_TIMEOUT);
-                log::trace!("webRequest: asked {ask:?} about {url} (tab {tab}, {rtype}) in {:?}: {replies:?}", t0.elapsed());
-                let d = kite_core::webext::blocking::combine(&replies);
-                if d.cancel {
-                    log::debug!("webRequest: blocked {url}");
-                    return "block".into();
-                }
-                if let Some((ext, to)) = d.redirect {
-                    log::debug!("webRequest: {ext} redirected {url} to {to}");
-                    return stand_in(&to, rtype);
-                }
-            }
-            rt = a.runtime();
         }
+        let rt = a.runtime();
         match rt.dnr_check(url, if initiator.is_empty() { first_party } else { initiator }, method, rtype, in_private) {
             kite_core::webext::dnr::Outcome::Block => return "block".into(),
             kite_core::webext::dnr::Outcome::Redirect(u) => return format!("redirect:{u}"),

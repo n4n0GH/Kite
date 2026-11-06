@@ -232,6 +232,7 @@ Item {
     }
 
     function load(u) {
+        redirectHops = 0
         pendingUrl = ""
         if (!app.networkReady && /^(https?|wss?):/i.test(u)) { heldUrl = u; return }
         heldUrl = ""
@@ -358,6 +359,8 @@ Item {
         else focusPage()
     }
     property bool openedByPage: false
+    // Redirects in a row (extensions could keep sending a page back and forth).
+    property int redirectHops: 0
     // Load what it's waiting to load, now that it's being looked at.
     function wake() {
         if (pendingUrl !== "") { const u = pendingUrl; load(u) }
@@ -637,6 +640,8 @@ Item {
 
                 onLoadingChanged: info => {
                     const u = info.url.toString()
+                    // (Not on failing: a rejected load counts as that.)
+                    if (info.status === WebEngineView.LoadSucceededStatus) wt.redirectHops = 0
                     switch (info.status) {
                     case WebEngineView.LoadStartedStatus:
                         wt.crashed = false
@@ -693,7 +698,19 @@ Item {
                         return
                     }
                     const dangerous = u.startsWith("kite:dangerous-allow?")
-                    if (!u.startsWith("kite:https-allow?") && !dangerous) return
+                    if (!u.startsWith("kite:https-allow?") && !dangerous) {
+                        // Where it should go instead: a redirect has to happen here, as
+                        // the interceptor's never finishes on a page a service worker
+                        // answers for. (Going back to a page, or posting a form, it
+                        // stays the interceptor's: those can't simply be loaded again.)
+                        if (!request.isMainFrame || request.hasFormData || request.navigationType === WebEngineNavigationRequest.BackForwardNavigation || wt.redirectHops > 5) return
+                        const to = Browser.pageLoadRedirect(u, wt.window.privateMode)
+                        if (to === "") return
+                        request.reject()
+                        wt.redirectHops++
+                        Qt.callLater(() => { web.url = to })
+                        return
+                    }
                     request.reject()
                     const target = decodeURIComponent((u.match(/[?&]url=([^&]*)/) || [])[1] || "")
                     if (!/^https?:/.test(target)) return
