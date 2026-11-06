@@ -103,6 +103,13 @@ function run() {
         const rest = STEP - h.travelled
         if (rest > 0 && h.target.isConnected) headTo(h.target, h.way[0] * rest, h.way[1] * rest)
     }
+    // Where it is now is where it stays, as what's left of a release would run on.
+    function stopMoving() {
+        held = null
+        moving.clear()
+        cancelAnimationFrame(frame)
+        frame = 0
+    }
     function animate(now) {
         frame = 0
         if (held) {
@@ -178,6 +185,9 @@ function run() {
     let hintNewTab = false
     function hintsCollect() {
         hintsEnd()
+        // Our own scrolling mustn't move the links from under their hints, or pass
+        // for the user scrolling away from them.
+        stopMoving()
         const found = []
         const taken = new Set()
         for (const el of allClickable(document, [])) {
