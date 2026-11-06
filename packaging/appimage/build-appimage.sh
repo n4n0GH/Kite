@@ -96,6 +96,9 @@ copy_plugins() { # dir under the Qt plugin path
 }
 copy_plugins kf6/kirigami/platform
 copy_plugins printsupport
+# KDE's look, icons and file dialogs. The system's can't load against the bundled Qt.
+copy_plugins platformthemes
+copy_plugins styles
 # Sharing (ShareDialog.qml, a plugin's, which the scanner doesn't look at): the ways
 # that don't need accounts or other applications' libraries. Running one takes the
 # system's purposeprocess, so without KDE on the system sharing just reports failing.
@@ -107,6 +110,25 @@ done
 [[ -d /usr/share/kf6/purpose ]] && { mkdir -p "$APPDIR/usr/share/kf6"; cp -a /usr/share/kf6/purpose "$APPDIR/usr/share/kf6/"; }
 for d in wayland-decoration-client wayland-graphics-integration-client wayland-shell-integration; do copy_plugins "$d"; done
 
+# Started through a symlink, as linuxdeploy would have it, Qt doesn't find qt.conf beside
+# the executable, and takes its plugins and QML from where Qt was on the build machine:
+# on other distributions, a different Qt's, which it can't load.
+# Some distributions (openSUSE) keep ICU's data in a file of its own, and libicudata is
+# then a stub. Without that file, pages crash as soon as they format a date, reported
+# as "V8 process OOM (DateTimePatternGeneratorCache::CreateGenerator)".
+if [[ -d /usr/share/icu ]]; then
+    mkdir -p "$APPDIR/usr/share"
+    cp -a /usr/share/icu "$APPDIR/usr/share/"
+fi
+APPRUN=$WORK/AppRun
+cat > "$APPRUN" <<'EOF'
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+for d in "$HERE"/usr/share/icu/*; do [ -d "$d" ] && export ICU_DATA="$d"; done
+exec "$HERE/usr/bin/kite" "$@"
+EOF
+chmod +x "$APPRUN"
+
 # ---- bundle -------------------------------------------------------------------------
 say "Bundling with linuxdeploy"
 export QMAKE
@@ -115,11 +137,12 @@ export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
 export LDAI_OUTPUT="$WORK/Kite-$VERSION-$ARCH.AppImage"
 export OUTPUT=$LDAI_OUTPUT
 deps_only=()
-for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/wayland-*; do
+for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/platformthemes "$APPDIR"/usr/plugins/styles "$APPDIR"/usr/plugins/wayland-*; do
     [[ -d $d ]] && deps_only+=(--deploy-deps-only "$d")
 done
 (cd "$WORK" && "$LINUXDEPLOY" --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/kite" \
+    --custom-apprun "$APPRUN" \
     --desktop-file "$APPDIR/usr/share/applications/org.kde.kite.desktop" \
     --icon-file "$APPDIR/usr/share/icons/hicolor/scalable/apps/org.kde.kite.svg" \
     "${deps_only[@]}" \
