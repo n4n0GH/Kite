@@ -36,6 +36,10 @@ pub struct App {
 
 static APP: OnceLock<App> = OnceLock::new();
 
+/// `--no-plugins`: nothing of any plugin runs in this session, and what's stored
+/// about them stays as it is.
+pub static NO_PLUGINS: AtomicBool = AtomicBool::new(false);
+
 /// KNotification needs an event description file to show desktop notifications.
 fn install_notifyrc() {
     let Some(base) = directories::BaseDirs::new() else { return };

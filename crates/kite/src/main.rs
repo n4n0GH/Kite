@@ -61,6 +61,8 @@ Options:
                          if there are several (or uses \"default\")
       --pick-profile     Choose a profile, printing its name
       --private          Start a private browsing session (nothing is saved)
+      --no-plugins       Run no plugins this time, for troubleshooting (they stay
+                         listed in Settings, where they can be removed)
   -h, --help             Show this help
   -v, --version          Show version
 
@@ -101,6 +103,7 @@ fn main() {
                 pick_opens = true;
             }
             "--private" => private = true,
+            "--no-plugins" => state::NO_PLUGINS.store(true, std::sync::atomic::Ordering::Relaxed),
             s if s.starts_with("--profile=") => {
                 profile = s["--profile=".len()..].to_owned();
                 chosen = true;

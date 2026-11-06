@@ -1101,7 +1101,7 @@ QQC2.ApplicationWindow {
                     anchors.centerIn: parent
                     width: parent.width - Kirigami.Units.gridUnit * 2
                     Kirigami.Icon { id: toastIcon; visible: source !== ""; Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium; Layout.preferredHeight: Layout.preferredWidth }
-                    QQC2.Label { id: toastLabel; color: Kirigami.Theme.backgroundColor; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                    QQC2.Label { id: toastLabel; textFormat: Text.PlainText; color: Kirigami.Theme.backgroundColor; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 }
                 Timer { id: toastTimer; interval: 4000; onTriggered: toastBox.opacity = 0 }
                 TapHandler { onTapped: toastBox.opacity = 0 }
@@ -1198,7 +1198,7 @@ QQC2.ApplicationWindow {
                 required property var modelData
                 function sync() {
                     if (!bw.app.pluginEnabled(modelData)) source = ""
-                    else if (!item) setSource(bw.app.pluginUrl(modelData.window), {win: bw, app: bw.app, plugin: modelData})
+                    else if (!item) setSource(bw.app.pluginUrl(modelData, modelData.window), {win: bw, app: bw.app, plugin: modelData})
                 }
                 Component.onCompleted: sync()
                 Connections {

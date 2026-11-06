@@ -103,7 +103,7 @@ container) for wider compatibility.
 ## Architecture
 
 Developer documentation is in [docs/](docs/README.md): the architecture in detail, where each part
-of the interface is defined, and the native plugin system with an example.
+of the interface is defined, and how to write and install native plugins, with an example.
 
 ```
 crates/kite-core   pure Rust, unit-tested, no Qt

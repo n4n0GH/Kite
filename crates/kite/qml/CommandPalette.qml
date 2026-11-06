@@ -54,7 +54,7 @@ CommandBar {
             const item = t
             out.push({prefix: "Settings: " + Palette.PAGE_TITLES[t.page] + (t.prefix ? ", " + t.prefix : ""), title: t.text, weight: settingWeight, icon: "configure", checked: !!app.setting(t.key), run: () => palette.toggle_(item)})
         }
-        for (const p of app.plugins) {
+        for (const p of app.pluginsDisabled ? [] : app.plugins) {
             const plugin = p
             const on = app.pluginEnabled(plugin)
             out.push({prefix: "Plugins", title: plugin.name, icon: plugin.icon, checked: on, run: () => {

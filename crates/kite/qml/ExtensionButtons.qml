@@ -124,9 +124,10 @@ RowLayout {
                         Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                         Layout.preferredHeight: Layout.preferredWidth
                     }
-                    QQC2.Label { text: pluginRow.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                    QQC2.Label { text: pluginRow.modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
                     QQC2.Switch {
                         Accessible.name: pluginRow.modelData.name
+                        enabled: !root.win.app.pluginsDisabled
                         checked: pluginRow.on
                         onToggled: {
                             root.win.app.setPluginEnabled(pluginRow.modelData, checked)

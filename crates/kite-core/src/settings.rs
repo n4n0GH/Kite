@@ -222,6 +222,13 @@ impl Settings {
         self.save()
     }
 
+    /// Forgets every setting starting with `prefix` (what a removed plugin stored;
+    /// those have no defaults to go back to).
+    pub fn remove_prefix(&mut self, prefix: &str) -> anyhow::Result<()> {
+        self.values.retain(|k, _| !k.starts_with(prefix));
+        self.save()
+    }
+
     pub fn all(&self) -> &Map<String, Value> {
         &self.values
     }
@@ -256,6 +263,21 @@ mod pip_shortcut {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn forgets_what_a_plugin_stored() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Settings::load(d.path().join("settings.json"));
+        s.set("plugins.a.enabled", serde_json::json!(true)).unwrap();
+        s.set("plugins.a.undeclared", serde_json::json!(1)).unwrap();
+        s.set("plugins.a-b.enabled", serde_json::json!(true)).unwrap();
+        s.remove_prefix("plugins.a.").unwrap();
+        assert_eq!(s.get("plugins.a.enabled"), Value::Null);
+        assert_eq!(s.get("plugins.a.undeclared"), Value::Null);
+        assert_eq!(s.get("plugins.a-b.enabled"), serde_json::json!(true), "another plugin's");
+        let again = Settings::load(d.path().join("settings.json"));
+        assert_eq!(again.get("plugins.a.enabled"), Value::Null, "for good");
+    }
+
     use super::*;
     #[test]
     fn background_tabs_setting_migrates() {

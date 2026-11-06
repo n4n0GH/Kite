@@ -410,10 +410,26 @@ pub mod qobject {
         /// Kite's optional features (kite_core::plugins), as a JSON list.
         #[qinvokable]
         fn plugins(self: &Browser) -> QString;
-        /// A file of a plugin's page script, from the list in this file.
+        /// A file of a plugin's page script: from the list in this file, or installed.
         #[qinvokable]
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
+        /// Started with --no-plugins.
+        #[qinvokable]
+        #[cxx_name = "pluginsDisabled"]
+        fn plugins_disabled(self: &Browser) -> bool;
+        /// What a plugin file is: {plugin, update} or {error}. Nothing of it runs.
+        #[qinvokable]
+        #[cxx_name = "inspectPlugin"]
+        fn inspect_plugin(self: &Browser, path: &QString) -> QString;
+        /// Installs the file last inspected, as it was then. An error, or "".
+        #[qinvokable]
+        #[cxx_name = "installInspectedPlugin"]
+        fn install_inspected_plugin(self: &Browser) -> QString;
+        /// Deletes an installed plugin. An error, or "".
+        #[qinvokable]
+        #[cxx_name = "removePlugin"]
+        fn remove_plugin(self: &Browser, id: &QString) -> QString;
         /// The address selected text is written as, or "".
         // Stored cookies (Settings → Privacy): by site, as JSON. The main profile's.
         #[qinvokable]
@@ -1257,7 +1273,59 @@ impl qobject::Browser {
 
     fn plugin_file(&self, path: &QString) -> QString {
         let path = path.to_string();
-        q(PLUGIN_FILES.iter().find(|(p, _)| *p == path).map_or("", |(_, text)| *text))
+        if let Some((_, text)) = PLUGIN_FILES.iter().find(|(p, _)| *p == path) {
+            return q(*text);
+        }
+        let Some(dir) = installed_plugins_dir() else { return q("") };
+        q(kite_core::plugins::read_installed_file(&dir, &path).unwrap_or_else(|e| {
+            log::warn!("plugin: {e}");
+            String::new()
+        }))
+    }
+
+    fn plugins_disabled(&self) -> bool {
+        crate::state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn inspect_plugin(&self, path: &QString) -> QString {
+        let path = kite_core::util::local_path(&path.to_string());
+        let inspected = (|| -> anyhow::Result<(kite_core::plugins::Plugin, Vec<u8>)> {
+            anyhow::ensure!(std::fs::metadata(&path)?.len() <= kite_core::plugins::MAX_PACKAGE, "the file is too large for a plugin");
+            let bytes = std::fs::read(&path)?;
+            Ok((kite_core::plugins::inspect(&bytes, &builtin_plugin_ids())?, bytes))
+        })();
+        let mut pending = PENDING_PLUGIN.lock().unwrap_or_else(|e| e.into_inner());
+        *pending = None;
+        match inspected {
+            Ok((plugin, bytes)) => {
+                *pending = Some(bytes);
+                let update = installed_plugins().iter().any(|p| p.id == plugin.id);
+                js(&json!({"plugin": plugin, "update": update}))
+            }
+            Err(e) => js(&json!({"error": e.to_string()})),
+        }
+    }
+
+    fn install_inspected_plugin(&self) -> QString {
+        let bytes = PENDING_PLUGIN.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let (Some(bytes), Some(dir)) = (bytes, installed_plugins_dir()) else { return q("There is no plugin file to install") };
+        match kite_core::plugins::install(&bytes, &builtin_plugin_ids(), &dir) {
+            Ok(_) => QString::default(),
+            Err(e) => q(e.to_string()),
+        }
+    }
+
+    fn remove_plugin(&self, id: &QString) -> QString {
+        let id = id.to_string();
+        let Some(dir) = installed_plugins_dir() else { return q("There is no plugins folder") };
+        match kite_core::plugins::remove(&dir, &id) {
+            Ok(()) => {
+                // Its being on doesn't outlive it: installed again, it starts off.
+                let _ = app().shared.settings().remove_prefix(&format!("plugins.{id}."));
+                QString::default()
+            }
+            Err(e) => q(e.to_string()),
+        }
     }
 
     fn google_sign_in_script(&self) -> QString {
@@ -1553,15 +1621,53 @@ pub fn parse_netscape(html: &str) -> Vec<Node> {
     stack.pop().map(|r| r.children).unwrap_or_default()
 }
 
+/// A plugin file being asked about, kept as it was read: what's installed is what
+/// the user was shown, even if the file has changed since.
+static PENDING_PLUGIN: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+
+/// Where plugins installed from a file are, for all profiles.
+fn installed_plugins_dir() -> Option<std::path::PathBuf> {
+    kite_core::paths::base_dir().ok().map(|d| d.join("plugins"))
+}
+
+fn builtin_plugin_ids() -> Vec<String> {
+    builtin_plugins().into_iter().map(|p| p.id).collect()
+}
+
+/// The plugins installed from a file. Their manifests name "plugins/<id>/…", so
+/// addresses of their files start from the folder above that.
+fn installed_plugins() -> Vec<kite_core::plugins::Plugin> {
+    let Some(dir) = installed_plugins_dir() else { return vec![] };
+    let (mut list, broken) = kite_core::plugins::list_installed(&dir, &builtin_plugin_ids());
+    for b in broken {
+        log::warn!("plugin not loaded: {b}");
+    }
+    let base = dir.parent().and_then(|d| url::Url::from_directory_path(d).ok()).map(String::from).unwrap_or_default();
+    for p in &mut list {
+        p.base_url = base.clone();
+    }
+    list
+}
+
+fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
+    let mut all = builtin_plugins();
+    all.extend(installed_plugins());
+    all
+}
+
 /// Each plugin of crates/kite/plugins/. They are checked by a test below, so a
 /// mistake can't get this far.
-fn all_plugins() -> Vec<kite_core::plugins::Plugin> {
-    kite_core::plugins::parse_all(&[
+fn builtin_plugins() -> Vec<kite_core::plugins::Plugin> {
+    let mut plugins = kite_core::plugins::parse_all(&[
         include_str!("../plugins/gestures/plugin.json"),
         include_str!("../plugins/vim-keys/plugin.json"),
         include_str!("../plugins/pip/plugin.json"),
     ])
-    .expect("plugin.json")
+    .expect("plugin.json");
+    for p in &mut plugins {
+        p.base_url = "qrc:/qt/qml/org/kde/kite/".into();
+    }
+    plugins
 }
 
 /// The files of plugins' page scripts (see the same test).
@@ -1575,7 +1681,7 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
 mod tests {
     #[test]
     fn plugins_are_valid_and_complete() {
-        let plugins = super::all_plugins();
+        let plugins = super::builtin_plugins();
         assert!(!plugins.is_empty());
         let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         for p in &plugins {

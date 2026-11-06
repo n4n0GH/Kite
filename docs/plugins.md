@@ -1,21 +1,38 @@
 # Native plugins
 
-Plugins are Kite's own optional features. Mouse Gestures, Vim Keys and Picture-in-Picture are all
-plugins. Each is a folder in `crates/kite/plugins/`, and users switch them on and off in
-**Settings → Plugins & Extensions** or the toolbar's extensions panel.
+Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys and
+Picture-in-Picture are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
+hand it out as a file, and users install it with **Settings → Plugins & Extensions → Install Plugin
+from File…**. Users switch plugins on and off there, or in the toolbar's extensions panel.
 
 ## Plugins or WebExtensions?
 
 | | Native plugin | WebExtension |
 |---|---|---|
-| Ships | Inside Kite, compiled in | Installed by the user |
+| Installed | Compiled in, or from a file | From addons.mozilla.org or a file |
 | Can use | Anything in Kite, including QML and internal functions | The `browser.*` API |
-| Runs in | Kite's process, fully trusted | Isolated pages and worlds |
+| Runs in | Kite's process, **fully trusted** | Isolated pages and worlds, limited by its permissions |
 | Compatibility | None promised, internals can change | A stable API |
-| Written by | Kite's developers | Anyone |
 
-So a plugin is **not an interface for third parties**. It's a way to keep a feature separate, and to
-have nothing of it running while it's off. To change a plugin you rebuild Kite.
+Prefer a WebExtension when one can do the job. A plugin is for what needs Kite itself, such as its
+windows and shortcuts.
+
+## Security
+
+**Nothing limits a plugin once it's on.** It can read saved logins, cookies and history, and see and
+change every page, including in private windows. There's no sandbox and no signing, and no review of
+what's installed. Installing one is like installing a program, and the install dialog says so.
+
+Kite only makes sure that nothing of a plugin runs before the user agrees:
+
+| Rule | Why |
+|---|---|
+| Nothing runs until the user turns it on, whatever `defaultEnabled` says | Installing and running are two decisions |
+| A file is read and checked before the dialog, and what gets installed is what was read | The file can't change after it was shown |
+| Its name, description, version and action names can't contain `<` or control characters | Qt labels render what looks like markup, and an image in there would load just by showing it |
+| `icon` has to be an icon theme's name | An address would be fetched just by listing it |
+| An archive can't write outside its folder, or create links | Unpacking stays in the plugin's folder |
+| It can't take the id of a plugin that ships with Kite | It can't pass for one |
 
 ## What a plugin is made of
 
@@ -36,7 +53,8 @@ what your feature needs: a manifest alone is valid, although it doesn't do anyth
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | Yes | The folder's name. Only `a-z`, `0-9` and `-` |
-| `name`, `description`, `icon` | Yes | What Settings shows. `icon` is an icon theme name |
+| `name`, `description`, `icon` | Yes | What Settings shows, as plain text. `icon` is an icon theme name |
+| `version` | No | Shown when installing |
 | `defaultEnabled` | No | On for users who haven't chosen. Default `false` |
 | `window` | No | The QML item made once per browser window |
 | `settingsPage` | No | The QML item shown under its **Configure** button |
@@ -44,7 +62,7 @@ what your feature needs: a manifest alone is valid, although it doesn't do anyth
 | `pageScripts` | No | Scripts for web pages |
 | `settings` | No | Its settings and their defaults, any JSON. `enabled` isn't allowed |
 
-Paths are relative to `crates/kite/`, and must be inside the plugin's folder.
+Paths have the form `plugins/<id>/…`, and must be inside the plugin's folder.
 
 **An action** has `id` (`<plugin id>.<name>`), `group` (the heading in Settings → Shortcuts),
 `name`, `keys` (a list, can be empty) and `icon`.
@@ -115,25 +133,57 @@ open need a reload, unless the plugin handles them itself (Vim Keys does).
 **Page content is untrusted.** The page can't forge the messages, but what your script reads from it
 can be anything. Treat it as text. Never put it into code you run, or into markup.
 
-## Registering a plugin
+## Handing out a plugin
 
-A plugin's files are compiled in, so two lists in `crates/kite/src/browser.rs` have to know it:
+Zip the plugin's folder, or what's in it:
+
+```sh
+cd crates/kite/plugins/word-count && zip -r ../../../../word-count.zip .
+```
+
+The result is what users pick in **Install Plugin from File…**. It's unpacked to
+`~/.local/share/kite/plugins/<id>/`, shared by all profiles, and stays off until the user turns it on.
+Whether it's on, and its settings, are per profile.
+
+The plugin's folder needs nothing else. Keep the paths in `plugin.json` the same
+(`plugins/<id>/…`), and sibling files and `.js` imports work as usual. It can `import org.kde.kite` for
+the singletons. Add a `version` to the manifest, since the dialog shows it.
+
+**To update it,** install a newer file with the same `id`. Its files are replaced and its settings
+stay. The new version runs after restarting Kite, because Qt keeps what it has loaded.
+
+**To remove it,** use its **Remove…** button. That deletes it for all profiles, and its settings in the
+current profile.
+
+**If a plugin causes trouble,** start Kite with `kite --no-plugins`. No plugin runs in that session,
+shipped or installed, and what's stored about them doesn't change. They stay listed in Settings, where the
+ones you installed can be removed. One with invalid QML only logs an error. One with a broken manifest is
+skipped, with the reason in the log.
+
+**Kite makes no compatibility promise.** A plugin uses Kite's internals, so a new version of Kite can
+break it. Test yours against each release.
+
+## Shipping a plugin with Kite
+
+Only for plugins that are part of Kite itself. Its files are compiled in, so two lists in
+`crates/kite/src/browser.rs` have to know it:
 
 | List | Add |
 |---|---|
-| `all_plugins()` | Its `plugin.json`. Always |
+| `builtin_plugins()` | Its `plugin.json`. Always |
 | `PLUGIN_FILES` | Each page script file. Only if it has any |
 
 The test `plugins_are_valid_and_complete` fails if you forget either, or if a named file doesn't exist.
 QML files are picked up by `build.rs` by themselves. **Their names must be unique across all of Kite**,
-so start them with the plugin's name.
+so start them with the plugin's name. (An installed plugin's files aren't part of Kite's QML module, so
+this only applies here.)
 
 ## Example: Word Count
 
 This plugin counts the words on the current page and estimates a reading time. It shows every part:
 an action with a shortcut, a page script, a message back, a setting and a settings page.
 
-Create the folder `crates/kite/plugins/word-count/` with these four files.
+Make a folder called `word-count` with these four files.
 
 **`plugins/word-count/plugin.json`**
 
@@ -226,28 +276,33 @@ RowLayout {
 }
 ```
 
-Then register it in `crates/kite/src/browser.rs`. Add this line to the list in `all_plugins()`:
+Zip it and install it:
+
+```sh
+cd word-count && zip -r ../word-count.zip .
+```
+
+1. Open **Settings → Plugins & Extensions**, choose **Install Plugin from File…** and pick
+   `word-count.zip`.
+2. Read the warning and choose **Install**, then switch on **Word Count**.
+3. Reload the page you want to count, since open pages don't have the script yet.
+4. Press **Ctrl+Shift+L**. A message at the bottom of the window shows the count.
+
+To ship it with Kite instead, put the folder in `crates/kite/plugins/` and add these lines to
+`crates/kite/src/browser.rs`, as described in [Shipping a plugin with Kite](#shipping-a-plugin-with-kite).
+This one goes in `builtin_plugins()`:
 
 ```rust
         include_str!("../plugins/word-count/plugin.json"),
 ```
 
-And this line to `PLUGIN_FILES`:
+And this one in `PLUGIN_FILES`:
 
 ```rust
     ("plugins/word-count/page.js", include_str!("../plugins/word-count/page.js")),
 ```
 
-Build and try it:
-
-```sh
-cargo test -p kite plugins_are_valid_and_complete
-cargo run
-```
-
-1. Open **Settings → Plugins & Extensions** and switch on **Word Count**.
-2. Reload the page you want to count, since open pages don't have the script yet.
-3. Press **Ctrl+Shift+L**. A message at the bottom of the window shows the count.
+Then check it with `cargo test -p kite plugins_are_valid_and_complete`.
 
 There's nothing else to wire up. Because of what it declares, the plugin also has:
 - a row in the toolbar's extensions panel, with its switch
@@ -266,5 +321,5 @@ The existing plugins are the best reference:
 | `plugins/vim-keys/` | Frames, updating already open tabs, its own `VimBar.qml`, and a page script built from several files |
 
 If a plugin needs something Kite doesn't offer, add it to Kite (a hook in `BrowserWindow.qml`, say) and
-use it from the plugin. That's what the private interface is for. Do put the feature's logic in the
-plugin's folder, so that nothing of it runs while it's off.
+use it from the plugin. For a plugin shipped with Kite, put the feature's logic in the plugin's folder, so
+that nothing of it runs while it's off.

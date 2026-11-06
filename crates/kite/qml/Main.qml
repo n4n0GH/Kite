@@ -78,20 +78,35 @@ QtObject {
 
     function setting(key) { return JSON.parse(Browser.setting(key)) }
 
-    // Kite's own optional features (crates/kite/plugins/). What a plugin hasn't
-    // had set comes from its plugin.json.
-    readonly property var plugins: JSON.parse(Browser.plugins())
+    // Optional features (crates/kite/plugins/, and those installed from a file).
+    // What a plugin hasn't had set comes from its plugin.json.
+    property var plugins: JSON.parse(Browser.plugins())
+    function reloadPlugins() {
+        plugins = JSON.parse(Browser.plugins())
+        pluginActions = enabledPluginActions()
+        installUserScripts()
+    }
+    // Deletes an installed plugin and what's stored for it in this profile.
+    function removePlugin(plugin) {
+        const error = Browser.removePlugin(plugin.id)
+        if (error) return error
+        reloadPlugins()
+        return ""
+    }
+    // --no-plugins: all of them count as off, and what's stored stays as it is.
+    readonly property bool pluginsDisabled: Browser.pluginsDisabled()
     function pluginEnabled(plugin) {
+        if (pluginsDisabled) return false
         const on = setting("plugins." + plugin.id + ".enabled")
         return on === null ? plugin.defaultEnabled : !!on
     }
-    function setPluginEnabled(plugin, on) { Browser.setSetting("plugins." + plugin.id + ".enabled", JSON.stringify(on)) }
+    function setPluginEnabled(plugin, on) { if (!pluginsDisabled) Browser.setSetting("plugins." + plugin.id + ".enabled", JSON.stringify(on)) }
     function pluginSetting(plugin, key) {
         const v = setting("plugins." + plugin.id + "." + key)
         return v === null ? plugin.settings[key] : v
     }
     function setPluginSetting(plugin, key, value) { Browser.setSetting("plugins." + plugin.id + "." + key, JSON.stringify(value)) }
-    function pluginUrl(file) { return "qrc:/qt/qml/org/kde/kite/" + file }
+    function pluginUrl(plugin, file) { return plugin.baseUrl + file }
     // The page scripts of the plugins that are on. They get their plugin's settings,
     // and a way to tell the window: a console message with the secret, as forms in
     // frames do, which pages can neither see nor imitate. It reaches

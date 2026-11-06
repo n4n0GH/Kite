@@ -146,7 +146,7 @@ ManagerWindow {
             ColumnLayout {
                 Loader {
                     Layout.fillWidth: true
-                    Component.onCompleted: setSource(w.app.pluginUrl(plugin.settingsPage), {app: w.app, plugin: plugin})
+                    Component.onCompleted: setSource(w.app.pluginUrl(plugin, plugin.settingsPage), {app: w.app, plugin: plugin})
                 }
             }
         }
@@ -1503,40 +1503,145 @@ ManagerWindow {
                 font: Kirigami.Theme.smallFont
                 text: "Kite's native plugins for powerusers."
             }
-            Repeater {
-                model: w.app.plugins
-                delegate: ColumnLayout {
-                    id: entry
-                    required property var modelData
-                    property bool on: w.app.pluginEnabled(modelData)
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-                    RowLayout {
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 34
+                visible: w.app.pluginsDisabled
+                type: Kirigami.MessageType.Information
+                text: "Kite was started with --no-plugins: no plugin is running, and they can't be turned on. Those you installed can still be removed. Start Kite normally to get them back."
+            }
+            // (In a column of their own: the form would put rows made later at its end,
+            // and installing a plugin makes them anew.)
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+                Repeater {
+                    model: w.app.plugins
+                    delegate: ColumnLayout {
+                        id: entry
+                        required property var modelData
+                        property bool on: w.app.pluginEnabled(modelData)
                         Layout.fillWidth: true
                         spacing: Kirigami.Units.smallSpacing
-                        Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth }
-                        QQC2.Label { text: entry.modelData.name; Layout.fillWidth: true }
-                        QQC2.Switch {
-                            Accessible.name: entry.modelData.name
-                            checked: entry.on
-                            onToggled: { entry.on = checked; w.app.setPluginEnabled(entry.modelData, checked) }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing
+                            Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth }
+                            // (Installed ones come from anyone: their text is only text.)
+                            QQC2.Label { text: entry.modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true }
+                            QQC2.Switch {
+                                Accessible.name: entry.modelData.name
+                                enabled: !w.app.pluginsDisabled
+                                checked: entry.on
+                                onToggled: { entry.on = checked; w.app.setPluginEnabled(entry.modelData, checked) }
+                            }
+                            QQC2.Button {
+                                visible: !!entry.modelData.settingsPage
+                                enabled: entry.on
+                                text: "Configure…"
+                                icon.name: "configure"
+                                onClicked: w.openPluginSettings(entry.modelData)
+                            }
+                            QQC2.Button {
+                                visible: !!entry.modelData.installed
+                                text: "Remove…"
+                                icon.name: "edit-delete"
+                                onClicked: { removePluginPrompt.plugin = entry.modelData; removePluginPrompt.open() }
+                            }
                         }
-                        QQC2.Button {
-                            visible: !!entry.modelData.settingsPage
-                            enabled: entry.on
-                            text: "Configure…"
-                            icon.name: "configure"
-                            onClicked: w.openPluginSettings(entry.modelData)
+                        QQC2.Label {
+                            Layout.maximumWidth: Kirigami.Units.gridUnit * 34
+                            wrapMode: Text.Wrap
+                            textFormat: Text.PlainText
+                            opacity: 0.7
+                            font: Kirigami.Theme.smallFont
+                            text: (entry.modelData.installed ? "Installed from a file, not part of Kite. " : "") + entry.modelData.description
                         }
-                    }
-                    QQC2.Label {
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 34
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
-                        text: entry.modelData.description
                     }
                 }
+            }
+            QQC2.Button {
+                text: "Install Plugin from File…"
+                icon.name: "document-open"
+                onClicked: pluginFileDialog.open()
+            }
+            FileDialog {
+                id: pluginFileDialog
+                title: "Install Plugin from File"
+                nameFilters: ["Kite plugins (*.zip)", "All files (*)"]
+                onAccepted: {
+                    const found = JSON.parse(Browser.inspectPlugin(selectedFile.toString()))
+                    if (found.error) { pluginError.show(found.error); return }
+                    installPluginPrompt.found = found
+                    installPluginPrompt.open()
+                }
+            }
+            // A plugin isn't an extension: nothing keeps it from anything.
+            Kirigami.PromptDialog {
+                id: installPluginPrompt
+                // (Wide enough for its warning, however short the description.)
+                preferredWidth: Kirigami.Units.gridUnit * 28
+                property var found: null
+                readonly property var plugin: found ? found.plugin : null
+                title: plugin ? (found.update ? "Update " : "Install ") + plugin.name + "?" : ""
+                standardButtons: Kirigami.Dialog.Cancel
+                customFooterActions: Kirigami.Action {
+                    text: installPluginPrompt.found && installPluginPrompt.found.update ? "Update" : "Install"
+                    icon.name: "dialog-warning"
+                    onTriggered: {
+                        const update = installPluginPrompt.found.update, name = installPluginPrompt.plugin.name
+                        installPluginPrompt.close()
+                        const error = Browser.installInspectedPlugin()
+                        if (error) { pluginError.show(error); return }
+                        w.app.reloadPlugins()
+                        pluginError.show(update ? name + " is updated. Restart Kite to use the new version." : name + " is installed. It stays off until you turn it on.", "Done")
+                    }
+                }
+                ColumnLayout {
+                    spacing: Kirigami.Units.smallSpacing
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                        wrapMode: Text.Wrap
+                        textFormat: Text.PlainText
+                        text: installPluginPrompt.plugin ? (installPluginPrompt.plugin.version ? "Version " + installPluginPrompt.plugin.version + "\n" : "") + installPluginPrompt.plugin.description : ""
+                    }
+                    Kirigami.InlineMessage {
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                        visible: true
+                        type: Kirigami.MessageType.Warning
+                        text: "Only install plugins from people you trust. Nothing has checked this one. Unlike an extension, a plugin has no restrictions: when turned on, it runs as part of Kite and can read your saved logins, cookies and history, and see and change every page you visit, in private windows too."
+                    }
+                    QQC2.Label {
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                        wrapMode: Text.Wrap
+                        visible: installPluginPrompt.found && !installPluginPrompt.found.update
+                        text: "It stays off until you turn it on."
+                    }
+                }
+            }
+            Kirigami.PromptDialog {
+                id: removePluginPrompt
+                property var plugin: null
+                title: plugin ? "Remove " + plugin.name + "?" : ""
+                subtitle: "It's deleted for all profiles, along with its settings in this one."
+                standardButtons: Kirigami.Dialog.Cancel
+                customFooterActions: Kirigami.Action {
+                    text: "Remove"
+                    icon.name: "edit-delete"
+                    onTriggered: {
+                        const error = w.app.removePlugin(removePluginPrompt.plugin)
+                        removePluginPrompt.close()
+                        if (error) pluginError.show(error)
+                    }
+                }
+            }
+            Kirigami.PromptDialog {
+                id: pluginError
+                function show(message, heading) { title = heading || "Couldn't install the plugin"; subtitle = message; open() }
+                standardButtons: Kirigami.Dialog.Ok
             }
             // ---- WebExtensions ----
             Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "WebExtensions" }

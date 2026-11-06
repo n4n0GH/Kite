@@ -43,7 +43,7 @@ interface and the state that belongs to it, such as which tabs a window has.
 | `crates/kite/src/js/` | Page scripts: reader extraction, fingerprint protection, wake lock, scrollbars, Google sign-in identity |
 | `crates/kite/cpp/` | The C++ layer |
 | `crates/kite/qml/` | The interface, see [ui.md](ui.md) |
-| `crates/kite/plugins/` | Native plugins, see [plugins.md](plugins.md) |
+| `crates/kite/plugins/` | Plugins that ship with Kite, see [plugins.md](plugins.md) |
 | `crates/kite/icons/` | Kite's own icons, used as a fallback icon theme |
 | `crates/kite/build.rs` | Compiles the QML module and resources, including every plugin file |
 | `data/` | Desktop file and application icon |
@@ -130,7 +130,7 @@ instead (`qml/ExtBridge.qml`).
 | `certs`, `certview` | Accepted certificate exceptions; the `kite:certificate` page |
 | `reader`, `startpage`, `standin` | Reader view pages; custom start pages; generated stand-in files |
 | `backup`, `browser_import` | The settings file; importing bookmarks from other browsers |
-| `plugins` | Parses and checks plugin manifests |
+| `plugins` | Parses and checks plugin manifests; installs, lists and removes plugin files |
 | `kwin`, `screensaver` | KWin scripting (picture-in-picture staying on top); screen inhibition |
 
 ### kite-core: the WebExtension platform
@@ -250,7 +250,8 @@ if allowed. `kite --private` uses a throwaway profile folder, deleted at exit.
 | `frame.runJavaScript` needs a callback | Qt doesn't run it otherwise; pass `() => {}` |
 | `Array.prototype.flatMap` doesn't exist in Qt's JavaScript | Use `reduce` and `concat` |
 | A `.js` import named `Keys` hides the attached `Keys` | Pick another name for the import |
-| QML type names are global to the module | Plugin files included, so a duplicate name clashes |
+| QML type names are global to the module | Files of plugins shipped with Kite included, so a duplicate name clashes |
+| A plugin's text renders as markup in Qt labels and dialog titles | `kite_core::plugins` refuses `<` in everything shown, because installed plugins come from anyone |
 | A property can't be called `left`, `right`, `top` and so on | They're `FINAL` on `Item`, and the file fails to load |
 | `kite_intercept` runs on the UI thread | Keep it fast |
 | Only a shown tab may hold a certificate warning open | Chromium holds the site's other requests meanwhile (`WebTab.shownInPane`) |
@@ -270,6 +271,7 @@ profiles/<name>/
     extensions/       registry.json, storage.db and the unpacked extensions
     webengine/        Chromium's storage: cookies, cache, local storage
 native-messaging-hosts/   Kite's own native messaging manifests
+plugins/<id>/             plugins installed from a file
 ```
 
 ## Building and testing
