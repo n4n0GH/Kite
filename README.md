@@ -39,8 +39,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Profiles:** each with its own bookmarks, history, logins and extensions; a picker at startup when
   there are several, and a Profiles menu to open another or manage them (`--profile` still works).
 * **Plasma Integration:** control what's playing with Plasma's media controls and media
-  keys (MPRIS, private windows left out by default), and send pages and links to devices
-  with KDE Connect.
+  keys (MPRIS), follow, pause and open downloads in the notification area, find tabs,
+  bookmarks and history from KRunner, share with KDE's share menu (the Web Share API), and
+  send pages and links to devices with KDE Connect. Private windows are left out by default.
 * **Picture-in-picture:** a page's video in a small window above others (address bar
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.

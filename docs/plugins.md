@@ -57,6 +57,7 @@ what your feature needs: a manifest alone is valid, although it doesn't do anyth
 | `version` | No | Shown when installing |
 | `defaultEnabled` | No | On for users who haven't chosen. Default `false` |
 | `window` | No | The QML item made once per browser window |
+| `app` | No | The QML item made once for the whole browser |
 | `settingsPage` | No | The QML item shown under its **Configure** button |
 | `actions` | No | Actions with optional shortcuts. They need `window` |
 | `pageScripts` | No | Scripts for web pages |
@@ -80,6 +81,14 @@ Paths have the form `plugins/<id>/…`, and must be inside the plugin's folder.
 run if it's wrong.
 
 ## What each part gets
+
+### The app item
+
+For what isn't any one window's. Kite creates it once while the plugin is on, and destroys it when the
+plugin is turned off. It's given `app` and `plugin`, as the window item is below. `app` tells it about
+downloads with `downloadBegan(id, download, inPrivate)`, `downloadProgress(id, download)`,
+`downloadPausedChanged(id, download)` and `downloadEnded(id, download, state)`. To tell the user about a
+download itself, instead of Kite's notification, it puts the id in `app.claimedDownloads` when it begins.
 
 ### The window item
 

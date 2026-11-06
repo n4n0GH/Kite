@@ -22,7 +22,17 @@ Item {
     Connections {
         target: root.win
         function onPluginMessage(tab, message) {
-            if (message.plugin !== root.plugin.id || message.m.cmd !== "media" || !root.reportsAllowed()) return
+            if (message.plugin !== root.plugin.id) return
+            if (message.m.cmd === "share") {
+                const frame = JSON.stringify(String(message.m.frame))
+                const id = tab.tabId
+                root.share(message.m.data, error => {
+                    const still = root.win.tabById(id)
+                    if (still) still.runInFrames("globalThis.__kitePlasmaShare && __kitePlasmaShare.done(" + frame + ", " + JSON.stringify(error) + ")")
+                })
+                return
+            }
+            if (message.m.cmd !== "media" || !root.reportsAllowed()) return
             const state = message.m.state
             if (state) {
                 state.title = state.title || tab.title
@@ -69,8 +79,49 @@ Item {
         triggeredOnStart: true
         onTriggered: Browser.plasmaRefreshDevices()
     }
+    // ---- sharing, with KDE's Purpose --------------------------------------------------
+    // `done` gets what to tell whoever asked: "", or the name of the error.
+    property var shareDialog: null
+    function share(data, done) {
+        if (!setting("share")) return done("NotAllowedError")
+        if (shareDialog) return done("InvalidStateError")
+        const component = Qt.createComponent(app.pluginUrl(plugin, "plugins/plasma-integration/ShareDialog.qml"))
+        if (component.status !== Component.Ready) {
+            console.warn("Sharing isn't available: " + component.errorString())
+            win.toast("Sharing isn't available: KDE's Purpose isn't installed", "dialog-warning")
+            return done("NotSupportedError")
+        }
+        // Purpose only knows addresses, and takes a title as well. Text goes as one.
+        const urls = (data.url ? [data.url] : []).concat(data.text ? [data.text] : [])
+        const dialog = component.createObject(root, {
+            transientParent: win,
+            inputData: {title: data.title || data.url || data.text, urls: urls, mimeType: data.text ? "text/plain" : "*/*"},
+        })
+        shareDialog = dialog
+        dialog.done.connect((error, message) => {
+            shareDialog = null
+            if (message) win.toast("Couldn't share: " + message, "dialog-warning")
+            done(error)
+            dialog.destroy()
+        })
+        dialog.show()
+        dialog.requestActivate()
+    }
+    readonly property var shareable: /^https?:/i
+    function shareItems(info) {
+        if (!setting("share")) return []
+        const items = []
+        if (info.linkUrl && shareable.test(info.linkUrl)) items.push({title: "Share Link…", data: {title: info.linkText || info.linkUrl, url: info.linkUrl}})
+        if (info.srcUrl && info.mediaType && shareable.test(info.srcUrl)) items.push({title: "Share " + {image: "Image", video: "Video", audio: "Audio"}[info.mediaType] + "…", data: {url: info.srcUrl}})
+        if (!info.linkUrl && !info.srcUrl && !info.selectionText && !info.editable && shareable.test(info.pageUrl)) items.push({title: "Share Page…", data: {title: win.currentTab ? win.currentTab.title : "", url: info.pageUrl}})
+        return items.map(i => ({title: i.title, iconName: "document-share", run: () => root.share(i.data, () => {})}))
+    }
+
     // For the page's context menu: what it could send, and where to.
     function contextItems(info) {
+        return shareItems(info).concat(deviceItems(info))
+    }
+    function deviceItems(info) {
         if (!setting("kdeConnect")) return []
         const devices = JSON.parse(Browser.plasmaDevices())
         Browser.plasmaRefreshDevices()

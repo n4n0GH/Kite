@@ -1,10 +1,11 @@
 {
     "id": "plasma-integration",
     "name": "Plasma Integration",
-    "description": "Connects Kite to the desktop: control what's playing with Plasma's media controls and media keys, and send pages and links to devices with KDE Connect.",
+    "description": "Connects Kite to the desktop: Plasma's media controls and media keys, downloads in the notification area, search from KRunner, sharing, and sending pages to devices with KDE Connect.",
     "icon": "plasma",
     "defaultEnabled": true,
     "window": "plugins/plasma-integration/PlasmaWindow.qml",
+    "app": "plugins/plasma-integration/PlasmaApp.qml",
     "settingsPage": "plugins/plasma-integration/PlasmaSettings.qml",
     "pageScripts": [
         {
@@ -18,11 +19,28 @@
             "worldId": 1,
             "runsOnSubFrames": true,
             "injectionPoint": 0
+        },
+        {
+            "files": ["plugins/plasma-integration/page-share-world.js"],
+            "worldId": 0,
+            "runsOnSubFrames": true,
+            "injectionPoint": 0
+        },
+        {
+            "files": ["plugins/plasma-integration/page-share.js"],
+            "worldId": 1,
+            "runsOnSubFrames": true,
+            "injectionPoint": 0
         }
     ],
     "settings": {
         "mediaControls": true,
         "privateWindows": false,
-        "kdeConnect": true
+        "kdeConnect": true,
+        "downloads": true,
+        "share": true,
+        "searchTabs": true,
+        "searchBookmarks": true,
+        "searchHistory": true
     }
 }

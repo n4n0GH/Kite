@@ -107,6 +107,23 @@ QtObject {
     }
     function setPluginSetting(plugin, key, value) { Browser.setSetting("plugins." + plugin.id + "." + key, JSON.stringify(value)) }
     function pluginUrl(plugin, file) { return plugin.baseUrl + file }
+    // Plugins' items for the whole browser, while they're on.
+    property Instantiator pluginApps: Instantiator {
+        model: app.plugins.filter(p => p.app)
+        delegate: Loader {
+            id: pluginAppLoader
+            required property var modelData
+            function sync() {
+                if (!app.pluginEnabled(modelData)) source = ""
+                else if (!item) setSource(app.pluginUrl(modelData, modelData.app), {app: app, plugin: modelData})
+            }
+            Component.onCompleted: sync()
+            property Connections settingWatch: Connections {
+                target: Browser
+                function onSettingChanged(key) { if (key === "plugins." + pluginAppLoader.modelData.id + ".enabled") pluginAppLoader.sync() }
+            }
+        }
+    }
     // The page scripts of the plugins that are on. They get their plugin's settings,
     // and a way to tell the window: a console message with the secret, as forms in
     // frames do, which pages can neither see nor imitate. It reaches
@@ -913,6 +930,13 @@ QtObject {
     // came first, it's only a question too many.)
     property double askUntil: 0
     function askBeforeNextDownload() { askUntil = Date.now() + 60000 }
+    // For plugins. Those that say they'll tell the user themselves put the download's
+    // id in claimedDownloads when it begins.
+    signal downloadBegan(int id, var download, bool inPrivate)
+    signal downloadProgress(int id, var download)
+    signal downloadPausedChanged(int id, var download)
+    signal downloadEnded(int id, var download, string state)
+    property var claimedDownloads: ({})
     function fileUrl(path) { return "file://" + encodeURI(path).replace(/[?#]/g, encodeURIComponent) }
     function notifyDownloadComplete(path) {
         const open = () => Qt.openUrlExternally(fileUrl(path))
@@ -959,12 +983,15 @@ QtObject {
             total: download.totalBytes, received: 0, state: "in_progress"}))
         activeDownloads[id] = download
         download.accept()
+        downloadBegan(id, download, inPrivate)
+        download.isPausedChanged.connect(() => downloadPausedChanged(id, download))
         let last = 0
         download.receivedBytesChanged.connect(() => {
             const now = Date.now()
             if (now - last < 500) return
             last = now
             Browser.downloadUpdate(JSON.stringify({id: id, received: download.receivedBytes, total: download.totalBytes}))
+            downloadProgress(id, download)
         })
         let ended = false
         const end = () => {
@@ -974,7 +1001,9 @@ QtObject {
                      : download.state === WebEngineDownloadRequest.DownloadCancelled ? "cancelled" : "interrupted"
             Browser.downloadUpdate(JSON.stringify({id: id, received: download.receivedBytes, total: download.totalBytes, state: st}))
             delete activeDownloads[id]
-            if (st === "complete") notifyDownloadComplete(download.downloadDirectory + "/" + download.downloadFileName)
+            downloadEnded(id, download, st)
+            if (st === "complete" && !claimedDownloads[id]) notifyDownloadComplete(download.downloadDirectory + "/" + download.downloadFileName)
+            delete claimedDownloads[id]
         }
         download.isFinishedChanged.connect(() => { if (download.isFinished) end() })
         // (Interrupted, as by a lost connection, it never counts as finished.)

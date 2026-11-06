@@ -86,6 +86,7 @@ cat > "$EXTRA_QML/RuntimeImports.qml" <<'EOF'
 import QtQuick
 import org.kde.desktop
 import org.kde.qqc2desktopstyle.private
+import org.kde.purpose
 Item {}
 EOF
 copy_plugins() { # dir under the Qt plugin path
@@ -95,6 +96,15 @@ copy_plugins() { # dir under the Qt plugin path
 }
 copy_plugins kf6/kirigami/platform
 copy_plugins printsupport
+# Sharing (ShareDialog.qml, a plugin's, which the scanner doesn't look at): the ways
+# that don't need accounts or other applications' libraries. Running one takes the
+# system's purposeprocess, so without KDE on the system sharing just reports failing.
+for p in clipboardplugin emailplugin kdeconnectplugin saveasplugin barcodeplugin; do
+    [[ -f $QT_PLUGINS/kf6/purpose/$p.so ]] || continue
+    mkdir -p "$APPDIR/usr/plugins/kf6/purpose"
+    cp -a "$QT_PLUGINS/kf6/purpose/$p.so" "$APPDIR/usr/plugins/kf6/purpose/"
+done
+[[ -d /usr/share/kf6/purpose ]] && { mkdir -p "$APPDIR/usr/share/kf6"; cp -a /usr/share/kf6/purpose "$APPDIR/usr/share/kf6/"; }
 for d in wayland-decoration-client wayland-graphics-integration-client wayland-shell-integration; do copy_plugins "$d"; done
 
 # ---- bundle -------------------------------------------------------------------------
@@ -105,7 +115,7 @@ export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
 export LDAI_OUTPUT="$WORK/Kite-$VERSION-$ARCH.AppImage"
 export OUTPUT=$LDAI_OUTPUT
 deps_only=()
-for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/wayland-*; do
+for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/wayland-*; do
     [[ -d $d ]] && deps_only+=(--deploy-deps-only "$d")
 done
 (cd "$WORK" && "$LINUXDEPLOY" --appdir "$APPDIR" \

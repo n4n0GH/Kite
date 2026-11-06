@@ -304,6 +304,44 @@ pub mod qobject {
         fn plasma_command(self: Pin<&mut Browser>, command: QString);
         /// KDE Connect devices as of the last refresh: [{id, name, icon}].
         #[qinvokable]
+        #[cxx_name = "plasmaJobStarted"]
+        fn plasma_job_started(self: &Browser, id: i32, path: &QString, url: &QString);
+        #[qinvokable]
+        #[cxx_name = "plasmaJobProgress"]
+        fn plasma_job_progress(self: &Browser, id: i32, received: f64, total: f64);
+        #[qinvokable]
+        #[cxx_name = "plasmaJobPaused"]
+        fn plasma_job_paused(self: &Browser, id: i32, paused: bool);
+        /// state: "complete", "cancelled" or "interrupted".
+        #[qinvokable]
+        #[cxx_name = "plasmaJobFinished"]
+        fn plasma_job_finished(self: &Browser, id: i32, state: &QString, received: f64, error: &QString);
+        #[qinvokable]
+        #[cxx_name = "plasmaJobsForget"]
+        fn plasma_jobs_forget(self: &Browser);
+        /// What the desktop has to say about a download (kite_core::plasma::jobs::Event).
+        #[qsignal]
+        #[cxx_name = "plasmaJobEvent"]
+        fn plasma_job_event(self: Pin<&mut Browser>, event: QString);
+        #[qinvokable]
+        #[cxx_name = "plasmaRunnerConfigure"]
+        fn plasma_runner_configure(self: &Browser, config: &QString);
+        #[qinvokable]
+        #[cxx_name = "plasmaRunnerAnswerTabs"]
+        fn plasma_runner_answer_tabs(self: &Browser, tabs: &QString);
+        /// KRunner is searching: what tabs are there? (plasmaRunnerAnswerTabs)
+        #[qsignal]
+        #[cxx_name = "plasmaRunnerWantsTabs"]
+        fn plasma_runner_wants_tabs(self: Pin<&mut Browser>);
+        /// Something was picked in KRunner (kite_core::plasma::krunner::Picked).
+        #[qsignal]
+        #[cxx_name = "plasmaRunnerPicked"]
+        fn plasma_runner_picked(self: Pin<&mut Browser>, picked: QString);
+        /// Lets the next window raised take the focus, on Wayland.
+        #[qinvokable]
+        #[cxx_name = "useActivationToken"]
+        fn use_activation_token(self: &Browser, token: &QString);
+        #[qinvokable]
         #[cxx_name = "plasmaDevices"]
         fn plasma_devices(self: &Browser) -> QString;
         #[qinvokable]
@@ -1328,6 +1366,64 @@ impl qobject::Browser {
     fn plasma_forget_tab(&self, tab_id: i32) {
         self.plasma_mpris().forget_tab(tab_id);
     }
+    fn plasma_jobs(&self) -> &'static kite_core::plasma::jobs::Jobs {
+        static JOBS: std::sync::OnceLock<kite_core::plasma::jobs::Jobs> = std::sync::OnceLock::new();
+        JOBS.get_or_init(|| {
+            let thread = self.qt_thread();
+            kite_core::plasma::jobs::Jobs::start(move |event| {
+                let _ = thread.queue(move |o| o.plasma_job_event(js(&json!(event))));
+            })
+        })
+    }
+    fn plasma_job_started(&self, id: i32, path: &QString, url: &QString) {
+        self.plasma_jobs().started(id, path.to_string(), url.to_string());
+    }
+    fn plasma_job_progress(&self, id: i32, received: f64, total: f64) {
+        self.plasma_jobs().progress(id, received as i64, total as i64);
+    }
+    fn plasma_job_paused(&self, id: i32, paused: bool) {
+        self.plasma_jobs().paused(id, paused);
+    }
+    fn plasma_job_finished(&self, id: i32, state: &QString, received: f64, error: &QString) {
+        use kite_core::plasma::jobs::End;
+        let end = match state.to_string().as_str() {
+            "complete" => End::Complete,
+            "cancelled" => End::Cancelled,
+            _ => End::Failed,
+        };
+        self.plasma_jobs().finished(id, end, received as i64, error.to_string());
+    }
+    fn plasma_jobs_forget(&self) {
+        self.plasma_jobs().forget_all();
+    }
+    fn plasma_runner(&self) -> &'static kite_core::plasma::krunner::Runner {
+        use kite_core::plasma::krunner::{Browser as RunnerBrowser, Picked, Runner};
+        static RUNNER: std::sync::OnceLock<Runner> = std::sync::OnceLock::new();
+        struct Link(cxx_qt::CxxQtThread<qobject::Browser>);
+        // (Only ever queueing onto the interface's thread.)
+        impl RunnerBrowser for Link {
+            fn wants_tabs(&self) {
+                let _ = self.0.queue(|o| o.plasma_runner_wants_tabs());
+            }
+            fn picked(&self, picked: Picked) {
+                let _ = self.0.queue(move |o| o.plasma_runner_picked(js(&json!(picked))));
+            }
+        }
+        RUNNER.get_or_init(|| Runner::start(app().shared.clone(), Link(self.qt_thread())))
+    }
+    fn plasma_runner_configure(&self, config: &QString) {
+        // (From the plugin's own QML: it always fits.)
+        self.plasma_runner().configure(serde_json::from_str(&config.to_string()).unwrap_or_default());
+    }
+    fn plasma_runner_answer_tabs(&self, tabs: &QString) {
+        self.plasma_runner().answer_tabs(serde_json::from_str(&tabs.to_string()).unwrap_or_default());
+    }
+    fn use_activation_token(&self, token: &QString) {
+        // Qt's Wayland code takes it from there when a window asks to be activated.
+        if !token.is_empty() {
+            std::env::set_var("XDG_ACTIVATION_TOKEN", token.to_string());
+        }
+    }
     fn plasma_devices(&self) -> QString {
         js(&json!(*PLASMA_DEVICES.lock().unwrap_or_else(|e| e.into_inner())))
     }
@@ -1827,7 +1923,10 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
     ("plugins/vim-keys/keys.js", include_str!("../plugins/vim-keys/keys.js")),
     ("plugins/vim-keys/page.js", include_str!("../plugins/vim-keys/page.js")),
     ("plugins/pip/page.js", include_str!("../plugins/pip/page.js")),
+    ("plugins/plasma-integration/PlasmaApp.qml", include_str!("../plugins/plasma-integration/PlasmaApp.qml")),
     ("plugins/plasma-integration/page-world.js", include_str!("../plugins/plasma-integration/page-world.js")),
+    ("plugins/plasma-integration/page-share-world.js", include_str!("../plugins/plasma-integration/page-share-world.js")),
+    ("plugins/plasma-integration/page-share.js", include_str!("../plugins/plasma-integration/page-share.js")),
     ("plugins/plasma-integration/page.js", include_str!("../plugins/plasma-integration/page.js")),
 ];
 

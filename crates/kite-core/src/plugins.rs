@@ -37,6 +37,9 @@ pub struct Plugin {
     /// QML item made once per browser window while the plugin is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<String>,
+    /// QML item made once for the whole browser while the plugin is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
     /// QML item shown in Settings → Plugins while the plugin is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_page: Option<String>,
@@ -117,7 +120,7 @@ impl Plugin {
 
     /// The files it names, relative to the kite crate.
     pub fn files(&self) -> impl Iterator<Item = &String> {
-        self.window.iter().chain(self.settings_page.iter()).chain(self.page_scripts.iter().flat_map(|s| s.files.iter()))
+        self.window.iter().chain(self.app.iter()).chain(self.settings_page.iter()).chain(self.page_scripts.iter().flat_map(|s| s.files.iter()))
     }
 }
 
