@@ -102,6 +102,9 @@ container) for wider compatibility.
 
 ## Architecture
 
+Developer documentation is in [docs/](docs/README.md): the architecture in detail, where each part
+of the interface is defined, and the native plugin system with an example.
+
 ```
 crates/kite-core   pure Rust, unit-tested, no Qt
   history, bookmarks (Falkon bookmarks.json format), browsedata.db (Falkon schema),
