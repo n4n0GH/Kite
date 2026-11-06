@@ -578,7 +578,7 @@ QQC2.ApplicationWindow {
         const t = tabById(id)
         t.openerTabId = opts.openerTabId !== undefined ? opts.openerTabId : -1
         Extensions.browserEvent("tabCreated", JSON.stringify({tab: t.extInfo()}))
-        if (opts.request) opts.request.openIn(t.view)
+        if (opts.request) { t.openedByPage = true; opts.request.openIn(t.view) }
         else if (opts.lazy) t.pendingUrl = url
         else if (url) t.load(url)
         if (!opts.background || tabModel.count === 1 || (paneTab[pane] === id && pane === activePane)) setCurrentIndex(idx)
@@ -694,6 +694,8 @@ QQC2.ApplicationWindow {
             else { const ids = paneTabs(pane); setPaneTab(pane, ids.length ? ids[0] : -1) }
         }
         setCurrentIndex(Math.min(saved.current || 0, count - 1))
+        // (The other pane's tab is on view too, though it isn't the current one.)
+        for (const pane of [0, 1]) { const t = tabById(paneTab[pane]); if (t) t.wake() }
     }
     function focusLocationBarNow() { if (locationBar) locationBar.focusAndSelect() }
     // A menu gives the keyboard back to what had it as it finishes closing, after

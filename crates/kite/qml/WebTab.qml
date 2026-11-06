@@ -58,6 +58,8 @@ Item {
     property string certRetryUrl: ""
     readonly property bool shownInPane: window && window.paneTab.includes(tabId)
     onShownInPaneChanged: {
+        // (Next to the active pane's tab, it's on view without being activated.)
+        if (shownInPane) wake()
         if (!shownInPane && certError) {
             certRetryUrl = certError.url.toString()
             certError.rejectCertificate()
@@ -348,10 +350,18 @@ Item {
 
     onActivated: {
         lastAccessed = Date.now()
+        wake()
+        // (A page's link has no address until its page starts arriving. The
+        // bar doesn't show the one asked for before that: the opener can still
+        // write into the empty tab, under an address that isn't its own.)
+        if ((url === "" && !openedByPage) || url === app.newTabUrl()) focusLocationBar()
+        else focusPage()
+    }
+    property bool openedByPage: false
+    // Load what it's waiting to load, now that it's being looked at.
+    function wake() {
         if (pendingUrl !== "") { const u = pendingUrl; load(u) }
         web.lifecycleState = WebEngineView.LifecycleState.Active
-        if (url === "" || url === app.newTabUrl()) focusLocationBar()
-        else focusPage()
     }
 
     // A page that finished loading in the shown tab takes the keyboard (so
