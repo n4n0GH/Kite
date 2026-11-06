@@ -51,3 +51,34 @@ test('shortcut actions have icons', () => {
   assert.ok(ids.length > 30);
   assert.deepStrictEqual(ids.filter((id) => !P.ACTION_ICONS[id]), []);
 });
+
+// ---- what comes first when searching, with the real names ----
+const fuzzy = new Function(fs.readFileSync(__dirname + '/fuzzy.js', 'utf8').replace('.pragma library', '') + '\nreturn {match};')();
+const WEIGHT = new Function(src + '\nreturn SETTING_WEIGHT;')();
+const main = fs.readFileSync(__dirname + '/Main.qml', 'utf8');
+const actions = [...main.matchAll(/\{id: "\w+", group: "([^"]+)", name: "([^"]+)"/g)].map((m) => ({ label: m[1] + ': ' + m[2], weight: 1 }));
+const settings = P.TOGGLES.concat(P.CHOICES).map((t) => ({ label: 'Settings: ' + P.PAGE_TITLES[t.page] + (t.prefix ? ', ' + t.prefix : '') + ': ' + t.text, weight: WEIGHT }));
+// As the command bar does it.
+function search(query) {
+  const out = [];
+  for (const r of actions.concat(settings)) { const m = fuzzy.match(query, r.label); if (m) out.push({ label: r.label, score: m.score * r.weight, setting: r.weight !== 1 }); }
+  out.sort((a, b) => b.score - a.score);
+  const best = out.reduce((top, r) => Math.max(top, r.score), 0);
+  return out.filter((r) => r.score >= best / 3);
+}
+
+test('actions come before settings matching as well', () => {
+  assert.ok(actions.length > 40, 'found the actions: ' + actions.length);
+  const found = search('priva');
+  assert.match(found[0].label, /private/i);
+  assert.strictEqual(found[0].setting, false);
+  const firstSetting = found.findIndex((r) => r.setting);
+  assert.ok(found.slice(0, firstSetting < 0 ? undefined : firstSetting).every((r) => /private/i.test(r.label)), JSON.stringify(found.slice(0, 5)));
+  assert.ok(found.some((r) => r.setting), 'settings stay in the list');
+});
+
+test('a setting is still found first when only its words match', () => {
+  for (const [query, expected] of [['https', /HTTPS-only/], ['javascript', /Enable JavaScript/], ['dark mode', /dark mode/i], ['referrer', /referrer/], ['spell', /spelling/i], ['fingerprint', /fingerprint/]]) {
+    assert.match(search(query)[0].label, expected, query + ': ' + JSON.stringify(search(query).slice(0, 3).map((r) => r.label)));
+  }
+});

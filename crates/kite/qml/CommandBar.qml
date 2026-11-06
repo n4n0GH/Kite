@@ -13,7 +13,7 @@ import "fuzzy.js" as Fuzzy
 // `source()` gives the rows: {title, prefix (dim, before it), icon, run(),
 // keys (shown as keycaps), detail, badges (icons), checked (shows On/Off),
 // current (where the list starts), first (stays on top while searching), extra
-// (more to search in, not highlighted),
+// (more to search in, not highlighted), weight (of its score, if not 1),
 // close() (adds an ×, which keeps the bar open)}.
 QQC2.Popup {
     id: bar
@@ -82,7 +82,7 @@ QQC2.Popup {
             const m = Fuzzy.match(query, label)
             // (`extra`, like a tab's address, only by plain words: letters
             // scattered over a long address match nearly anything.)
-            if (m) out.push(Object.assign({}, r, {label, positions: m.positions, score: m.score}))
+            if (m) out.push(Object.assign({}, r, {label, positions: m.positions, score: m.score * (r.weight === undefined ? 1 : r.weight)}))
             else if (r.extra && words.every(w => (label + " " + r.extra).toLowerCase().includes(w))) out.push(Object.assign({}, r, {label, positions: [], score: -1}))
         }
         out.sort((a, b) => (b.first ? 1 : 0) - (a.first ? 1 : 0) || b.score - a.score)

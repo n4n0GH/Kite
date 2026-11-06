@@ -21,6 +21,9 @@ CommandBar {
         win.toast(t.text + ": " + (now ? "on" : "off") + (t.restart ? " (after restarting Kite)" : ""), "configure")
     }
 
+    // Settings make room for actions, unless what was typed only matches
+    // those by letters scattered over them.
+    readonly property real settingWeight: Palette.SETTING_WEIGHT
     source: () => {
         const out = []
         for (const a of app.shortcutActions) {
@@ -49,7 +52,7 @@ CommandBar {
         out.push({prefix: "Profiles", title: "Manage profiles", icon: "user-identity", run: () => Browser.manageProfiles()})
         for (const t of Palette.TOGGLES) {
             const item = t
-            out.push({prefix: "Settings: " + Palette.PAGE_TITLES[t.page] + (t.prefix ? ", " + t.prefix : ""), title: t.text, icon: "configure", checked: !!app.setting(t.key), run: () => palette.toggle_(item)})
+            out.push({prefix: "Settings: " + Palette.PAGE_TITLES[t.page] + (t.prefix ? ", " + t.prefix : ""), title: t.text, weight: settingWeight, icon: "configure", checked: !!app.setting(t.key), run: () => palette.toggle_(item)})
         }
         for (const p of app.plugins) {
             const plugin = p
@@ -61,8 +64,8 @@ CommandBar {
         }
         for (const c of Palette.CHOICES) {
             const page = c.page
-            out.push({prefix: "Settings: " + Palette.PAGE_TITLES[c.page], title: c.text, icon: "configure", run: () => app.showPreferences(page)})
+            out.push({prefix: "Settings: " + Palette.PAGE_TITLES[c.page], title: c.text, weight: settingWeight, icon: "configure", run: () => app.showPreferences(page)})
         }
-        return out.sort((a, b) => (a.prefix + a.title).localeCompare(b.prefix + b.title))
+        return out.sort((a, b) => (a.weight === undefined ? 0 : 1) - (b.weight === undefined ? 0 : 1) || (a.prefix + a.title).localeCompare(b.prefix + b.title))
     }
 }

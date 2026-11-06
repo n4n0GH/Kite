@@ -3,6 +3,9 @@
 // shortcut actions. palette.test.js keeps this in step with the Settings window:
 // a checkbox added there and not here fails it.
 
+// What a setting's search score counts for, against an action's.
+const SETTING_WEIGHT = 0.5
+
 // Every checkbox in Settings that plainly switches a setting: the palette
 // switches it too. `text` is the checkbox's own label.
 const TOGGLES = [
