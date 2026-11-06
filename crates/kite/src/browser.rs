@@ -295,6 +295,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "wakeLockScript"]
         fn wake_lock_script(self: &Browser) -> QString;
+        /// Temporary storage for third-party frames that are refused it.
+        #[qinvokable]
+        #[cxx_name = "thirdPartyStorageScript"]
+        fn third_party_storage_script(self: &Browser) -> QString;
         /// Script giving pages' custom scrollbars the overlay style
         /// (js/scrollbars.js), or "" without overlay scrollbars.
         #[qinvokable]
@@ -1150,6 +1154,9 @@ impl qobject::Browser {
 
     fn wake_lock_script(&self) -> QString {
         q(include_str!("js/wakelock.js"))
+    }
+    fn third_party_storage_script(&self) -> QString {
+        q(include_str!("js/third_party_storage.js"))
     }
 
     fn scrollbar_script(&self) -> QString {

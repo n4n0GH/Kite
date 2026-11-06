@@ -280,7 +280,7 @@ QtObject {
                 app.liveSettings = o
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
-            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn"].includes(key)) app.installUserScripts()
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage"].includes(key)) app.installUserScripts()
             if (key.startsWith("plugins.")) {
                 app.pluginActions = app.enabledPluginActions()
                 app.installUserScripts()
@@ -614,6 +614,10 @@ QtObject {
             wanted.push({name: "kite:frameForms", sourceCode: Browser.frameFormsScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
+            // Third-party frames are refused storage along with cookies, which crashes
+            // players embedded from elsewhere. (Not if the user turned storage off.)
+            if (setting("web.localStorage"))
+                wanted.push({name: "kite:thirdPartyStorage", sourceCode: Browser.thirdPartyStorageScript(), worldId: 0, runsOnSubFrames: true, injectionPoint: 0})
             // Overlay scrollbars also for pages styling their own.
             const scrollbars = Browser.scrollbarScript()
             if (scrollbars) wanted.push({name: "kite:scrollbars", sourceCode: scrollbars, worldId: 1, runsOnSubFrames: true, injectionPoint: 0})

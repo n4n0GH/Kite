@@ -270,6 +270,7 @@ everything, byte for byte.
 | A plugin's text renders as markup in Qt labels and dialog titles | `kite_core::plugins` refuses `<` in everything shown, because installed plugins come from anyone |
 | A property can't be called `left`, `right`, `top` and so on | They're `FINAL` on `Item`, and the file fails to load |
 | `kite_intercept` runs on the UI thread | Keep it fast |
+| Blocking third-party cookies also denies those frames all storage | Chromium has one check for both, and Qt's cookie filter can't tell them apart. `src/js/third_party_storage.js` gives such frames `localStorage` and `sessionStorage` in memory only, so embedded players don't crash. IndexedDB and the Cache API stay refused |
 | Only a shown tab may hold a certificate warning open | Chromium holds the site's other requests meanwhile (`WebTab.shownInPane`) |
 
 ## On disk
