@@ -153,6 +153,12 @@ pub fn qwebchannel_js() -> &'static str {
     app().qwebchannel_js.get_or_init(|| unsafe { s(kite_cpp_qwebchannel_js()).to_owned() })
 }
 
+/// The `kite:certificate` page, from what the lookup in glue.cpp found.
+#[no_mangle]
+pub unsafe extern "C" fn kite_certificate_page(host: *const c_char, chain_json: *const c_char, error: *const c_char) -> KiteBuf {
+    KiteBuf::from_vec(kite_core::certview::page_from_json(s(host), s(chain_json), s(error)).into_bytes())
+}
+
 /// Serve `moz-extension://` and `kite:` URLs. Returns the body; sets HTTP-like
 /// status and mime type.
 #[no_mangle]

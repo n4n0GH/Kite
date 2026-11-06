@@ -407,6 +407,11 @@ QQC2.TextField {
             list.push({name: "Keep screen on", icon: "video-display", wakeLock: true, key: (field.win.privateMode ? "private:" : "") + Browser.hostOf(t.url)})
             permissions = list
         }
+        // kite:certificate for an https address.
+        function certificatePage(u) {
+            const m = u.match(/^https:\/\/(?:[^\/?#@]*@)?(\[[^\]]+\]|[^:\/?#]+)(?::(\d+))?/i)
+            return "kite:certificate?host=" + encodeURIComponent(m ? m[1].replace(/^\[|\]$/g, "") : "") + (m && m[2] ? "&port=" + m[2] : "")
+        }
         // 0 = ask, 1 = allow, 2 = block
         function stateOf(p) {
             if (p.wakeLock) { const d = field.win.app.wakeLockSites[p.key]; return d === undefined ? 0 : d ? 1 : 2 }
@@ -419,9 +424,19 @@ QQC2.TextField {
         }
         contentItem: ColumnLayout {
             Kirigami.Heading { level: 4; text: field.extName !== "" ? field.extName : Browser.hostOf(field.tab ? field.tab.url : ""); elide: Text.ElideRight; Layout.fillWidth: true }
-            QQC2.Label {
-                Layout.fillWidth: true; wrapMode: Text.Wrap
-                text: field.extName !== "" ? "This page is provided by an extension." : field.tab && field.tab.isSecure ? "Your connection to this site is encrypted." : "Your connection to this site is not encrypted. Information you submit could be viewed by others."
+            RowLayout {
+                Layout.fillWidth: true
+                QQC2.Label {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: field.extName !== "" ? "This page is provided by an extension." : field.tab && field.tab.isSecure ? "Your connection to this site is encrypted." : "Your connection to this site is not encrypted. Information you submit could be viewed by others."
+                }
+                // The site's certificates, in a tab of their own.
+                QQC2.Button {
+                    text: "View Certificate"
+                    icon.name: "certificate-server"
+                    visible: field.extName === "" && field.tab && /^https:/i.test(field.tab.url)
+                    onClicked: { field.win.openTab(siteInfo.certificatePage(field.tab.url), {background: false, afterCurrent: true}); siteInfo.close() }
+                }
             }
             Kirigami.Separator { Layout.fillWidth: true }
             QQC2.CheckBox {

@@ -5,7 +5,15 @@
 // Everything here forwards to Rust via a small C ABI (src/ffi.rs).
 #include <QBuffer>
 #include <QCryptographicHash>
+#include <QAbstractSocket>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QNetworkProxyFactory>
+#include <QRegularExpression>
 #include <QSslCertificate>
+#include <QSslKey>
+#include <QSslSocket>
+#include <QUrlQuery>
 #include <QVariant>
 #include <QWebEngineCertificateError>
 #include <QClipboard>
@@ -47,6 +55,7 @@ extern "C" {
 struct KiteBuf { unsigned char *ptr; size_t len; size_t cap; };
 void kite_buf_free(KiteBuf b);
 KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime);
+KiteBuf kite_certificate_page(const char *host, const char *chainJson, const char *error);
 KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method, int inPrivate);
 void kite_cookie_event(const char *json, int removed, int initial);
 int kite_rpc(const char *url, const char *initiator, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
@@ -98,6 +107,113 @@ extern "C" void kite_cpp_rpc_complete(quint64 id, const unsigned char *data, siz
 }
 
 // ---------------------------------------------------------------------------
+// ---- kite:certificate ----
+// Qt doesn't say which certificate a loaded page came with (only ones it has
+// an error about), so the page asks the site for its chain over a connection of
+// its own. That carries no cookies and nothing is requested over it.
+
+static void replyCertificatePage(QWebEngineUrlRequestJob *job, const QString &host, const QByteArray &chain, const QString &error)
+{
+    auto *buffer = new QBuffer(job);
+    buffer->setData(takeBuf(kite_certificate_page(host.toUtf8().constData(), chain.constData(), error.toUtf8().constData())));
+    buffer->open(QIODevice::ReadOnly);
+    QMultiMap<QByteArray, QByteArray> headers;
+    headers.insert("Cache-Control", "no-store");
+    job->setAdditionalResponseHeaders(headers);
+    job->reply("text/html", buffer);
+}
+
+static QJsonArray certNames(const QSslCertificate &c, bool subject)
+{
+    QJsonArray out;
+    const auto attrs = subject ? c.subjectInfoAttributes() : c.issuerInfoAttributes();
+    for (const QByteArray &attr : attrs) {
+        const auto values = subject ? c.subjectInfo(attr) : c.issuerInfo(attr);
+        for (const QString &v : values) out.append(QJsonArray{QString::fromUtf8(attr), v});
+    }
+    return out;
+}
+
+static QJsonObject describeCertificate(const QSslCertificate &c)
+{
+    QJsonObject o;
+    o["subject"] = certNames(c, true);
+    o["issuer"] = certNames(c, false);
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    o["notBefore"] = c.effectiveDate().toUTC().toString(Qt::ISODate);
+    o["notAfter"] = c.expiryDate().toUTC().toString(Qt::ISODate);
+    o["expired"] = c.expiryDate() < now;
+    o["notYetValid"] = c.effectiveDate() > now;
+    o["selfSigned"] = c.isSelfSigned();
+    const auto alt = c.subjectAlternativeNames();
+    QJsonArray dns, ips, emails;
+    for (const QString &v : alt.values(QSsl::DnsEntry)) dns.append(v);
+    for (const QString &v : alt.values(QSsl::IpAddressEntry)) ips.append(v);
+    for (const QString &v : alt.values(QSsl::EmailEntry)) emails.append(v);
+    o["dns"] = dns;
+    o["ips"] = ips;
+    o["emails"] = emails;
+    const QSslKey key = c.publicKey();
+    const auto algorithm = key.algorithm();
+    o["keyAlgorithm"] = algorithm == QSsl::Rsa ? QStringLiteral("RSA") : algorithm == QSsl::Ec ? QStringLiteral("Elliptic curve")
+        : algorithm == QSsl::Dsa ? QStringLiteral("DSA") : algorithm == QSsl::Dh ? QStringLiteral("Diffie-Hellman") : QStringLiteral("Unknown");
+    o["keyBits"] = key.isNull() ? 0 : key.length();
+    // (Only its text form says this one.)
+    static const QRegularExpression sigAlgorithm(QStringLiteral("Signature Algorithm:\\s*(\\S+)"));
+    o["signatureAlgorithm"] = sigAlgorithm.match(c.toText()).captured(1);
+    o["version"] = QString::fromUtf8(c.version());
+    o["serial"] = QString::fromUtf8(c.serialNumber());
+    o["sha256"] = QString::fromLatin1(c.digest(QCryptographicHash::Sha256).toHex(':').toUpper());
+    o["sha1"] = QString::fromLatin1(c.digest(QCryptographicHash::Sha1).toHex(':').toUpper());
+    o["pem"] = QString::fromLatin1(c.toPem());
+    return o;
+}
+
+// Answers later, without holding up the UI. The socket belongs to the job, so
+// closing the tab first ends the lookup too.
+static void serveCertificatePage(QWebEngineUrlRequestJob *job)
+{
+    const QUrlQuery query(job->requestUrl());
+    const QString host = query.queryItemValue(QStringLiteral("host"), QUrl::FullyDecoded);
+    bool portOk = true;
+    const QString portText = query.queryItemValue(QStringLiteral("port"));
+    const uint port = portText.isEmpty() ? 443 : portText.toUInt(&portOk);
+    // Only Kite itself may make this connection: a web page linking here could
+    // otherwise have it reach any address and port.
+    const QUrl initiator = job->initiator();
+    if (!initiator.isEmpty() && initiator.scheme() != QLatin1String("kite")) {
+        replyCertificatePage(job, host, "[]", QStringLiteral("Open this page from the shield menu in the address bar."));
+        return;
+    }
+    if (host.isEmpty() || !portOk || port == 0 || port > 65535) {
+        replyCertificatePage(job, host, "[]", QStringLiteral("Open this page from the shield menu in the address bar."));
+        return;
+    }
+    auto *socket = new QSslSocket(job);
+    socket->setPeerVerifyMode(QSslSocket::VerifyNone);   // to see it even when it's a bad one
+    // As the page's own connection goes.
+    const auto proxies = QNetworkProxyFactory::systemProxyForQuery(QNetworkProxyQuery(host, int(port), QStringLiteral("https")));
+    if (!proxies.isEmpty()) socket->setProxy(proxies.first());
+    const auto finish = [job, socket, host](const QString &error) {
+        socket->disconnect();
+        QJsonArray chain;
+        if (error.isEmpty())
+            for (const QSslCertificate &c : socket->peerCertificateChain()) chain.append(describeCertificate(c));
+        socket->abort();
+        socket->deleteLater();
+        replyCertificatePage(job, host, QJsonDocument(chain).toJson(QJsonDocument::Compact), error);
+    };
+    QObject::connect(socket, &QSslSocket::encrypted, socket, [finish] { finish(QString()); });
+    QObject::connect(socket, &QAbstractSocket::errorOccurred, socket, [finish, socket] {
+        finish(QStringLiteral("Couldn't get the certificate: %1").arg(socket->errorString()));
+    });
+    auto *timeout = new QTimer(socket);
+    timeout->setSingleShot(true);
+    QObject::connect(timeout, &QTimer::timeout, socket, [finish] { finish(QStringLiteral("Couldn't get the certificate: the site didn't answer in time.")); });
+    timeout->start(10000);
+    socket->connectToHostEncrypted(host, quint16(port));
+}
+
 class KiteSchemeHandler : public QWebEngineUrlSchemeHandler {
 public:
     KiteSchemeHandler(bool inPrivate, QObject *parent) : QWebEngineUrlSchemeHandler(parent), m_private(inPrivate) {}
@@ -120,6 +236,10 @@ public:
                 return;
             }
             replyJson(job, status, takeBuf(out));
+            return;
+        }
+        if (job->requestUrl().scheme() == QLatin1String("kite") && job->requestUrl().path() == QLatin1String("certificate")) {
+            serveCertificatePage(job);
             return;
         }
         int status = 0;

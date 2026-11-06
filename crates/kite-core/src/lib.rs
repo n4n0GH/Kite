@@ -11,6 +11,7 @@ pub mod backup;
 pub mod bookmarks;
 pub mod browser_import;
 pub mod certs;
+pub mod certview;
 pub mod db;
 pub mod downloads;
 pub mod favicons;
