@@ -215,10 +215,12 @@ impl Settings {
         self.save()
     }
 
+    /// Back to its default, or forgotten if it has none.
     pub fn reset(&mut self, key: &str) -> anyhow::Result<()> {
-        if let Some(v) = defaults().get(key) {
-            self.values.insert(key.to_owned(), v.clone());
-        }
+        match defaults().get(key) {
+            Some(v) => self.values.insert(key.to_owned(), v.clone()),
+            None => self.values.remove(key),
+        };
         self.save()
     }
 
@@ -263,6 +265,19 @@ mod pip_shortcut {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resets_to_the_default_or_forgets() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Settings::load(d.path().join("settings.json"));
+        s.set("general.startup", serde_json::json!("blank")).unwrap();
+        s.set("plugins.a.enabled", serde_json::json!(true)).unwrap();
+        s.reset("general.startup").unwrap();
+        s.reset("plugins.a.enabled").unwrap();
+        assert_eq!(s.get("general.startup"), defaults()["general.startup"]);
+        assert_eq!(s.get("plugins.a.enabled"), Value::Null);
+        assert_eq!(Settings::load(d.path().join("settings.json")).get("plugins.a.enabled"), Value::Null);
+    }
+
     #[test]
     fn forgets_what_a_plugin_stored() {
         let d = tempfile::tempdir().unwrap();

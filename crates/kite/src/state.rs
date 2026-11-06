@@ -36,6 +36,15 @@ pub struct App {
 
 static APP: OnceLock<App> = OnceLock::new();
 
+/// What the kite:config page's changes have to come with: only that page has it.
+pub fn config_token() -> &'static str {
+    static TOKEN: OnceLock<String> = OnceLock::new();
+    TOKEN.get_or_init(kite_core::config::secret)
+}
+
+/// What `--factory` did, to say so in the first window.
+pub static STARTUP_NOTICE: Mutex<String> = Mutex::new(String::new());
+
 /// `--no-plugins`: nothing of any plugin runs in this session, and what's stored
 /// about them stays as it is.
 pub static NO_PLUGINS: AtomicBool = AtomicBool::new(false);

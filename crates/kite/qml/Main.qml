@@ -334,6 +334,9 @@ QtObject {
             newWindow({urls: first})
         }
         backgroundHost.reload()
+        const notice = Browser.startupNotice()
+        // (Long enough to read a file's name, and to notice it after starting up.)
+        if (notice && activeWindow) activeWindow.toast(notice, "dialog-information", 30000)
     }
 
     // ---- windows ------------------------------------------------------------

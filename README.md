@@ -222,6 +222,14 @@ own address; a restored session reopens the page itself.
 * **Left out:** videos and other embedded content, and images given as `data:` addresses. Images
   are requested without a referrer, so sites refusing those won't show theirs.
 
+## Advanced settings
+
+`kite:config` lists every setting and lets you change it, including those Settings has no control for
+(like Firefox's `about:config`). Nothing checks that a value makes sense, so the page warns you first. If
+Kite stops working, `kite --factory` saves your settings to a file in the profile and starts with the
+defaults. To bring them back, import that file in Settings → General. Bookmarks, logins and
+extensions aren't touched. `kite --no-plugins` runs no plugins for a session, to rule them out.
+
 ## Known limitations
 
 * Blocking `webRequest` listeners are only asked about `onBeforeRequest`, and must answer

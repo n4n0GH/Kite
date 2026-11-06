@@ -414,6 +414,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
+        /// A change from the kite:config page (WebTab): its answer, as JSON.
+        #[qinvokable]
+        #[cxx_name = "configCommand"]
+        fn config_command(self: Pin<&mut Browser>, message: &QString) -> QString;
+        /// What to tell the user once a window is open, or "".
+        #[qinvokable]
+        #[cxx_name = "startupNotice"]
+        fn startup_notice(self: &Browser) -> QString;
         /// Started with --no-plugins.
         #[qinvokable]
         #[cxx_name = "pluginsDisabled"]
@@ -1283,6 +1291,44 @@ impl qobject::Browser {
         }))
     }
 
+    fn config_command(mut self: Pin<&mut Self>, message: &QString) -> QString {
+        let m: Value = serde_json::from_str(&message.to_string()).unwrap_or(Value::Null);
+        // Only that page has this.
+        if m["token"].as_str() != Some(crate::state::config_token()) {
+            log::warn!("kite:config: a change without its token");
+            return q("null");
+        }
+        let key = m["key"].as_str().unwrap_or("").to_owned();
+        let Some(before) = config_entries().into_iter().find(|e| e.key == key) else {
+            return js(&json!({"key": key, "error": "There is no such setting."}));
+        };
+        let a = app();
+        match m["op"].as_str() {
+            Some("set") => match kite_core::config::parse_value(before.kind, m["value"].as_str().unwrap_or("")) {
+                Ok(value) => {
+                    if let Err(e) = a.shared.settings().set(&key, value) {
+                        return js(&json!({"key": key, "error": e.to_string()}));
+                    }
+                }
+                Err(error) => return js(&json!({"key": key, "error": error})),
+            },
+            Some("reset") => {
+                if let Err(e) = a.shared.settings().reset(&key) {
+                    return js(&json!({"key": key, "error": e.to_string()}));
+                }
+            }
+            _ => return q("null"),
+        }
+        let value = a.shared.settings().get(&key);
+        apply_setting(&key, &value);
+        self.as_mut().setting_changed(q(&key), js(&value));
+        js(&json!({"key": key, "entry": config_entries().into_iter().find(|e| e.key == key)}))
+    }
+
+    fn startup_notice(&self) -> QString {
+        q(std::mem::take(&mut *crate::state::STARTUP_NOTICE.lock().unwrap_or_else(|e| e.into_inner())))
+    }
+
     fn plugins_disabled(&self) -> bool {
         crate::state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -1619,6 +1665,21 @@ pub fn parse_netscape(html: &str) -> Vec<Node> {
         stack.last_mut().unwrap().children.push(done);
     }
     stack.pop().map(|r| r.children).unwrap_or_default()
+}
+
+/// Every setting for kite:config: those with defaults, those stored, and what plugins
+/// declare.
+pub(crate) fn config_entries() -> Vec<kite_core::config::Entry> {
+    let mut defaults = kite_core::settings::defaults();
+    for p in all_plugins() {
+        defaults.insert(format!("plugins.{}.enabled", p.id), Value::Bool(p.default_enabled));
+        for (key, value) in p.settings {
+            defaults.insert(format!("plugins.{}.{key}", p.id), value);
+        }
+    }
+    let settings = app().shared.settings();
+    let stored: serde_json::Map<String, Value> = settings.all().iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), v.clone())).collect();
+    kite_core::config::entries(&stored, &defaults)
 }
 
 /// A plugin file being asked about, kept as it was read: what's installed is what

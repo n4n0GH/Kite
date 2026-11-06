@@ -197,11 +197,16 @@ listeners and `declarativeNetRequest`, then the content blocker.
 which matches on the page name:
 
 `kite:start` (with `speeddial`, `newtab` and `home`), `kite:search`, `kite:favicon`, `kite:startpage/…`,
-`kite:reader`, `kite:dangerous` and `kite:https-only`.
+`kite:reader`, `kite:dangerous`, `kite:https-only` and `kite:config`.
 
 `kite:certificate` is the exception. It answers later from C++, after its own TLS connection. Any web
 page can link to a `kite:` address, so pages that act on their parameters check the request's
 initiator first.
+
+`kite:config` (`kite_core::config`, with `config_page.js`) lists every setting. It's refused to web
+pages, as it can change settings. Its changes come back as console messages with a secret token only
+that page has: `WebTab.onJavaScriptConsoleMessage` passes them to `Browser.configCommand`, which goes
+through the same steps as `setSetting`.
 
 ### An extension API call
 
@@ -240,6 +245,17 @@ tabs *lazily*: a restored tab has only a `pendingUrl` until it's on view (`WebTa
 `Main` holds `profile`, `privateProfile` and one profile per container (`containerProfile`). Each gets
 the same hooks and scripts (`allProfiles`, `installUserScripts`). Extensions only run in private windows
 if allowed. `kite --private` uses a throwaway profile folder, deleted at exit.
+
+## Getting out of trouble
+
+| Command | Does |
+|---|---|
+| `kite --no-plugins` | Runs no plugin in this session. Nothing stored changes |
+| `kite --factory` | Saves the settings to `settings-before-factory.json` in the profile, plus an untouched copy in `settings-before-factory.original`, then starts with the defaults. Run before anything reads the settings, since they may be what's broken. Bookmarks, logins, extensions and sessions stay |
+
+The saved `.json` can be imported in Settings → General. It leaves out what an import always does, such
+as window positions and the download folder, and drops values of the wrong type. `.original` has
+everything, byte for byte.
 
 ## Things that will bite you
 

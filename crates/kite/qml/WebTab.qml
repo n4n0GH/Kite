@@ -779,6 +779,13 @@ Item {
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
                 onJavaScriptConsoleMessage: (level, message, line, source) => {
+                    // A change from kite:config. (Browser checks its token: another
+                    // page's message could arrive just after going there.)
+                    if (web.url.toString().startsWith("kite:config") && message.startsWith("kite-config:")) {
+                        const answer = Browser.configCommand(message.substring(12))
+                        if (answer !== "null") web.runJavaScript("__kiteConfigDone(" + answer + ")")
+                        return
+                    }
                     if (message.startsWith(wt.app.frameSecret)) {
                         const text = message.substring(wt.app.frameSecret.length)
                         if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))

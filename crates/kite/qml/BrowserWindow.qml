@@ -761,7 +761,7 @@ QQC2.ApplicationWindow {
         toast(ok ? "Opening " + url + " in another app" : "No app here can open " + url, ok ? "document-open" : "dialog-error")
     }
 
-    function toast(message, icon) { toastLabel.text = message; toastIcon.source = icon; toastBox.opacity = 1; toastTimer.restart() }
+    function toast(message, icon, ms) { toastLabel.text = message; toastIcon.source = icon; toastBox.opacity = 1; toastTimer.interval = ms || 4000; toastTimer.restart() }
     function downloadStarted() { downloadsActive++; if (downloadsButton) downloadsButton.pulse() }
 
     function showSidebar(which) { sidebar = (sidebar === which ? "" : which) }

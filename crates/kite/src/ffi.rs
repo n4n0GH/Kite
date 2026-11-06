@@ -229,6 +229,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             }
             // A known phishing or malware site (dangerous-site protection).
             "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
+            // Every setting. It holds what's needed to change them, so no web page gets it.
+            "config" if initiator.is_empty() || initiator.starts_with("kite:") => {
+                (200, "text/html".into(), kite_core::config::page(&crate::browser::config_entries(), crate::state::config_token(), &kite_core::config::secret()).into_bytes())
+            }
+            "config" => (403, "text/plain".into(), vec![]),
             // HTTPS-only: the site has no working https version.
             "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),

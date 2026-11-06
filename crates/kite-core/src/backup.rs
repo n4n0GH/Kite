@@ -99,10 +99,82 @@ pub fn apply_to_db(db: &Connection, backup: &Backup) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `kite --factory`: back to the default settings, after saving the current ones. Gives
+/// the file to import to get them back (Settings → General), and an untouched copy of
+/// the original beside it (what an import leaves out, or a file too broken to import),
+/// or None if nothing had been changed. Only settings: bookmarks, logins, extensions and
+/// the like stay. Nothing is touched if they can't be saved.
+pub fn factory_reset(profile: &crate::Profile) -> anyhow::Result<Option<(std::path::PathBuf, std::path::PathBuf)>> {
+    let current = profile.path("settings.json");
+    if !current.exists() {
+        return Ok(None);
+    }
+    let names = |n: u32| {
+        let number = if n == 1 { String::new() } else { format!("-{n}") };
+        (profile.path(&format!("settings-before-factory{number}.json")), profile.path(&format!("settings-before-factory{number}.original")))
+    };
+    let (import, original) = (1..).map(names).find(|(a, b)| !a.exists() && !b.exists()).expect("a free name");
+    std::fs::copy(&current, &original)?;
+    // (With the search engines and per-site settings, as importing replaces those too.)
+    let db = crate::db::open(&profile.path("browsedata.db"))?;
+    let backup = export(&Settings::load(current.clone()), &db)?;
+    std::fs::write(&import, serde_json::to_string_pretty(&backup)?)?;
+    std::fs::remove_file(&current)?;
+    Ok(Some((import, original)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn factory_saves_and_starts_over() {
+        let t = tempfile::tempdir().unwrap();
+        let profile = crate::Profile::open_at(t.path().join("p"), "p").unwrap();
+        assert_eq!(factory_reset(&profile).unwrap(), None, "nothing changed yet");
+        let path = profile.path("settings.json");
+        let mut s = Settings::load(path.clone());
+        s.set("general.startup", json!("blank")).unwrap();
+        s.set("plugins.vim-keys.enabled", json!(true)).unwrap();
+        s.set("downloads.directory", json!("/somewhere")).unwrap();
+        let (import, original) = factory_reset(&profile).unwrap().unwrap();
+        assert!(!path.exists());
+        assert_eq!(Settings::load(path.clone()).get("general.startup"), defaults()["general.startup"]);
+        // The way back.
+        let back = parse(&std::fs::read_to_string(&import).unwrap()).unwrap();
+        assert_eq!(back.settings["general.startup"], json!("blank"));
+        assert_eq!(back.settings["plugins.vim-keys.enabled"], json!(true));
+        assert!(std::fs::read_to_string(&original).unwrap().contains("/somewhere"), "all of it");
+        // A second time doesn't overwrite the first.
+        Settings::load(path.clone()).set("general.startup", json!("homepage")).unwrap();
+        let (second, _) = factory_reset(&profile).unwrap().unwrap();
+        assert_ne!(second, import);
+        assert_eq!(parse(&std::fs::read_to_string(&import).unwrap()).unwrap().settings["general.startup"], json!("blank"));
+    }
+
+    #[test]
+    fn factory_copes_with_a_file_that_isnt_settings() {
+        let t = tempfile::tempdir().unwrap();
+        let profile = crate::Profile::open_at(t.path().join("p"), "p").unwrap();
+        std::fs::write(profile.path("settings.json"), "{ this is broken").unwrap();
+        let (_, original) = factory_reset(&profile).unwrap().unwrap();
+        assert_eq!(std::fs::read_to_string(original).unwrap(), "{ this is broken");
+        assert!(!profile.path("settings.json").exists());
+    }
+
+    #[test]
+    fn importing_what_factory_saved_drops_what_broke_it() {
+        let t = tempfile::tempdir().unwrap();
+        let profile = crate::Profile::open_at(t.path().join("p"), "p").unwrap();
+        let mut s = Settings::load(profile.path("settings.json"));
+        s.set("appearance.defaultZoom", json!("huge")).unwrap();
+        s.set("general.startup", json!("blank")).unwrap();
+        let (import, _) = factory_reset(&profile).unwrap().unwrap();
+        let back = parse(&std::fs::read_to_string(import).unwrap()).unwrap();
+        assert!(!back.settings.contains_key("appearance.defaultZoom"), "the wrong kind");
+        assert_eq!(back.settings["general.startup"], json!("blank"));
+    }
 
     fn settings(dir: &tempfile::TempDir) -> Settings {
         Settings::load(dir.path().join("settings.json"))

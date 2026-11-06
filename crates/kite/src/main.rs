@@ -61,6 +61,9 @@ Options:
                          if there are several (or uses \"default\")
       --pick-profile     Choose a profile, printing its name
       --private          Start a private browsing session (nothing is saved)
+      --factory          Go back to the default settings, saving the current ones
+                         to a file in the profile first (bookmarks, logins and
+                         extensions stay)
       --no-plugins       Run no plugins this time, for troubleshooting (they stay
                          listed in Settings, where they can be removed)
   -h, --help             Show this help
@@ -80,6 +83,7 @@ fn main() {
     let mut pick = false;
     let mut pick_opens = false;
     let mut private = false;
+    let mut factory = false;
     let mut urls = vec![];
     let mut qt_args: Vec<String> = vec![std::env::args().next().unwrap_or_else(|| "kite".into())];
     let mut it = std::env::args().skip(1);
@@ -103,6 +107,7 @@ fn main() {
                 pick_opens = true;
             }
             "--private" => private = true,
+            "--factory" => factory = true,
             "--no-plugins" => state::NO_PLUGINS.store(true, std::sync::atomic::Ordering::Relaxed),
             s if s.starts_with("--profile=") => {
                 profile = s["--profile=".len()..].to_owned();
@@ -123,6 +128,9 @@ fn main() {
             Some(name) => profile = name,
             None => return,
         }
+    }
+    if factory {
+        factory_reset(&profile, private);
     }
     if let Err(e) = state::init(&profile, urls, private) {
         eprintln!("kite: cannot open profile {profile}: {e}");
@@ -158,6 +166,34 @@ fn main() {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }
     std::process::exit(code);
+}
+
+/// `--factory`, before anything reads the settings: they may be what's broken.
+fn factory_reset(profile: &str, private: bool) {
+    if private {
+        eprintln!("kite: --factory does nothing with --private, which starts from the defaults anyway");
+        return;
+    }
+    if kite_core::profiles::Profiles::open().is_ok_and(|p| p.in_use(profile)) {
+        eprintln!("kite: profile {profile} is in use by a running Kite: close it first, then use --factory");
+        std::process::exit(1);
+    }
+    let saved = kite_core::Profile::open(profile).and_then(|p| kite_core::backup::factory_reset(&p));
+    let notice = match saved {
+        Ok(Some((import, original))) => {
+            eprintln!("kite: default settings. Yours are saved in {}, to bring back with Settings → General → Import Settings (and all of them, as they were, in {}).", import.display(), original.display());
+            format!("Default settings. Yours are saved in {}", import.display())
+        }
+        Ok(None) => {
+            eprintln!("kite: profile {profile} already has the default settings");
+            "Kite already had its default settings".to_owned()
+        }
+        Err(e) => {
+            eprintln!("kite: couldn't save the settings of profile {profile}, so they weren't changed: {e}");
+            std::process::exit(1);
+        }
+    };
+    *state::STARTUP_NOTICE.lock().unwrap_or_else(|e| e.into_inner()) = notice;
 }
 
 /// Chromium's proxy switches for "privacy.proxy": "none" connects directly,
