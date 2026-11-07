@@ -431,6 +431,8 @@ QQC2.ApplicationWindow {
     // A page's own fullscreen (a video's fullscreen button): the tab that
     // asked, and whether the window was fullscreen before (F11).
     property bool contentFullScreen: false
+    // When the mouse was last pressed in this window (ms since the epoch; bootstrap.cpp).
+    property real lastPointerPress: 0
     property var fullScreenTab: null
     property bool wasFullScreen: false
     function enterContentFullScreen(tab) {
@@ -847,7 +849,7 @@ QQC2.ApplicationWindow {
         case "print": printTab(); break
         case "savePage": saveDialog.open(); break
         case "openFile": openDialog.open(); break
-        case "devTools": if (t) t.showDevTools(); break
+        case "devTools": if (t) t.toggleDevTools(); break
         case "readerView": if (t) t.toggleReader(); break
         case "bookmarkPage": if (locationBar) locationBar.toggleBookmark(); break
         case "bookmarkAllTabs": bookmarkAllTabs(); break

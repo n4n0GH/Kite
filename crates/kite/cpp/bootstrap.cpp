@@ -16,6 +16,7 @@
 #include <QPointingDevice>
 #include <QKeySequence>
 #include <QMimeData>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QPointer>
@@ -75,6 +76,9 @@ protected:
             break;
         }
         case QEvent::MouseButtonPress: {
+            // (Browser windows: WebTab.qml tells a click from a page taking the keyboard itself.)
+            if (win->metaObject()->indexOfProperty("lastPointerPress") >= 0)
+                win->setProperty("lastPointerPress", double(QDateTime::currentMSecsSinceEpoch()));
             m_altAlone = false;
             if (!m_replaying) {
                 auto *m = static_cast<QMouseEvent *>(e);

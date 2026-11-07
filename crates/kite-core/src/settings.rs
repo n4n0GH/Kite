@@ -58,6 +58,9 @@ pub fn defaults() -> Map<String, Value> {
         "web.userAgent": "",
         // Google's sign-in refuses Kite unless it appears as Firefox there.
         "web.googleSignIn": true,
+        "devtools.place": "right",             // "right" | "bottom" | "window"
+        "devtools.width": 520,
+        "devtools.height": 320,
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,

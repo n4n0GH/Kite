@@ -375,6 +375,8 @@ Item {
         if (window.currentTab !== wt || !window.active) return
         // Already focused (e.g. after Enter in the address bar): only bring
         // the input method in line with the loaded page.
+        // (Typing in the console while the page reloads.)
+        if (devToolsFocused) return
         if (web.activeFocus) { focusPage(); return }
         if (url === "" || url === app.newTabUrl() || app.isStartPage(url)) return
         const f = window.activeFocusItem
@@ -389,7 +391,9 @@ Item {
     // never see them. Asking Qt to re-check, once the focus has moved,
     // switches the input method off for the page (as a click or Tab would).
     function focusPage() {
+        pageFocusAsked = true
         web.forceActiveFocus()
+        pageFocusAsked = false
         Qt.callLater(() => { if (web.activeFocus) { Qt.inputMethod.reset(); Qt.inputMethod.update(Qt.ImQueryAll) } })
     }
 
@@ -468,10 +472,63 @@ Item {
         Extensions.browserEvent("navigation", JSON.stringify(Object.assign({event: ev, tabId: tabId, url: url, frameId: 0}, extra || {})))
     }
 
+    // ---- developer tools: docked beside the page, or in a window of their own ----
+    // One view all along, moved between those, so what's open in it stays.
+    property string devToolsPlace: "right"
+    property real devToolsWidth: 0
+    property real devToolsHeight: 0
+    readonly property string devToolsDocked: devTools.active && devToolsPlace !== "window" && !window.contentFullScreen ? devToolsPlace : ""
+    // Room for the page and for the tools, however small the window is.
+    readonly property real devToolsSpace: {
+        const whole = devToolsDocked === "bottom" ? tabBody.height : tabBody.width
+        const wanted = devToolsDocked === "bottom" ? devToolsHeight : devToolsWidth
+        const least = Kirigami.Units.gridUnit * 12
+        return Math.max(Math.min(least, whole / 2), Math.min(wanted, whole - least))
+    }
+    readonly property bool devToolsFocused: devTools.item !== null && devTools.item.view.activeFocus
+    // A page being loaded takes the keyboard by itself, in QtWebEngine, as its view gets
+    // replaced, however the load came about and before anything says it started. Typing
+    // in the tools while it reloads goes on, so they get it back: when they've only just
+    // lost it to the page, without a click there, or Kite asking.
+    property real devToolsLostFocusAt: 0
+    property bool pageFocusAsked: false
+    function devToolsFocusTaken() {
+        const now = Date.now()
+        return devTools.item !== null && !pageFocusAsked && now - devToolsLostFocusAt < 100 && now - window.lastPointerPress > 500
+    }
     function showDevTools() {
-        if (!devTools.item) devTools.active = true
-        devTools.item.show()
-        devTools.item.raise()
+        if (!devTools.active) {
+            devToolsPlace = app.setting("devtools.place")
+            devToolsWidth = app.setting("devtools.width")
+            devToolsHeight = app.setting("devtools.height")
+            devTools.active = true
+        }
+        devTools.item.present()
+    }
+    function closeDevTools() {
+        const focused = devToolsFocused
+        devTools.active = false
+        if (focused) focusPage()
+    }
+    function toggleDevTools() {
+        if (devTools.active) closeDevTools()
+        else showDevTools()
+    }
+    function setDevToolsPlace(place) {
+        devToolsPlace = place
+        Browser.setSetting("devtools.place", JSON.stringify(place))
+        devTools.item.settle()
+        devTools.item.present()
+    }
+    // (What it ended up as, not how far past the limit it was dragged.)
+    function rememberDevToolsSize() {
+        if (devToolsDocked === "right") {
+            devToolsWidth = devToolsSpace
+            Browser.setSetting("devtools.width", JSON.stringify(Math.round(devToolsWidth)))
+        } else {
+            devToolsHeight = devToolsSpace
+            Browser.setSetting("devtools.height", JSON.stringify(Math.round(devToolsHeight)))
+        }
     }
     // The element the context menu was opened on. (Developer tools first: until
     // they're attached to the page, there's nothing to select it in.)
@@ -560,9 +617,14 @@ Item {
         }
 
         Item {
-            id: viewHolder
+            id: tabBody
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+        Item {
+            id: viewHolder
+            width: wt.devToolsDocked === "right" ? parent.width - wt.devToolsSpace : parent.width
+            height: wt.devToolsDocked === "bottom" ? parent.height - wt.devToolsSpace : parent.height
 
             Kirigami.PlaceholderMessage {
                 anchors.centerIn: parent
@@ -583,7 +645,13 @@ Item {
                 HoverHandler { id: pointerWatch }
                 profile: wt.app.profileFor(wt.window.privateMode, wt.container)
                 // Split view: clicking into a pane makes it the active one.
-                onActiveFocusChanged: if (activeFocus && wt.window.split) wt.window.activatePane(wt.pane)
+                onActiveFocusChanged: {
+                    if (activeFocus && wt.devToolsFocusTaken()) {
+                        devTools.item.view.forceActiveFocus()
+                        return
+                    }
+                    if (activeFocus && wt.window.split) wt.window.activatePane(wt.pane)
+                }
                 webChannel: channel
                 webChannelWorld: wt.isExtensionPage ? 0 : 1
                 lifecycleState: WebEngineView.LifecycleState.Active
@@ -893,6 +961,40 @@ Item {
                 helpfulAction: Kirigami.Action { text: "Reload"; icon.name: "view-refresh"; onTriggered: { wt.crashed = false; web.reload() } }
             }
         }
+
+        // Developer tools docked beside the page.
+        Item {
+            id: devToolsSlot
+            visible: wt.devToolsDocked !== ""
+            x: wt.devToolsDocked === "right" ? parent.width - width : 0
+            y: wt.devToolsDocked === "bottom" ? parent.height - height : 0
+            width: wt.devToolsDocked === "right" ? wt.devToolsSpace : parent.width
+            height: wt.devToolsDocked === "bottom" ? wt.devToolsSpace : parent.height
+            Kirigami.Separator {
+                width: wt.devToolsDocked === "right" ? implicitWidth : parent.width
+                height: wt.devToolsDocked === "right" ? parent.height : implicitHeight
+                z: 1
+            }
+        }
+        MouseArea {
+            visible: wt.devToolsDocked !== ""
+            z: 2
+            readonly property bool side: wt.devToolsDocked === "right"
+            x: side ? devToolsSlot.x - 3 : 0
+            y: side ? 0 : devToolsSlot.y - 3
+            width: side ? 7 : parent.width
+            height: side ? parent.height : 7
+            preventStealing: true
+            cursorShape: side ? Qt.SplitHCursor : Qt.SplitVCursor
+            onPositionChanged: mouse => {
+                if (!pressed) return
+                const at = mapToItem(tabBody, mouse.x, mouse.y)
+                if (side) wt.devToolsWidth = tabBody.width - at.x
+                else wt.devToolsHeight = tabBody.height - at.y
+            }
+            onReleased: wt.rememberDevToolsSize()
+        }
+        }
     }
 
     property string _lastCommitted: ""
@@ -1100,13 +1202,84 @@ Item {
     Loader {
         id: devTools
         active: false
-        sourceComponent: Window {
-            width: 1000; height: 700
-            title: "Developer Tools — " + wt.title
-            WebEngineView {
+        onLoaded: item.settle()
+        sourceComponent: Item {
+            id: tools
+            readonly property alias view: toolsView
+            anchors.fill: parent
+            // Where the tab says, which can't be a binding: the loader sets the parent too.
+            function settle() { parent = wt.devToolsPlace === "window" ? toolsWindow.contentItem : devToolsSlot }
+            function present() {
+                if (wt.devToolsPlace === "window") { toolsWindow.show(); toolsWindow.raise(); toolsWindow.requestActivate() }
+                toolsView.forceActiveFocus()
+            }
+            Window {
+                id: toolsWindow
+                // (Not kept above the browser, as it otherwise would be.)
+                transientParent: null
+                visible: wt.devToolsPlace === "window"
+                width: 1000; height: 700
+                title: "Developer Tools — " + wt.title
+                onClosing: close => { close.accepted = false; Qt.callLater(wt.closeDevTools) }
+            }
+            ColumnLayout {
                 anchors.fill: parent
-                profile: web.profile
-                inspectedView: web
+                spacing: 0
+                QQC2.ToolBar {
+                    Layout.fillWidth: true
+                    position: QQC2.ToolBar.Header
+                    contentItem: RowLayout {
+                        spacing: Kirigami.Units.smallSpacing
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: Kirigami.Units.smallSpacing
+                            text: "Developer Tools"
+                            elide: Text.ElideRight
+                        }
+                        Repeater {
+                            model: [
+                                {place: "right", text: "Dock to Right", icon: "view-split-left-right"},
+                                {place: "bottom", text: "Dock to Bottom", icon: "view-split-top-bottom"},
+                                {place: "window", text: "Open in a Window", icon: "window-new"},
+                            ]
+                            delegate: QQC2.ToolButton {
+                                required property var modelData
+                                icon.name: modelData.icon
+                                text: modelData.text
+                                display: QQC2.AbstractButton.IconOnly
+                                down: wt.devToolsPlace === modelData.place
+                                onClicked: wt.setDevToolsPlace(modelData.place)
+                                QQC2.ToolTip.text: text
+                                QQC2.ToolTip.visible: hovered
+                                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            }
+                        }
+                        QQC2.ToolButton {
+                            icon.name: "window-close"
+                            text: "Close Developer Tools"
+                            display: QQC2.AbstractButton.IconOnly
+                            onClicked: wt.closeDevTools()
+                            QQC2.ToolTip.text: text
+                            QQC2.ToolTip.visible: hovered
+                            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                        }
+                    }
+                }
+                WebEngineView {
+                    id: toolsView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    profile: web.profile
+                    inspectedView: web
+                    backgroundColor: Kirigami.Theme.backgroundColor
+                    // Split view: clicking into a tab's tools makes its pane the active one.
+                    onActiveFocusChanged: {
+                        if (!activeFocus) wt.devToolsLostFocusAt = Date.now()
+                        else if (wt.window.split) wt.window.activatePane(wt.pane)
+                    }
+                    // (Its own close button, beside its tabs.)
+                    onWindowCloseRequested: Qt.callLater(wt.closeDevTools)
+                }
             }
         }
     }

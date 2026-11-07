@@ -102,7 +102,7 @@ Item {
         }
         function bounce() {
             const f = root.win.activeFocusItem
-            if (root.win.currentTab !== tab || (f && (f.cursorPosition !== undefined || f.editable === true))) {
+            if (root.win.currentTab !== tab || tab.devToolsFocused || (f && (f.cursorPosition !== undefined || f.editable === true))) {
                 stop()
                 return
             }
