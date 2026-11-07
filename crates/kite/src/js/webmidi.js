@@ -90,7 +90,7 @@
     close() {
       if (this.#connection !== 'closed') {
         this.#connection = 'closed';
-        if (this.type === 'input') letClose(this.id);
+        letClose(this.id);
         this._changed();
       }
       return Promise.resolve(this);
@@ -98,7 +98,7 @@
     _openNow() {
       if (this.#connection === 'open' || this.#connection === 'pending') return;
       this.#connection = this.#state === 'connected' ? 'open' : 'pending';
-      if (this.type === 'input') holdOpen(this.id);
+      holdOpen(this.id);
       this._changed();
     }
     _setState(state) {

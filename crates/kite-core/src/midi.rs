@@ -82,6 +82,8 @@ alsa_api! {
     snd_seq_create_simple_port: fn(*mut c_void, *const c_char, c_uint, c_uint) -> c_int;
     snd_seq_connect_from: fn(*mut c_void, c_int, c_int, c_int) -> c_int;
     snd_seq_disconnect_from: fn(*mut c_void, c_int, c_int, c_int) -> c_int;
+    snd_seq_connect_to: fn(*mut c_void, c_int, c_int, c_int) -> c_int;
+    snd_seq_disconnect_to: fn(*mut c_void, c_int, c_int, c_int) -> c_int;
     snd_seq_poll_descriptors_count: fn(*mut c_void, i16) -> c_int;
     snd_seq_poll_descriptors: fn(*mut c_void, *mut libc::pollfd, c_uint, i16) -> c_int;
     snd_seq_event_input: fn(*mut c_void, *mut *mut SeqEvent) -> c_int;
@@ -173,11 +175,13 @@ impl Session {
         unsafe { libc::write(self.wake, b"x".as_ptr().cast(), 1) };
     }
 
-    pub fn open_input(&self, id: &str) {
+    /// Connects to a port, in or out. A hardware port only works while something's connected.
+    pub fn open_port(&self, id: &str) {
         self.send_command(Command::Open(id.to_owned()));
     }
 
-    pub fn close_input(&self, id: &str) {
+    /// Lets a port go. A device restarting, as into a firmware loader, may need that.
+    pub fn close_port(&self, id: &str) {
         self.send_command(Command::Close(id.to_owned()));
     }
 
@@ -339,11 +343,17 @@ impl Client {
             event.queue = QUEUE_DIRECT;
             event.source = [self.id as u8, self.output as u8];
             event.dest = [to.0 as u8, to.1 as u8];
+            let mut sent = -EAGAIN;
             for _ in 0..SEND_TRIES {
-                if (a.snd_seq_event_output_direct)(self.seq, &mut event) != -EAGAIN {
+                sent = (a.snd_seq_event_output_direct)(self.seq, &mut event);
+                if sent != -EAGAIN {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            if sent < 0 {
+                log::warn!("MIDI to {to:?} failed: {sent}");
+                return;
             }
         }
     }
@@ -404,16 +414,13 @@ impl Worker {
                 Command::Stop => return false,
                 Command::AllowSysex => self.allow_sysex = true,
                 Command::Open(id) => self.connect(&id),
-                Command::Close(id) => {
-                    if self.opened.remove(&id) {
-                        if let Some(address) = self.address(&id, "input") {
-                            unsafe { (self.client.alsa.snd_seq_disconnect_from)(self.client.seq, self.client.input, address.0, address.1) };
-                        }
-                    }
-                }
+                Command::Close(id) => self.disconnect(&id),
                 Command::Send(id, data) => {
                     if valid_messages(&data, self.allow_sysex) {
                         if let Some(address) = self.address(&id, "output") {
+                            if !self.opened.contains(&id) {
+                                self.connect(&id);
+                            }
                             unsafe { self.client.send(address, &data) };
                         }
                     }
@@ -429,10 +436,28 @@ impl Worker {
 
     fn connect(&mut self, id: &str) {
         self.opened.insert(id.to_owned());
-        let Some(address) = self.address(id, "input") else { return };
-        let connected = unsafe { (self.client.alsa.snd_seq_connect_from)(self.client.seq, self.client.input, address.0, address.1) };
+        let (a, c) = (self.client.alsa, &self.client);
+        let connected = if let Some(address) = self.address(id, "input") {
+            unsafe { (a.snd_seq_connect_from)(c.seq, c.input, address.0, address.1) }
+        } else if let Some(address) = self.address(id, "output") {
+            unsafe { (a.snd_seq_connect_to)(c.seq, c.output, address.0, address.1) }
+        } else {
+            return;
+        };
         if connected < 0 {
-            log::debug!("can't connect to MIDI input {address:?}: {connected}");
+            log::warn!("can't connect to MIDI port {id}: {connected}");
+        }
+    }
+
+    fn disconnect(&mut self, id: &str) {
+        if !self.opened.remove(id) {
+            return;
+        }
+        let (a, c) = (self.client.alsa, &self.client);
+        if let Some(address) = self.address(id, "input") {
+            unsafe { (a.snd_seq_disconnect_from)(c.seq, c.input, address.0, address.1) };
+        } else if let Some(address) = self.address(id, "output") {
+            unsafe { (a.snd_seq_disconnect_to)(c.seq, c.output, address.0, address.1) };
         }
     }
 
@@ -470,11 +495,12 @@ impl Worker {
             return;
         }
         let before = std::mem::replace(&mut self.table, table);
-        // An open input that's where it was stays connected. One that's back, or moved,
+        // An open port that's where it was stays connected. One that's back, or moved,
         // needs connecting; one that's gone stays wanted, for when it comes back.
         for id in self.opened.clone() {
-            let was = before.iter().find(|k| k.port.id == id && k.port.kind == "input").map(|k| k.address);
-            if self.address(&id, "input").is_some_and(|now| Some(now) != was) {
+            let was = before.iter().find(|k| k.port.id == id).map(|k| k.address);
+            let now = self.table.iter().find(|k| k.port.id == id).map(|k| k.address);
+            if now.is_some() && now != was {
                 self.connect(&id);
             }
         }
@@ -668,7 +694,7 @@ mod tests {
                 let got = unsafe { (a.snd_seq_event_input)(self.client.seq, &mut event) };
                 if got < 0 || event.is_null() {
                     quiet += 1;
-                    std::thread::sleep(Duration::from_millis(10));
+                    std::thread::sleep(Duration::from_millis(5));
                     continue;
                 }
                 quiet = 0;
@@ -731,11 +757,11 @@ mod tests {
         let input = id_of(&ports, "Kite Test One", "input");
         device.play(&[0x90, 61, 1]);
         assert_eq!(next_message_within(&events, Duration::from_millis(300)), None, "not open yet");
-        session.open_input(&input);
+        session.open_port(&input);
         std::thread::sleep(Duration::from_millis(100));
         device.play(&[0x90, 61, 1]);
         assert_eq!(next_message(&events), Some(vec![0x90, 61, 1]));
-        session.close_input(&input);
+        session.close_port(&input);
         std::thread::sleep(Duration::from_millis(100));
         device.play(&[0x90, 62, 1]);
         assert_eq!(next_message_within(&events, Duration::from_millis(300)), None, "closed again");
@@ -745,7 +771,7 @@ mod tests {
     fn real_sysex_needs_the_permission() {
         let Some((session, ports, device, events)) = setup("Kite Test Two", false) else { return };
         let (output, input) = (id_of(&ports, "Kite Test Two", "output"), id_of(&ports, "Kite Test Two", "input"));
-        session.open_input(&input);
+        session.open_port(&input);
         std::thread::sleep(Duration::from_millis(100));
 
         let sysex = vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7];
@@ -762,11 +788,63 @@ mod tests {
         assert_eq!(next_message(&events), Some(sysex));
     }
 
+    /// What the sequencer says is connected to a device's port, which a hardware port needs
+    /// to work at all: sent directly, it refuses with ENODEV. None without this to read.
+    fn connections_of(client: c_int) -> Option<String> {
+        let text = std::fs::read_to_string("/proc/asound/seq/clients").ok()?;
+        let start = text.find(&format!("Client {client:3} :"))?;
+        let rest = &text[start + 1..];
+        let end = rest.find("\nClient ").unwrap_or(rest.len());
+        Some(rest[..end].to_owned())
+    }
+
+    #[test]
+    fn outputs_are_connected_while_open_as_hardware_needs() {
+        let Some((session, ports, device, _events)) = setup("Kite Test Seven", false) else { return };
+        let output = id_of(&ports, "Kite Test Seven", "output");
+        if connections_of(device.client.id).is_none() {
+            return;
+        }
+
+        session.open_port(&output);
+        std::thread::sleep(Duration::from_millis(100));
+        let open = connections_of(device.client.id).unwrap();
+        let wanted = open.lines().filter(|l| l.contains("Connected From")).any(|l| l.split([' ', ',']).any(|part| part.ends_with(":1") && part != "0:1"));
+        assert!(wanted, "connected to our output port: {open}");
+
+        session.close_port(&output);
+        std::thread::sleep(Duration::from_millis(100));
+        let closed = connections_of(device.client.id).unwrap();
+        let still = closed.lines().filter(|l| l.contains("Connected From")).any(|l| l.split([' ', ',']).any(|part| part.ends_with(":1") && part != "0:1"));
+        assert!(!still, "let go again: {closed}");
+    }
+
+    #[test]
+    fn sending_connects_if_it_was_not_opened_first() {
+        let Some((session, ports, device, _events)) = setup("Kite Test Eight", false) else { return };
+        session.send(&id_of(&ports, "Kite Test Eight", "output"), vec![0x90, 65, 1]);
+        std::thread::sleep(Duration::from_millis(100));
+        let Some(open) = connections_of(device.client.id) else { return };
+        assert!(open.contains("Connected From"), "{open}");
+        assert_eq!(device.heard(), [0x90, 65, 1]);
+    }
+
+    #[test]
+    fn long_sysex_goes_out_whole_and_in_order() {
+        let Some((session, ports, device, _events)) = setup("Kite Test Nine", true) else { return };
+        let mut long = vec![0xF0];
+        // (Within what the device's queue here holds, as it isn't reading while it's sent.)
+        long.extend((0..3000).map(|i| (i % 128) as u8));
+        long.push(0xF7);
+        session.send(&id_of(&ports, "Kite Test Nine", "output"), long.clone());
+        assert_eq!(device.heard(), long);
+    }
+
     #[test]
     fn long_sysex_arrives_whole() {
         let Some((session, ports, device, events)) = setup("Kite Test Three", true) else { return };
         let input = id_of(&ports, "Kite Test Three", "input");
-        session.open_input(&input);
+        session.open_port(&input);
         std::thread::sleep(Duration::from_millis(100));
         let mut long = vec![0xF0];
         long.extend((0..3000).map(|i| (i % 128) as u8));
@@ -797,7 +875,7 @@ mod tests {
     #[test]
     fn another_device_arriving_leaves_open_inputs_connected() {
         let Some((session, ports, device, events)) = setup("Kite Test Six", false) else { return };
-        session.open_input(&id_of(&ports, "Kite Test Six", "input"));
+        session.open_port(&id_of(&ports, "Kite Test Six", "input"));
         std::thread::sleep(Duration::from_millis(100));
         let _another = Device::new("Kite Test Six Other").expect("a sequencer");
         std::thread::sleep(Duration::from_millis(200));

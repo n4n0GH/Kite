@@ -53,6 +53,7 @@ function page({ answer = () => ({ granted: true, ports: [INPUT, OUTPUT] }), stat
 }
 
 const access = (p, options) => p.navigator.requestMIDIAccess(options);
+const sends = (p) => p.ops.filter((o) => o.op === 'send');
 const only = (map) => [...map.values()][0];
 
 test('left alone where it cannot work', () => {
@@ -131,6 +132,19 @@ test('an input stays open while another access has it open', async () => {
   assert.deepStrictEqual(p.ops[1], { op: 'close', id: 'in1' });
 });
 
+test('an output connects to its device while open, as hardware needs, and lets go', async () => {
+  const p = page();
+  const output = only((await access(p)).outputs);
+  await output.open();
+  assert.strictEqual(output.connection, 'open');
+  assert.deepStrictEqual(p.ops, [{ op: 'open', id: 'out1' }]);
+  await output.close();
+  assert.strictEqual(output.connection, 'closed');
+  assert.deepStrictEqual(p.ops[1], { op: 'close', id: 'out1' });
+  output.send([0x90, 1, 1]);
+  assert.deepStrictEqual(p.ops.slice(2).map((o) => o.op), ['open', 'send'], 'sending opens it first');
+});
+
 test('SysEx is not delivered without having asked for it', async () => {
   const p = page();
   const input = only((await access(p)).inputs);
@@ -145,14 +159,14 @@ test('send: what the standard refuses', async () => {
   const output = only((await access(p)).outputs);
   output.send([0x90, 60, 100]);
   output.send(Uint8Array.of(0xC0, 5));
-  assert.deepStrictEqual(p.ops.map((o) => o.data), [[0x90, 60, 100], [0xC0, 5]]);
+  assert.deepStrictEqual(sends(p).map((o) => o.data), [[0x90, 60, 100], [0xC0, 5]]);
   assert.strictEqual(output.connection, 'open', 'sending opens it');
   for (const bad of [[60], [0x90, 60], [0x90, 60, 200], [0xF7], [0xF4], [300], [-1], ['x']]) {
     assert.throws(() => output.send(bad), (e) => e.name === 'TypeError', JSON.stringify(bad));
   }
   assert.throws(() => output.send([0xF0, 1, 0xF7]), (e) => e.name === 'InvalidAccessError');
   assert.throws(() => output.send([0x90, 1, 2, 0xF0, 1, 0xF7]), (e) => e.name === 'InvalidAccessError');
-  assert.strictEqual(p.ops.length, 2, 'none of that was sent');
+  assert.strictEqual(sends(p).length, 2, 'none of that was sent');
 });
 
 test('send: SysEx with access to it, and whole only', async () => {
@@ -160,7 +174,7 @@ test('send: SysEx with access to it, and whole only', async () => {
   const output = only((await access(p, { sysex: true })).outputs);
   output.send([0xF0, 1, 2, 0xF7]);
   output.send([0xF0, 1, 0xF8, 2, 0xF7]);
-  assert.strictEqual(p.ops.length, 2);
+  assert.strictEqual(sends(p).length, 2);
   assert.throws(() => output.send([0xF0, 1, 2]), (e) => e.name === 'TypeError');
   assert.throws(() => output.send([0xF0, 1, 0x90, 0xF7]), (e) => e.name === 'TypeError');
 });
@@ -171,14 +185,14 @@ test('send later, and clear what has not gone yet', async () => {
   const at = performance.now();
   output.send([0x90, 1, 1], at + 20);
   output.send([0x90, 2, 2], at + 400);
-  assert.strictEqual(p.ops.length, 0);
+  assert.strictEqual(sends(p).length, 0);
   await new Promise((r) => setTimeout(r, 60));
-  assert.deepStrictEqual(p.ops.map((o) => o.data), [[0x90, 1, 1]]);
+  assert.deepStrictEqual(sends(p).map((o) => o.data), [[0x90, 1, 1]]);
   output.clear();
   await new Promise((r) => setTimeout(r, 420));
-  assert.strictEqual(p.ops.length, 1);
+  assert.strictEqual(sends(p).length, 1);
   output.send([0x90, 3, 3], at);
-  assert.strictEqual(p.ops.length, 2, 'a time gone by is now');
+  assert.strictEqual(sends(p).length, 2, 'a time gone by is now');
 });
 
 test('devices coming and going', async () => {

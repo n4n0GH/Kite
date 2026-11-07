@@ -1544,8 +1544,8 @@ impl qobject::Browser {
         let Ok(command) = serde_json::from_str::<Value>(&command.to_string()) else { return };
         let id = command["id"].as_str().unwrap_or_default();
         match command["op"].as_str() {
-            Some("open") => session.open_input(id),
-            Some("close") => session.close_input(id),
+            Some("open") => session.open_port(id),
+            Some("close") => session.close_port(id),
             Some("allowSysex") => session.allow_sysex(),
             Some("send") => {
                 let Some(data) = command["data"].as_array() else { return };
