@@ -121,7 +121,7 @@ QQC2.Menu {
                 : modelData.type === "separator" ? sepComp.createObject(null) : extItemComp.createObject(null, {node: modelData, ctxMenu: menu})
         }
         onObjectAdded: (i, o) => {
-            // (Before the last section: its separator, source and Inspect.)
+            // (Before the last section: its separator, source and Inspect Element.)
             const at = menu.count - 3
             if (o.item instanceof QQC2.Menu) menu.insertMenu(at, o.item); else menu.insertItem(at, o.item)
         }
@@ -172,5 +172,5 @@ QQC2.Menu {
 
     QQC2.MenuSeparator {}
     QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
-    QQC2.MenuItem { text: "Inspect"; icon.name: "utilities-terminal"; onTriggered: { menu.act(WebEngineView.InspectElement); menu.tab.showDevTools() } }
+    QQC2.MenuItem { text: "Inspect Element"; icon.name: "utilities-terminal"; onTriggered: menu.tab.inspectElement() }
 }

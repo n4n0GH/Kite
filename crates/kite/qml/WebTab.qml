@@ -473,6 +473,12 @@ Item {
         devTools.item.show()
         devTools.item.raise()
     }
+    // The element the context menu was opened on. (Developer tools first: until
+    // they're attached to the page, there's nothing to select it in.)
+    function inspectElement() {
+        showDevTools()
+        web.triggerWebAction(WebEngineView.InspectElement)
+    }
 
     Component.onCompleted: window.registerTab(wt)
     // Its row is gone: it's no longer a tab, and its view goes once this turn is over.
