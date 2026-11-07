@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtWebEngine
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "contextmenu.js" as ContextMenu
 
 // Web page context menu, including extension `menus` entries.
 QQC2.Menu {
@@ -11,6 +12,9 @@ QQC2.Menu {
     property var req: null
     property string linkUrl: ""
     property string mediaUrl: ""
+    // A link to an image, on an image: one set of entries, for where the link goes.
+    readonly property bool linkIsImage: ContextMenu.linkLeadsToImage(linkUrl, mediaUrl, mediaType === ContextMenuRequest.MediaTypeImage)
+    readonly property string linkNoun: linkIsImage ? "Image" : "Link"
     property int mediaType: 0
     property string selection: ""
     // The selected text, if it is an address without being a link on the page.
@@ -43,7 +47,7 @@ QQC2.Menu {
         info = {contexts: contexts, pageUrl: tab.url, frameUrl: tab.url, linkUrl: linkUrl || undefined, linkText: request.linkText || undefined,
                 srcUrl: mediaUrl || undefined, selectionText: selection || undefined, editable: editable,
                 mediaType: mediaType === ContextMenuRequest.MediaTypeImage ? "image" : mediaType === ContextMenuRequest.MediaTypeVideo ? "video" : mediaType === ContextMenuRequest.MediaTypeAudio ? "audio" : undefined}
-        extItems = tab.isExtensionPage ? [] : tab.window.pluginContextItems(info).concat(JSON.parse(Extensions.menus(JSON.stringify(Object.assign({incognito: tab.window.privateMode}, info)))))
+        extItems = tab.isExtensionPage ? [] : tab.window.pluginContextItems(Object.assign({linkIsImage: linkIsImage}, info)).concat(JSON.parse(Extensions.menus(JSON.stringify(Object.assign({incognito: tab.window.privateMode}, info)))))
         popup()
     }
 
@@ -58,23 +62,23 @@ QQC2.Menu {
     QQC2.MenuItem { visible: !menu.linkUrl && !menu.selection && !menu.mediaUrl && !menu.editable; height: visible ? implicitHeight : 0; text: "Save Page As…"; icon.name: "document-save-as"; onTriggered: menu.tab.window.savePage() }
 
     // Links
-    QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, fromLink: true, container: menu.tab.container}) }
+    QQC2.MenuItem { id: openLinkInTab; visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, fromLink: true, container: menu.tab.container}) }
     // Split view: in the other pane (starting split view), shown there while
     // this pane stays the active one.
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, openerTabId: menu.tab.tabId, container: menu.tab.container}) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.linkUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, openerTabId: menu.tab.tabId, container: menu.tab.container}) }
     // (A property: a Menu declared inside a Menu is always added to it.)
     property ContainerMenu _containerMenu: ContainerMenu {
-        title: "Open Link in Container Tab"
+        title: "Open " + menu.linkNoun + " in Container Tab"
         app: menu.linkUrl && !menu.tab.window.privateMode ? menu.tab.app : null
         parentMenu: menu
         after: openLinkInTab
         onChosen: c => menu.tab.window.openTab(menu.linkUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: c})
     }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: menu.tab.window.privateMode}) }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark Link"; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save Link As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadLinkToDisk) }
-    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: menu.tab.window.privateMode}) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark " + menu.linkNoun; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save " + menu.linkNoun + " As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadLinkToDisk) }
+    QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: menu.linkIsImage ? "Copy Image Address" : "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
 
     // Media
     QQC2.MenuItem {
@@ -83,11 +87,11 @@ QQC2.Menu {
         // The video under the pointer (request position is in view pixels).
         onTriggered: { const z = menu.tab.view.zoomFactor || 1; menu.tab.app.startPip(menu.tab, menu.req.position.x / z, menu.req.position.y / z) }
     }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadImageToDisk) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadImageToDisk) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Save Media As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadMediaToDisk) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Copy Media Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyMediaUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeVideo || menu.mediaType === ContextMenuRequest.MediaTypeAudio; height: visible ? implicitHeight : 0; text: "Play / Pause"; icon.name: "media-playback-start"; onTriggered: menu.act(WebEngineView.ToggleMediaPlayPause) }

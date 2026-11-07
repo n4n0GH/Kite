@@ -111,8 +111,9 @@ Item {
     function shareItems(info) {
         if (!setting("share")) return []
         const items = []
-        if (info.linkUrl && shareable.test(info.linkUrl)) items.push({title: "Share Link…", data: {title: info.linkText || info.linkUrl, url: info.linkUrl}})
-        if (info.srcUrl && info.mediaType && shareable.test(info.srcUrl)) items.push({title: "Share " + {image: "Image", video: "Video", audio: "Audio"}[info.mediaType] + "…", data: {url: info.srcUrl}})
+        if (info.linkUrl && shareable.test(info.linkUrl)) items.push({title: info.linkIsImage ? "Share Image…" : "Share Link…", data: {title: info.linkText || info.linkUrl, url: info.linkUrl}})
+        // (A link to an image, on an image: the entry above is that image's.)
+        if (info.srcUrl && info.mediaType && !info.linkIsImage && shareable.test(info.srcUrl)) items.push({title: "Share " + {image: "Image", video: "Video", audio: "Audio"}[info.mediaType] + "…", data: {url: info.srcUrl}})
         if (!info.linkUrl && !info.srcUrl && !info.selectionText && !info.editable && shareable.test(info.pageUrl)) items.push({title: "Share Page…", data: {title: win.currentTab ? win.currentTab.title : "", url: info.pageUrl}})
         return items.map(i => ({title: i.title, iconName: "document-share", run: () => root.share(i.data, () => {})}))
     }
@@ -127,8 +128,8 @@ Item {
         Browser.plasmaRefreshDevices()
         if (devices.length === 0) return []
         const sends = []
-        if (info.linkUrl) sends.push({title: info.linkUrl.startsWith("tel:") ? "Call on Device" : "Send Link to Device", url: info.linkUrl})
-        if (info.srcUrl && info.mediaType) sends.push({title: "Send " + {image: "Image", video: "Video", audio: "Audio"}[info.mediaType] + " to Device", url: info.srcUrl})
+        if (info.linkUrl) sends.push({title: info.linkUrl.startsWith("tel:") ? "Call on Device" : info.linkIsImage ? "Send Image to Device" : "Send Link to Device", url: info.linkUrl})
+        if (info.srcUrl && info.mediaType && !info.linkIsImage) sends.push({title: "Send " + {image: "Image", video: "Video", audio: "Audio"}[info.mediaType] + " to Device", url: info.srcUrl})
         if (!info.linkUrl && !info.srcUrl && !info.selectionText && !info.editable) sends.push({title: "Send Page to Device", url: info.pageUrl})
         return sends.filter(s => Browser.plasmaCanSend(s.url)).map(s => ({
             title: s.title,
