@@ -339,7 +339,7 @@ QtObject {
     // Called (queued) by the C++ bootstrap once the profiles are hooked up.
     function start() {
         installUserScripts()
-        Browser.reloadAdblock(true)
+        Browser.refreshAdblock()
         const urls = JSON.parse(Browser.initialUrls())
         const startup = setting("general.startup")
         const session = JSON.parse(Browser.lastSession())

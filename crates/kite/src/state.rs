@@ -130,17 +130,28 @@ impl App {
         self.runtime.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    fn adblock_inputs(&self) -> (Vec<kite_core::adblock::Subscription>, String) {
+        let s = self.shared.settings();
+        (serde_json::from_value(s.get("adblock.subscriptions")).unwrap_or_default(), s.get_str("adblock.customRules"))
+    }
+
     /// Rebuild the content blocker from settings on a worker thread.
     pub fn reload_adblock(&self, download: bool, done: impl FnOnce(anyhow::Result<usize>) + Send + 'static) {
-        let (subs, rules) = {
-            let s = self.shared.settings();
-            (
-                serde_json::from_value::<Vec<kite_core::adblock::Subscription>>(s.get("adblock.subscriptions")).unwrap_or_default(),
-                s.get_str("adblock.customRules"),
-            )
-        };
+        let (subs, rules) = self.adblock_inputs();
         let ab = self.adblock.clone();
         std::thread::spawn(move || done(ab.rebuild(&subs, &rules, download)));
+    }
+
+    /// At start: update the lists on a worker thread, and rebuild the content
+    /// blocker only if the cached engine is out of date (`done` isn't called if not).
+    pub fn refresh_adblock(&self, done: impl FnOnce(anyhow::Result<usize>) + Send + 'static) {
+        let (subs, rules) = self.adblock_inputs();
+        let ab = self.adblock.clone();
+        std::thread::spawn(move || match ab.refresh(&subs, &rules) {
+            Ok(None) => {}
+            Ok(Some(lines)) => done(Ok(lines)),
+            Err(e) => done(Err(e)),
+        });
     }
 }
 

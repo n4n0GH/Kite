@@ -277,6 +277,9 @@ pub mod qobject {
         #[cxx_name = "reloadAdblock"]
         fn reload_adblock(self: Pin<&mut Browser>, download: bool);
         #[qinvokable]
+        #[cxx_name = "refreshAdblock"]
+        fn refresh_adblock(self: Pin<&mut Browser>);
+        #[qinvokable]
         #[cxx_name = "adblockBlocked"]
         fn adblock_blocked(self: &Browser) -> i32;
         #[qinvokable]
@@ -664,6 +667,14 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
+}
+
+fn report_adblock(thread: cxx_qt::CxxQtThread<qobject::Browser>, built: anyhow::Result<usize>) {
+    let msg = match built {
+        Ok(n) => format!("Content blocker ready ({n} filter lines)"),
+        Err(e) => format!("Content blocker error: {e}"),
+    };
+    let _ = thread.queue(move |o| o.adblock_status(q(msg)));
 }
 
 impl qobject::Browser {
@@ -1185,13 +1196,11 @@ impl qobject::Browser {
     // ---- content blocking ---------------------------------------------------
     fn reload_adblock(self: Pin<&mut Self>, download: bool) {
         let thread = self.qt_thread();
-        app().reload_adblock(download, move |r| {
-            let msg = match r {
-                Ok(n) => format!("Content blocker ready ({n} filter lines)"),
-                Err(e) => format!("Content blocker error: {e}"),
-            };
-            let _ = thread.queue(move |o| o.adblock_status(q(msg)));
-        });
+        app().reload_adblock(download, move |r| report_adblock(thread, r));
+    }
+    fn refresh_adblock(self: Pin<&mut Self>) {
+        let thread = self.qt_thread();
+        app().refresh_adblock(move |r| report_adblock(thread, r));
     }
     fn adblock_blocked(&self) -> i32 {
         app().adblock.blocked_count.load(std::sync::atomic::Ordering::Relaxed) as i32
