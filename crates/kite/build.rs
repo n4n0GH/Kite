@@ -39,6 +39,8 @@ fn main() {
     }
     icons.extend(plugin_files.iter().filter(|f| f.ends_with(".js") && !f.ends_with(".test.js")).cloned());
     println!("cargo::rerun-if-changed=icons");
+    // (icons/org.kde.kite.svg is a link to the application's icon.)
+    println!("cargo::rerun-if-changed=../../data/org.kde.kite.svg");
 
     CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml))
         .qrc_resources(icons)

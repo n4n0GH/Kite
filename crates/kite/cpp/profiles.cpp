@@ -158,7 +158,7 @@ extern "C" int kite_pick_profile(int argc, char **argv)
     QApplication::setApplicationName(QStringLiteral("kite"));
     QApplication::setApplicationDisplayName(QStringLiteral("Kite"));
     QApplication::setDesktopFileName(QStringLiteral("org.kde.kite"));
-    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("org.kde.kite"), QIcon::fromTheme(QStringLiteral("internet-web-browser"))));
+    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("org.kde.kite"), QIcon(QStringLiteral(":/qt/qml/org/kde/kite/icons/org.kde.kite.svg"))));
     Picker picker;
     if (picker.exec() != QDialog::Accepted) return 0;
     kite_profile_chosen(picker.chosen().toUtf8().constData());
