@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/keys.js', 'utf8').replace('.pragma library', '');
-const K = new Function(src + '\nreturn {COMMANDS, WINDOW_ACTIONS, bindings, press, conflicts, labels, siteOf, isExcepted, hintTheme, DEFAULT_HINT_COLOR, scrollSpeed, SCROLL_SPEEDS};')();
+const K = new Function(src + '\nreturn {COMMANDS, WINDOW_ACTIONS, bindings, press, conflicts, labels, siteOf, isExcepted, hintTheme, DEFAULT_HINT_COLOR, scrollSpeed, SCROLL_SPEEDS, HINT_ROLES, NG_CLICK, classSaysButton, jsactionClicks, areaBox, withoutWrappers};')();
 const plugin = JSON.parse(fs.readFileSync(__dirname + '/plugin.json', 'utf8'));
 const map = K.bindings(plugin.settings.keys);
 
@@ -121,4 +121,73 @@ test('sites left alone', () => {
   assert.strictEqual(K.siteOf('kite:start'), '');
   assert.ok(K.isExcepted('mail.example.com', ['example.com']));
   assert.ok(!K.isExcepted('notexample.com', ['example.com']));
+});
+
+test('a class can say it is a button', () => {
+  // As 4chan's thread buttons.
+  assert.ok(K.classSaysButton('extButton threadHideButton'));
+  assert.ok(K.classSaysButton('extButton expbtn'));
+  assert.ok(K.classSaysButton('BTN'));
+  assert.ok(!K.classSaysButton('pointer'));
+  assert.ok(!K.classSaysButton(''));
+  assert.ok(!K.classSaysButton(null));
+});
+
+test('jsaction: only what happens on a click', () => {
+  assert.ok(K.jsactionClicks('click:ns.action'));
+  assert.ok(K.jsactionClicks('ns.action'));
+  assert.ok(K.jsactionClicks('mouseover:a.b; click:ns.action'));
+  assert.ok(K.jsactionClicks(' click : ns.action '.replace('click : ', 'click:')));
+  assert.ok(!K.jsactionClicks('mouseover:ns.action'));
+  assert.ok(!K.jsactionClicks('click:none.action'));
+  assert.ok(!K.jsactionClicks('none.action'));
+  assert.ok(!K.jsactionClicks('ns'), 'no action');
+  assert.ok(!K.jsactionClicks('click:ns._'));
+  assert.ok(!K.jsactionClicks('a:b:c.d'));
+  assert.ok(!K.jsactionClicks(''));
+  assert.ok(!K.jsactionClicks(null));
+});
+
+test('angular click attributes, however they are written', () => {
+  for (const name of ['ng-click', 'ng:click', 'ng_click', 'data-ng-click', 'x-ng-click', 'data-ng:click']) assert.ok(K.NG_CLICK.includes(name), name);
+  assert.strictEqual(K.NG_CLICK.length, 9);
+});
+
+test('image map areas', () => {
+  const box = (left, top, right, bottom) => ({left, top, right, bottom});
+  assert.deepStrictEqual(K.areaBox('rect', '1,2,30,40', 100, 100), box(1, 2, 30, 40));
+  assert.deepStrictEqual(K.areaBox('RECTANGLE', '1,2,30,40', 100, 100), box(1, 2, 30, 40));
+  assert.deepStrictEqual(K.areaBox('default', '', 100, 50), box(0, 0, 100, 50));
+  assert.deepStrictEqual(K.areaBox('poly', '1,2,30,40,5,6', 100, 100), box(1, 2, 30, 40));
+  assert.deepStrictEqual(K.areaBox('', '1,2,30,40', 100, 100), box(1, 2, 30, 40));
+  const round = K.areaBox('circle', '50,50,10', 100, 100);
+  assert.ok(Math.abs(round.left - (50 - 10 / Math.SQRT2)) < 1e-9);
+  assert.ok(Math.abs(round.bottom - (50 + 10 / Math.SQRT2)) < 1e-9);
+  assert.strictEqual(K.areaBox('rect', '1,2,3', 100, 100), null);
+  assert.strictEqual(K.areaBox('rect', 'a,b,c,d', 100, 100), null);
+  assert.strictEqual(K.areaBox('circle', '1,2', 100, 100), null);
+  assert.strictEqual(K.areaBox('poly', '1,2', 100, 100), null);
+});
+
+test('unsure hints give way to what is close inside them', () => {
+  const tree = {button: {parent: null}};
+  tree.inner = {parent: tree.button};
+  tree.deep1 = {parent: tree.inner};
+  tree.deep2 = {parent: tree.deep1};
+  tree.deep3 = {parent: tree.deep2};
+  const parentOf = el => el.parent;
+  const hint = (el, unsure) => ({el, unsure});
+  const names = list => list.map(h => Object.keys(tree).find(k => tree[k] === h.el));
+  const run = (...list) => names(K.withoutWrappers(list, parentOf));
+
+  assert.deepStrictEqual(run(hint(tree.button, true), hint(tree.inner, false)), ['inner'], 'just inside');
+  assert.deepStrictEqual(run(hint(tree.button, true), hint(tree.deep2, false)), ['deep2'], 'three levels down');
+  assert.deepStrictEqual(run(hint(tree.button, true), hint(tree.deep3, false)), ['button', 'deep3'], 'too far down');
+  assert.deepStrictEqual(run(hint(tree.button, false), hint(tree.inner, false)), ['button', 'inner'], 'sure of itself');
+  assert.deepStrictEqual(run(hint(tree.button, true)), ['button'], 'alone');
+  assert.deepStrictEqual(run(hint(tree.inner, false), hint(tree.button, true)), ['inner', 'button'], 'only looks after it');
+});
+
+test('the roles that get a hint', () => {
+  for (const role of ['button', 'tab', 'link', 'checkbox', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'radio', 'textbox', 'switch', 'option']) assert.ok(K.HINT_ROLES.includes(role), role);
 });

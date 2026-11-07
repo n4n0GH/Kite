@@ -111,3 +111,65 @@ function isExcepted(host, sites) {
     const h = String(host).toLowerCase().replace(/^www\./, "")
     return sites.some(s => h === s || h.endsWith("." + s))
 }
+
+// ---- what gets a link hint ----
+const HINT_ROLES = ["button", "tab", "link", "checkbox", "menuitem", "menuitemcheckbox", "menuitemradio", "radio", "textbox", "switch", "option"]
+const NG_CLICK = ["", "data-", "x-"].flatMap(prefix => ["-", ":", "_"].map(separator => prefix + "ng" + separator + "click"))
+
+// Sites often leave nothing else to say that an element is clickable.
+function classSaysButton(value) {
+    const name = String(value || "").toLowerCase()
+    return name.includes("button") || name.includes("btn")
+}
+
+// Does Google's jsaction attribute say something happens on a click? It's a list of
+// "event:namespace.action", where the event is left out for a click.
+function jsactionClicks(value) {
+    if (!value) return false
+    return value.split(";").some(rule => {
+        const parts = rule.trim().split(":")
+        if (parts.length > 2) return false
+        const event = parts.length === 2 ? parts[0] : "click"
+        const [namespace, action] = parts[parts.length - 1].trim().split(".")
+        return event === "click" && namespace !== "none" && action !== undefined && action !== "_"
+    })
+}
+
+// An image map area's box in its image, or null if its coordinates make none.
+// (Of a polygon, what its first two points span; of a circle, the square inside it.)
+function areaBox(shape, coords, width, height) {
+    const n = String(coords).split(",").map(c => parseInt(c, 10))
+    const kind = String(shape).toLowerCase()
+    let box = null
+    if (kind === "rect" || kind === "rectangle") {
+        if (n.length === 4) box = n
+    } else if (kind === "circle" || kind === "circ") {
+        if (n.length === 3) {
+            const side = n[2] / Math.SQRT2
+            box = [n[0] - side, n[1] - side, n[0] + side, n[1] + side]
+        }
+    } else if (kind === "default") {
+        box = [0, 0, width, height]
+    } else if (n.length >= 4) {
+        box = n
+    }
+    if (!box || box.slice(0, 4).some(Number.isNaN)) return null
+    return {left: box[0], top: box[1], right: box[2], bottom: box[3]}
+}
+
+// Hints in document order, without the unsure ones with another close inside them: what's
+// clickable is often wrapped in what only looks so. Looks at those just after each,
+// as that's where what's inside them is, up to a few levels below it.
+function withoutWrappers(hints, parentOf) {
+    return hints.filter((hint, at) => {
+        if (!hint.unsure) return true
+        for (const next of hints.slice(at + 1, at + 7)) {
+            let up = next.el
+            for (let level = 0; level < 3 && up; level++) {
+                up = parentOf(up)
+                if (up === hint.el) return false
+            }
+        }
+        return true
+    })
+}

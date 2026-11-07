@@ -41,14 +41,18 @@ function run() {
         const y = getComputedStyle(el).overflowY
         return (y === "auto" || y === "scroll") && el.scrollHeight > el.clientHeight + 1
     }
+    // (A body's overflow is usually the viewport's, unless the root has its own.)
+    function scrollsItself(el) {
+        return overflows(el) && (el !== document.body || getComputedStyle(document.documentElement).overflowY !== "visible")
+    }
     function parentOf(el) { return el.parentElement || (el.getRootNode().host || null) }
     let largest = null
     let largestAt = 0
     // What the keys should move: around where the user last was, or the document,
     // or on pages keeping it all in one inner pane, that pane.
     function scroller() {
-        for (let el = lastClicked && lastClicked.isConnected ? lastClicked : deepActive(); el && el !== document.body && el !== document.documentElement; el = parentOf(el)) {
-            if (overflows(el)) return el
+        for (let el = lastClicked && lastClicked.isConnected ? lastClicked : deepActive(); el && el !== document.documentElement; el = parentOf(el)) {
+            if (scrollsItself(el)) return el
         }
         const doc = document.scrollingElement
         if (doc && doc.scrollHeight > doc.clientHeight + 1) return doc
@@ -159,26 +163,127 @@ function run() {
     }
 
     // ---- link hints ----
-    const CLICKABLE = "a[href], area[href], button, input:not([type=hidden]), select, textarea, summary, label, [role=button], [role=link], [role=checkbox], [role=radio], [role=switch], [role=menuitem], [role=tab], [role=option], [onclick], [tabindex]:not([tabindex='-1']), [contenteditable=''], [contenteditable=true]"
-    function allClickable(root, out) {
+    // What gets a hint follows Vimium, as sites are written with it in mind: pages often
+    // catch clicks further up, leaving nothing on an element to say so but its class.
+    function allElements(root, out) {
         for (const el of root.querySelectorAll("*")) {
-            if (el.matches(CLICKABLE)) out.push(el)
-            if (el.shadowRoot) allClickable(el.shadowRoot, out)
+            out.push(el)
+            if (el.shadowRoot) allElements(el.shadowRoot, out)
         }
         return out
     }
-    // In the window, shown, not disabled and not under something else.
-    function usable(el) {
-        if (el.disabled) return null
-        const r = el.getClientRects()[0]
-        if (!r || r.width < 1 || r.height < 1 || r.bottom <= 0 || r.right <= 0 || r.top >= innerHeight || r.left >= innerWidth) return null
-        const s = getComputedStyle(el)
-        if (s.visibility !== "visible" || s.opacity === "0") return null
-        const x = Math.min(innerWidth - 1, Math.max(0, r.left + r.width / 2))
-        const y = Math.min(innerHeight - 1, Math.max(0, r.top + r.height / 2))
-        const hit = el.getRootNode().elementFromPoint(x, y)
-        if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return null
-        return r
+    function crop(r) {
+        const left = Math.max(0, r.left), top = Math.max(0, r.top)
+        const right = Math.min(innerWidth, r.right), bottom = Math.min(innerHeight, r.bottom)
+        const width = right - left, height = bottom - top
+        return width >= 3 && height >= 3 ? {left, top, right, bottom, width, height} : null
+    }
+    // Where it can be seen in the window, if anywhere.
+    function visibleRect(el) {
+        const style = getComputedStyle(el)
+        for (const r of el.getClientRects()) {
+            if (r.width && r.height) {
+                const rect = crop(r)
+                if (rect && style.visibility === "visible" && style.opacity !== "0") return rect
+                continue
+            }
+            // No size: it may still wrap what's taken out of its flow, like a floated
+            // image in a link, or be inline text sized on its children.
+            const noFont = r.height === 0 && style.display.startsWith("inline") && style.fontSize === "0px"
+            for (const child of el.children) {
+                const c = getComputedStyle(child)
+                const out = c.float !== "none" || c.position === "absolute" || c.position === "fixed"
+                if (!out && !(noFont && c.display.startsWith("inline"))) continue
+                const rect = visibleRect(child)
+                if (rect) return rect
+            }
+        }
+        return null
+    }
+    function isDeclaredDisabled(el) {
+        const value = el.getAttribute("aria-disabled")
+        return value !== null && ["", "true"].includes(value.toLowerCase())
+    }
+    // Is it clickable, and how? Null if not. {reason}: what picking it does, if not a
+    // click. {unsure}: a guess, dropped if something clickable is close inside it.
+    function hintKind(el, context) {
+        if (el.disabled || isDeclaredDisabled(el)) return null
+        const tag = el.localName
+        const role = el.getAttribute("role")
+        const editable = el.getAttribute("contenteditable")
+        let clickable = el.hasAttribute("onclick")
+            || (role !== null && HINT_ROLES.includes(role.toLowerCase()))
+            || (editable !== null && ["", "contenteditable", "true"].includes(editable.toLowerCase()))
+            || (context.angular && NG_CLICK.some(name => el.hasAttribute(name)))
+            || jsactionClicks(el.getAttribute("jsaction"))
+        let reason = ""
+        let unsure = false
+        switch (tag) {
+        case "a": case "button": case "select": case "summary": case "object": case "embed":
+            clickable = true
+            break
+        case "textarea":
+            clickable = clickable || !el.readOnly
+            break
+        case "input":
+            clickable = clickable || !(el.type === "hidden" || (el.readOnly && !NOT_TEXT.has(el.type)))
+            break
+        case "label":
+            // Not beside the field it's for, unless that can't be picked itself: a
+            // styled checkbox is often hidden in favor of its label.
+            if (!el.control) { clickable = true; unsure = true }
+            else clickable = clickable || (!el.control.disabled && !isDeclaredDisabled(el.control) && !visibleRect(el.control))
+            break
+        case "img":
+            clickable = clickable || ["zoom-in", "zoom-out"].includes(el.style.cursor)
+            break
+        case "body":
+            if (el !== document.body || clickable) break
+            if (!document.hasFocus()) {
+                if (innerWidth > 3 && innerHeight > 3) { clickable = true; reason = "frame" }
+            } else if (el !== context.scrolling && scrollsItself(el)) { clickable = true; reason = "scroll" }
+            break
+        case "div": case "ol": case "ul":
+            if (!clickable && el !== context.scrolling && scrollsItself(el)) { clickable = true; reason = "scroll" }
+            break
+        case "details":
+            clickable = true
+            reason = "open"
+            break
+        }
+        if (!clickable && classSaysButton(el.getAttribute("class"))) { clickable = true; unsure = true }
+        // A span is mostly around what's really clickable.
+        if (tag === "span") unsure = true
+        if (!clickable) clickable = parseInt(el.getAttribute("tabindex")) >= 0
+        return clickable ? {reason, unsure} : null
+    }
+    // The hints of an image map, one for each area: those have no box of their own.
+    function mapHints(img) {
+        const name = (img.getAttribute("usemap") || "").replace(/^#/, "")
+        if (!name || isDeclaredDisabled(img)) return null
+        const map = img.getRootNode().querySelector('map[name="' + CSS.escape(name) + '"]')
+        const box = img.getClientRects()[0]
+        if (!map || !box) return null
+        if (!visibleRect(img)) return []
+        const out = []
+        for (const area of map.getElementsByTagName("area")) {
+            const part = areaBox(area.shape, area.coords, box.width, box.height)
+            const rect = part && crop({left: box.left + part.left, top: box.top + part.top, right: box.left + part.right, bottom: box.top + part.bottom})
+            if (rect) out.push({el: area, rect, image: img, reason: "", unsure: false})
+        }
+        return out
+    }
+    // Its middle or a corner can be clicked, not being under something else.
+    function reachable({el, rect, image}) {
+        const root = (image || el).getRootNode()
+        const ours = hit => !hit || hit === image || hit === el || el.contains(hit) || hit.contains(el)
+        if (ours(root.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))) return true
+        for (const y of [rect.top + 0.1, rect.bottom - 0.1]) {
+            for (const x of [rect.left + 0.1, rect.right - 0.1]) {
+                if (ours(root.elementFromPoint(x, y))) return true
+            }
+        }
+        return false
     }
     let hints = []
     let hintHost = null
@@ -188,22 +293,34 @@ function run() {
         // Our own scrolling mustn't move the links from under their hints, or pass
         // for the user scrolling away from them.
         stopMoving()
+        const context = {
+            angular: document.getElementsByClassName("ng-scope").length > 0,
+            scrolling: scroller(),
+        }
+        const seen = []
+        for (const el of allElements(document, [])) {
+            const parts = el.localName === "img" ? mapHints(el) : null
+            if (parts) {
+                seen.push(...parts)
+                continue
+            }
+            const kind = hintKind(el, context)
+            const rect = kind && visibleRect(el)
+            if (rect) seen.push({el, rect, reason: kind.reason, unsure: kind.unsure})
+        }
         const found = []
-        const taken = new Set()
-        for (const el of allClickable(document, [])) {
-            const rect = usable(el)
-            if (!rect) continue
+        const taken = new Map()
+        for (const hint of withoutWrappers(seen, parentOf)) {
+            if (!reachable(hint)) continue
             // The same target twice, as a link around its button.
             let same = false
-            for (let up = parentOf(el); up && !same; up = parentOf(up)) {
-                if (taken.has(up)) {
-                    const r = up.getClientRects()[0]
-                    same = !!r && Math.abs(r.left - rect.left) < 8 && Math.abs(r.top - rect.top) < 8
-                }
+            for (let up = parentOf(hint.el); up && !same; up = parentOf(up)) {
+                const r = taken.get(up)
+                same = !!r && Math.abs(r.left - hint.rect.left) < 8 && Math.abs(r.top - hint.rect.top) < 8
             }
             if (same) continue
-            taken.add(el)
-            found.push({el, rect})
+            taken.set(hint.el, hint.rect)
+            found.push(hint)
         }
         hints = found
         return found.length
@@ -249,21 +366,24 @@ function run() {
         hintHost = null
         hints = []
     }
-    function activate(el, newTab) {
+    function activate(el, newTab, rect) {
         const link = el.closest("a[href], area[href]")
         if (newTab && link && /^https?:/.test(link.href)) {
             kitePluginSend({cmd: "openTab", url: link.href})
             return
         }
         lastClicked = el
-        const r = el.getBoundingClientRect()
+        // (An image map's area has no box to ask.)
+        const r = rect || el.getBoundingClientRect()
         const at = {bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2}
         el.dispatchEvent(new PointerEvent("pointerdown", at))
         el.dispatchEvent(new MouseEvent("mousedown", at))
-        if (el.matches("input, textarea, select, [contenteditable], [tabindex]")) el.focus()
+        if (el.matches("input, textarea, select, object, embed, [contenteditable], [tabindex]")) el.focus()
         el.dispatchEvent(new PointerEvent("pointerup", at))
         el.dispatchEvent(new MouseEvent("mouseup", at))
-        el.click()
+        // (Not everything has click(): SVG icons don't.)
+        if (el.click) el.click()
+        else el.dispatchEvent(new MouseEvent("click", at))
     }
     // (`shifted`: Shift was held on the last letter, which also means a new tab.)
     function hintsPick(label, shifted) {
@@ -271,7 +391,13 @@ function run() {
         const el = h && h.el
         const newTab = hintNewTab || shifted
         hintsEnd()
-        if (el && el.isConnected) activate(el, newTab)
+        if (!el || !el.isConnected) return
+        if (h.reason === "frame") window.focus()
+        else if (h.reason === "scroll") lastClicked = el
+        else if (h.reason === "open") {
+            lastClicked = el
+            el.open = !el.open
+        } else activate(el, newTab, h.rect)
     }
 
     // ---- keys ----
