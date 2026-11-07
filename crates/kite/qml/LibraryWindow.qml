@@ -79,8 +79,8 @@ ManagerWindow {
                         ColumnLayout {
                             spacing: 0
                             Layout.fillWidth: true
-                            QQC2.Label { text: modelData.title || modelData.url; elide: Text.ElideRight; Layout.fillWidth: true }
-                            QQC2.Label { text: modelData.url; color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; font: Kirigami.Theme.smallFont; Layout.fillWidth: true }
+                            QQC2.Label { text: Browser.displayUrl(modelData.url); color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                            QQC2.Label { visible: !!modelData.title; text: modelData.title; opacity: 0.7; elide: Text.ElideRight; font: Kirigami.Theme.smallFont; Layout.fillWidth: true }
                         }
                         QQC2.Label { text: new Date(modelData.date).toLocaleString(Qt.locale(), Locale.ShortFormat) + "  ·  " + modelData.count + "×"; opacity: 0.7 }
                     }

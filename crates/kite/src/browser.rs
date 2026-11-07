@@ -621,6 +621,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "hostOf"]
         fn host_of(self: &Browser, url: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "displayUrl"]
+        fn display_url(self: &Browser, url: &QString) -> QString;
 
         // privacy
         #[qinvokable]
@@ -749,21 +752,26 @@ impl qobject::Browser {
     fn complete(&self, text: &QString, in_private: bool) -> QString {
         let text = text.to_string();
         let a = app();
-        let mut out = vec![];
-        let mut seen = std::collections::HashSet::new();
-        for b in a.shared.bookmarks().search(&text).into_iter().take(4) {
-            if seen.insert(b.url.clone()) {
-                out.push(json!({"type": "bookmark", "url": b.url, "title": b.name}));
-            }
-        }
+        let needle = text.trim().to_lowercase();
+        let rank = |url: &str| kite_core::history::match_rank(url, &text);
+        // What fits the address best first, bookmarks before the history among equals.
+        // (A bookmark's keyword is the address it stands for.)
+        let mut bookmarks: Vec<(u8, String, String)> = a.shared.bookmarks().search(&text).into_iter()
+            .map(|b| (if b.keyword.to_lowercase() == needle { 0 } else { rank(&b.url) }, b.url.clone(), b.name.clone()))
+            .collect();
+        bookmarks.sort_by_key(|b| b.0);
+        bookmarks.truncate(4);
+        let mut found: Vec<(u8, u8, String, String)> = bookmarks.into_iter().map(|(r, url, title)| (r, 0, url, title)).collect();
         let from_history = !in_private || a.shared.settings().get_bool("privacy.privateHistorySuggestions");
         let history = if from_history { kite_core::history::complete(&a.shared.db(), &text, 10).unwrap_or_default() } else { vec![] };
-        for h in history {
-            if seen.insert(h.url.clone()) {
-                out.push(json!({"type": "history", "url": h.url, "title": h.title}));
-            }
-        }
-        out.truncate(10);
+        found.extend(history.into_iter().map(|h| (rank(&h.url), 1, h.url, h.title)));
+        found.sort_by_key(|f| (f.0, f.1));
+        let mut seen = std::collections::HashSet::new();
+        let out: Vec<Value> = found.into_iter()
+            .filter(|f| seen.insert(f.2.clone()))
+            .take(10)
+            .map(|(_, source, url, title)| json!({"type": if source == 0 { "bookmark" } else { "history" }, "url": url, "title": title}))
+            .collect();
         js(&Value::Array(out))
     }
 
@@ -812,7 +820,10 @@ impl qobject::Browser {
         let _ = kite_core::history::update_title(&a.shared.db(), &url.to_string(), &title.to_string());
     }
     fn history(&self, query: &QString, start: f64, end: f64, limit: i32) -> QString {
-        let list = kite_core::history::search(&app().shared.db(), &query.to_string(), start as i64, end as i64, limit.max(1) as usize).unwrap_or_default();
+        let query = query.to_string();
+        // Searching is looking for a page; without it, it's what happened, in order.
+        let find = if query.trim().is_empty() { kite_core::history::search } else { kite_core::history::search_ranked };
+        let list = find(&app().shared.db(), &query, start as i64, end as i64, limit.max(1) as usize).unwrap_or_default();
         js(&serde_json::to_value(list).unwrap_or_default())
     }
     fn delete_history(self: Pin<&mut Self>, ids_json: &QString) {
@@ -1803,6 +1814,9 @@ impl qobject::Browser {
             }
             Err(_) => q(""),
         }
+    }
+    fn display_url(&self, url: &QString) -> QString {
+        q(kite_core::util::display_url(&url.to_string()))
     }
     fn host_of(&self, url: &QString) -> QString {
         q(kite_core::util::host_of(&url.to_string()))

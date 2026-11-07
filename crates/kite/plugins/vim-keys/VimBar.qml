@@ -2,7 +2,7 @@ import QtQuick
 import org.kde.kite
 
 // Vim keys' `o` and `O`: open an address or search, in the look of the tab search.
-// What it offers is what the address bar would.
+// What it offers is what the address bar would, in the same order, by address.
 CommandBar {
     id: bar
     property bool newTab: false
@@ -10,6 +10,7 @@ CommandBar {
     property var suggestions: []
     placeholder: newTab ? "Open in a new tab, or search" : "Open an address, or search (Shift+Enter: new tab)"
     emptyText: ""
+    keepOrder: true
 
     function openIt(input) { win.locationBar.go(input, newTab || pickedWithShift ? "tab" : "") }
     source: () => {
@@ -18,11 +19,11 @@ CommandBar {
         const out = [{title: t, icon: "search", detail: "Go or search", first: true, run: () => bar.openIt(t)}]
         for (const c of completions) {
             const url = c.url
-            out.push({title: c.title || url, icon: c.type === "bookmark" ? "bookmarks" : "view-history", extra: url, detail: Browser.hostOf(url), run: () => bar.openIt(url)})
+            out.push({title: Browser.displayUrl(url), icon: c.type === "bookmark" ? "bookmarks" : "view-history", detail: c.title, run: () => bar.openIt(url)})
         }
         for (const s of suggestions) {
             const term = s
-            if (term !== t) out.push({title: term, icon: "search", extra: t, run: () => bar.openIt("? " + term)})
+            if (term !== t) out.push({title: term, icon: "search", run: () => bar.openIt("? " + term)})
         }
         return out
     }

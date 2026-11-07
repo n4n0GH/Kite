@@ -317,21 +317,25 @@ QQC2.TextField {
                         Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth
                         source: modelData.type === "bookmark" ? "bookmarks" : modelData.type === "history" ? "view-history" : "search"
                     }
+                    // The address first: it's what's being typed.
                     QQC2.Label {
-                        text: modelData.type === "go" ? Browser.isExternalUrl(modelData.title) && modelData.title.includes("://") ? "Open " + modelData.title + " in another app" : (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
-                            : modelData.title || modelData.url
-                        elide: Text.ElideRight
-                        // Takes the rest of the row unless a URL follows it (which
+                        text: modelData.url ? Browser.displayUrl(modelData.url) : modelData.type === "go" ? Browser.isExternalUrl(modelData.title) && modelData.title.includes("://") ? "Open " + modelData.title + " in another app" : (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
+                            : modelData.title
+                        color: modelData.url ? Kirigami.Theme.linkColor : Kirigami.Theme.textColor
+                        elide: modelData.url ? Text.ElideMiddle : Text.ElideRight
+                        // Takes the rest of the row unless a title follows it (which
                         // then does). With nothing able to grow, the layout would
                         // spread the spare width over the cells and shift the
                         // text differently in each row.
-                        Layout.fillWidth: modelData.url === ""
+                        Layout.fillWidth: !titleLabel.visible
+                        Layout.maximumWidth: titleLabel.visible ? field.width * 0.6 : -1
                     }
                     QQC2.Label {
-                        visible: modelData.url !== ""
-                        text: "— " + modelData.url
-                        color: Kirigami.Theme.linkColor
-                        elide: Text.ElideMiddle
+                        id: titleLabel
+                        visible: modelData.url !== "" && !!modelData.title
+                        text: "— " + modelData.title
+                        opacity: 0.7
+                        elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
                 }

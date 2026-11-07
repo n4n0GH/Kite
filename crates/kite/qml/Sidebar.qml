@@ -50,7 +50,7 @@ QQC2.Pane {
             model: rows
             function reload() {
                 if (root.mode === "history") {
-                    rows = JSON.parse(Browser.history(search.text, 0, 0, 300)).map(h => ({type: "url", id: h.id, title: h.title || h.url, url: h.url, sub: new Date(h.date).toLocaleString(Qt.locale(), Locale.ShortFormat)}))
+                    rows = JSON.parse(Browser.history(search.text, 0, 0, 300)).map(h => ({type: "url", id: h.id, title: Browser.displayUrl(h.url), pageTitle: h.title, url: h.url, sub: new Date(h.date).toLocaleString(Qt.locale(), Locale.ShortFormat)}))
                 } else if (root.mode === "bookmarks") {
                     if (search.text !== "") { rows = JSON.parse(Browser.searchBookmarks(search.text)); return }
                     if (folder === "") rows = JSON.parse(Browser.bookmarkRoots()).roots
@@ -96,10 +96,22 @@ QQC2.Pane {
                         Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                         Layout.preferredHeight: Layout.preferredWidth
                     }
-                    QQC2.Label {
-                        text: row.text
-                        elide: Text.ElideRight
+                    ColumnLayout {
+                        spacing: 0
                         Layout.fillWidth: true
+                        QQC2.Label {
+                            text: row.text
+                            elide: root.mode === "history" ? Text.ElideMiddle : Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        QQC2.Label {
+                            visible: !!row.modelData.pageTitle
+                            text: row.modelData.pageTitle || ""
+                            opacity: 0.7
+                            font: Kirigami.Theme.smallFont
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
                     }
                     CloseButton {
                         visible: row.deletable

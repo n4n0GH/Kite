@@ -14,7 +14,8 @@ import "fuzzy.js" as Fuzzy
 // keys (shown as keycaps), detail, badges (icons), checked (shows On/Off),
 // current (where the list starts), first (stays on top while searching), extra
 // (more to search in, not highlighted), weight (of its score, if not 1),
-// close() (adds an ×, which keeps the bar open)}.
+// close() (adds an ×, which keeps the bar open)}. With `keepOrder`, `source()` has
+// done the searching: all its rows stay, in its order.
 QQC2.Popup {
     id: bar
     property var win
@@ -27,6 +28,7 @@ QQC2.Popup {
     property real _closedAt: 0
     property var _picked: null
     property bool pickedWithShift: false
+    property bool keepOrder: false
 
     parent: win.contentItem
     width: Math.min(win.width - Kirigami.Units.gridUnit * 2, Math.max(Kirigami.Units.gridUnit * 28, win.width / 2.4))
@@ -74,6 +76,15 @@ QQC2.Popup {
         if (!words.length) {
             rows = all.map(r => Object.assign({}, r, {label: labelOf(r), positions: []}))
             selected = Math.max(0, rows.findIndex(r => r.current))
+            return
+        }
+        if (keepOrder) {
+            rows = all.map(r => {
+                const label = labelOf(r)
+                const m = Fuzzy.match(query, label)
+                return Object.assign({}, r, {label, positions: m ? m.positions : []})
+            })
+            selected = 0
             return
         }
         const out = []

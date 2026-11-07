@@ -288,7 +288,7 @@ impl Service {
             crate::history::complete(&self.0.shared.db(), &query, MAX_HISTORY * 4)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|e| (e.title, e.url))
+                .map(|e| (if e.title.is_empty() { e.url.clone() } else { e.title }, e.url))
                 .collect()
         } else {
             vec![]

@@ -42,6 +42,17 @@ pub fn host_of(url: &str) -> String {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
 
+/// An address as lists show it: without https:// (http:// stays, it's worth knowing)
+/// and without the slash of a main page.
+pub fn display_url(url: &str) -> String {
+    let shown = url.strip_prefix("https://").unwrap_or(url);
+    let scheme = shown.find("://").map_or(0, |i| i + 3);
+    match shown.strip_suffix('/') {
+        Some(main) if !main[scheme..].contains('/') => main.to_owned(),
+        _ => shown.to_owned(),
+    }
+}
+
 /// A local path from what a file dialog gives: a `file:` URL (with its %20s) or a path.
 pub fn local_path(text: &str) -> std::path::PathBuf {
     url::Url::parse(text).ok().filter(|u| u.scheme() == "file").and_then(|u| u.to_file_path().ok()).unwrap_or_else(|| text.into())
@@ -53,6 +64,19 @@ pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) 
 /// Is this where Google signs people in? It refuses browsers it doesn't know.
 pub fn is_google_sign_in(url: &str) -> bool {
     url.starts_with("https://") && host_of(url) == "accounts.google.com"
+}
+
+#[cfg(test)]
+mod display_url_tests {
+    use super::display_url;
+    #[test]
+    fn leaves_out_what_says_nothing() {
+        assert_eq!(display_url("https://www.youtube.com/"), "www.youtube.com");
+        assert_eq!(display_url("https://www.youtube.com/watch?v=abc"), "www.youtube.com/watch?v=abc");
+        assert_eq!(display_url("https://kde.org/news/"), "kde.org/news/");
+        assert_eq!(display_url("http://kde.org/"), "http://kde.org");
+        assert_eq!(display_url("file:///home/me/a.html"), "file:///home/me/a.html");
+    }
 }
 
 #[cfg(test)]
