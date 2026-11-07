@@ -16,7 +16,7 @@ pub struct SiteSettings {
     pub images: i64,
     pub notifications: i64,
     pub geolocation: i64,
-    /// 0 = the global setting, 1 = force dark, 2 = never.
+    /// 0 = the global setting, 1 = force dark, 2 = force light.
     pub dark_mode: i64,
     /// Style sheet added to the site's pages.
     pub css: String,

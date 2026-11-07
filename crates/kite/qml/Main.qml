@@ -605,6 +605,9 @@ QtObject {
                     + " if (document.documentElement) add(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); add() } }).observe(document, {childList: true}) })();"})
             if (e.settings.js)
                 out.push({name: "kite:site-js:" + e.host, worldId: 0, runsOnSubFrames: false, injectionPoint: 1, sourceCode: header + e.settings.js})
+            // Always force light: before the page's scripts, in all its frames.
+            if (e.settings.dark_mode === 2)
+                out.push({name: "kite:site-light:" + e.host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + Browser.forceLightScript()})
             // Fingerprint protection: before the page's scripts, in all its
             // frames; the noise differs per site and per session.
             if (e.settings.fingerprint === 1 && setting("privacy.antiFingerprinting"))
@@ -1084,7 +1087,8 @@ QtObject {
         if (!w) {
             w = comp.createObject(null, Object.assign({app: app}, props || {}))
             _singletons[name] = w
-            w.closing.connect(() => { delete _singletons[name]; w.destroy() })
+            // (A window can refuse, with something to ask first.)
+            w.closing.connect(close => { if (close.accepted) { delete _singletons[name]; w.destroy() } })
         } else if (props) {
             for (const k in props) w[k] = props[k]
         }

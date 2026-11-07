@@ -220,6 +220,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "fingerprintScript"]
         fn fingerprint_script(self: &Browser, seed: u32) -> QString;
+        /// What makes a site light ("Always force light" in Site Settings).
+        #[qinvokable]
+        #[cxx_name = "forceLightScript"]
+        fn force_light_script(self: &Browser) -> QString;
         /// Install the network hooks on new container profiles (Main.qml).
         #[qinvokable]
         #[cxx_name = "hookContainerProfiles"]
@@ -1161,6 +1165,9 @@ impl qobject::Browser {
     }
     fn fingerprint_script(&self, seed: u32) -> QString {
         q(&include_str!("js/fingerprint.js").replace("__KITE_SEED__", &seed.to_string()))
+    }
+    fn force_light_script(&self) -> QString {
+        q(include_str!("js/force_light.js"))
     }
     fn hook_container_profiles(&self) {
         crate::ffi::hook_container_profiles();

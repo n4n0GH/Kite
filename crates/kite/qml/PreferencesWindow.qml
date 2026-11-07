@@ -135,8 +135,10 @@ ManagerWindow {
 
     // A plugin's settings: a submenu each, so the list stays a list.
     function openPluginSettings(plugin) {
-        if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
-        pageStack.push(pluginSettingsPage, {plugin: plugin})
+        leavePage(() => {
+            if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+            pageStack.push(pluginSettingsPage, {plugin: plugin})
+        })
     }
     Component {
         id: pluginSettingsPage
@@ -1274,14 +1276,70 @@ ManagerWindow {
     }
 
     // Leaving a page closes its submenus (a site, a start page file, a plugin).
-    onPageChanged: if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+    property string settledPage: ""
+    Component.onCompleted: settledPage = page
+    onPageChanged: {
+        if (page === settledPage) return
+        leavePage(() => {
+            settledPage = page
+            if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+        })
+    }
+
+    // A submenu with changes not applied (one with "unsaved", so a site's) asks
+    // before it's left, like System Settings. Whatever was on its way waits
+    // for the answer, in order; a page opened from elsewhere may come with
+    // both a change of page and a submenu.
+    property var waitingToLeave: []
+    function leavePage(then) {
+        const current = pageStack.currentItem
+        if (!current || !current.unsaved) { then(); return }
+        waitingToLeave.push(then)
+        if (!unsavedDialog.visible) {
+            unsavedDialog.answer = ""
+            unsavedDialog.open()
+        }
+    }
+    onClosing: close => {
+        const current = pageStack.currentItem
+        if (!current || !current.unsaved) return
+        close.accepted = false
+        if (!unsavedDialog.visible) leavePage(() => w.close())
+    }
+    Kirigami.PromptDialog {
+        id: unsavedDialog
+        property string answer
+        title: "Apply Changes?"
+        subtitle: "The settings of " + (w.pageStack.currentItem ? w.pageStack.currentItem.title : "this site") + " have changed. Apply them or discard them?"
+        standardButtons: Kirigami.Dialog.NoButton
+        customFooterActions: [
+            Kirigami.Action { text: "Apply"; icon.name: "dialog-ok-apply"; onTriggered: { unsavedDialog.answer = "apply"; unsavedDialog.close() } },
+            Kirigami.Action { text: "Discard"; icon.name: "edit-delete"; onTriggered: { unsavedDialog.answer = "discard"; unsavedDialog.close() } },
+            Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: unsavedDialog.close() }
+        ]
+        // (Esc or a click outside is Cancel too.)
+        onClosed: {
+            const waiting = w.waitingToLeave
+            w.waitingToLeave = []
+            if (answer === "") {
+                w.page = w.settledPage
+                return
+            }
+            const current = w.pageStack.currentItem
+            if (answer === "apply") current.applyChanges()
+            else current.discardChanges()
+            for (const then of waiting) then()
+        }
+    }
 
     // Site Settings: sites with their own zoom, dark mode, CSS or JavaScript
     // (stored per host; see sitesettings.rs). The list; a site's settings are
     // a page of their own (also opened from the address bar's site info popup).
     function openSite(host) {
-        if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
-        pageStack.push(siteEditorPage, {host: host})
+        leavePage(() => {
+            if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+            pageStack.push(siteEditorPage, {host: host})
+        })
     }
     Component {
         id: sites
@@ -1308,7 +1366,7 @@ ManagerWindow {
                 const parts = []
                 if (s.zoom > 0) parts.push("Zoom " + s.zoom + "%")
                 if (s.dark_mode === 1) parts.push("Always dark")
-                if (s.dark_mode === 2) parts.push("Never dark")
+                if (s.dark_mode === 2) parts.push("Always light")
                 if (s.cookies === 1) parts.push("Cookies allowed")
                 if (s.cookies === 2) parts.push("Cookies blocked")
                 if (s.cookies === 3) parts.push("Cookies until Kite closes")
@@ -1386,6 +1444,34 @@ ManagerWindow {
             id: sitePage
             property string host
             title: host
+            readonly property bool unsaved: editor.changed
+            function applyChanges() { editor.save() }
+            function discardChanges() { editor.load() }
+            onBackRequested: event => {
+                if (!unsaved) return
+                event.accepted = true
+                // (Kirigami goes back anyway, as it gets a copy of the event. The
+                // page only goes once that's over, so it can be brought back first.)
+                const index = Kirigami.ColumnView.index
+                Qt.callLater(() => {
+                    w.pageStack.currentIndex = index
+                    w.leavePage(() => w.pageStack.pop())
+                })
+            }
+            // Always in view, however long the page gets (like System Settings' bar).
+            footer: QQC2.ToolBar {
+                position: QQC2.ToolBar.Footer
+                contentItem: RowLayout {
+                    QQC2.Button {
+                        text: "Remove Site"
+                        icon.name: "edit-delete"
+                        onClicked: { Browser.clearSiteSettings(sitePage.host); w.app.siteSettingsChanged(sitePage.host); w.pageStack.pop() }
+                    }
+                    QQC2.Button { text: "Reset"; icon.name: "edit-undo"; enabled: editor.changed; onClicked: editor.load() }
+                    Item { Layout.fillWidth: true }
+                    QQC2.Button { text: "Apply"; icon.name: "dialog-ok-apply"; enabled: editor.changed; onClicked: editor.save() }
+                }
+            }
             ColumnLayout {
                 id: editor
                 width: sitePage.width - Kirigami.Units.gridUnit * 2
@@ -1426,7 +1512,7 @@ ManagerWindow {
                     QQC2.ComboBox {
                         id: darkMode
                         Kirigami.FormData.label: "Dark mode:"
-                        model: [(w.get("appearance.forceDarkMode") ? "Like other sites (forced dark)" : "Like other sites (as designed)"), "Always force dark", "Never force dark"]
+                        model: [(w.get("appearance.forceDarkMode") ? "Like other sites (forced dark)" : "Like other sites (as designed)"), "Always force dark", "Always force light"]
                     }
                     // Per-site cookie rules ("privacy.siteCookieRules").
                     QQC2.ComboBox {
@@ -1476,17 +1562,7 @@ ManagerWindow {
                     Layout.preferredHeight: Kirigami.Units.gridUnit * 9
                     QQC2.TextArea { id: js; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "document.querySelector('#banner')?.remove()" }
                 }
-                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and dark mode apply to open tabs right away; CSS and JavaScript when the site's pages are next loaded." }
-                RowLayout {
-                    QQC2.Button { text: "Save"; icon.name: "document-save"; enabled: editor.changed; onClicked: editor.save() }
-                    QQC2.Button { text: "Revert"; icon.name: "edit-undo"; enabled: editor.changed; onClicked: editor.load() }
-                    Item { Layout.fillWidth: true }
-                    QQC2.Button {
-                        text: "Remove Site"
-                        icon.name: "edit-delete"
-                        onClicked: { Browser.clearSiteSettings(sitePage.host); w.app.siteSettingsChanged(sitePage.host); w.pageStack.pop() }
-                    }
-                }
+                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and forced dark apply to open tabs right away; forced light, CSS and JavaScript when the site's pages are next loaded." }
             }
         }
     }
