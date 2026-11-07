@@ -358,6 +358,24 @@ QtObject {
         const notice = Browser.startupNotice()
         // (Long enough to read a file's name, and to notice it after starting up.)
         if (notice && activeWindow) activeWindow.toast(notice, "dialog-information", 30000)
+        Browser.listenForStarts()
+    }
+
+    // Kite started again on this profile, as by a link clicked in another
+    // application: {urls, newWindow, token}.
+    function openFromOutside(request) {
+        Browser.useActivationToken(request.token)
+        // Not into a private window, from outside.
+        const usable = activeWindow && !activeWindow.privateMode ? activeWindow : windows.find(w => !w.privateMode)
+        const w = usable && !request.newWindow ? usable : newWindow({urls: request.urls})
+        if (w === usable) for (const u of request.urls) w.openTab(u, {background: false})
+        if (w.visibility === Window.Minimized) w.showNormal()
+        w.raise()
+        w.requestActivate()
+    }
+    property Connections _startsConn: Connections {
+        target: Browser
+        function onStartedAgain(request) { app.openFromOutside(JSON.parse(request)) }
     }
 
     // ---- windows ------------------------------------------------------------

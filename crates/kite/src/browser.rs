@@ -360,6 +360,15 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "plasmaRunnerPicked"]
         fn plasma_runner_picked(self: Pin<&mut Browser>, picked: QString);
+        /// From here on, a Kite started on this profile passes on what it was asked
+        /// to open (startedAgain). Until then, it waits.
+        #[qinvokable]
+        #[cxx_name = "listenForStarts"]
+        fn listen_for_starts(self: &Browser);
+        /// A Kite started on this profile: {urls, newWindow, token}.
+        #[qsignal]
+        #[cxx_name = "startedAgain"]
+        fn started_again(self: Pin<&mut Browser>, request: QString);
         /// Lets the next window raised take the focus, on Wayland.
         #[qinvokable]
         #[cxx_name = "useActivationToken"]
@@ -1476,6 +1485,18 @@ impl qobject::Browser {
     }
     fn plasma_runner_answer_tabs(&self, tabs: &QString) {
         self.plasma_runner().answer_tabs(serde_json::from_str(&tabs.to_string()).unwrap_or_default());
+    }
+    fn listen_for_starts(&self) {
+        let Some(instance) = crate::state::INSTANCE.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        let qt = self.qt_thread();
+        std::thread::spawn(move || {
+            instance.serve(move |r| {
+                let _ = qt.queue(move |o| {
+                    let urls: Vec<String> = r.urls.iter().map(|u| resolve_input(u)).filter(|u| !u.is_empty()).collect();
+                    o.started_again(js(&json!({"urls": urls, "newWindow": r.urls.is_empty(), "token": r.token})));
+                });
+            });
+        });
     }
     fn use_activation_token(&self, token: &QString) {
         // Qt's Wayland code takes it from there when a window asks to be activated.

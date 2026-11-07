@@ -56,6 +56,9 @@ fn ask_for_profile() -> Option<String> {
 
 const HELP: &str = "Usage: kite [options] [URL...]
 
+If the profile is open in a running Kite, the URLs open there as new tabs, and
+without any, it opens a new window.
+
 Options:
   -p, --profile <name>   Use (or create) the named profile. Without it, Kite asks
                          if there are several (or uses \"default\")
@@ -135,14 +138,26 @@ fn main() {
     }
     if private {
         profile = format!("private-{}", std::process::id());
-    } else if !chosen && kite_core::profiles::Profiles::open().is_ok_and(|p| p.should_ask()) {
-        match ask_for_profile() {
-            Some(name) => profile = name,
-            None => return,
+    } else if !chosen {
+        let profiles = kite_core::profiles::Profiles::open().ok();
+        // A link clicked in another application goes to the Kite that's open,
+        // rather than asking about it each time.
+        let open = profiles.as_ref().filter(|_| !urls.is_empty()).and_then(|p| p.only_open());
+        if let Some(name) = open {
+            profile = name;
+        } else if profiles.is_some_and(|p| p.should_ask()) {
+            match ask_for_profile() {
+                Some(name) => profile = name,
+                None => return,
+            }
         }
     }
     if factory {
         factory_reset(&profile, private);
+    }
+    if !private {
+        let instance = claim_profile(&profile, &urls, qt_args.len() > 1 || state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed));
+        *state::INSTANCE.lock().unwrap_or_else(|e| e.into_inner()) = instance;
     }
     if let Err(e) = state::init(&profile, urls, private) {
         eprintln!("kite: cannot open profile {profile}: {e}");
@@ -183,6 +198,37 @@ fn main() {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }
     std::process::exit(code);
+}
+
+/// Takes the profile, or if a Kite has it, gives it the URLs and ends here. Without
+/// that Kite's answer (it could be an older version), this one runs beside it, so that
+/// what was asked to open still opens.
+fn claim_profile(profile: &str, urls: &[String], ignored_options: bool) -> Option<kite_core::instance::Instance> {
+    use kite_core::instance::{claim, hand_off, Request};
+    let root = match kite_core::Profile::open(profile) {
+        Ok(p) => p.root().to_owned(),
+        Err(e) => {
+            eprintln!("kite: cannot open profile {profile}: {e}");
+            std::process::exit(1);
+        }
+    };
+    if let Some(instance) = claim(&root) {
+        return Some(instance);
+    }
+    let token = std::env::var("XDG_ACTIVATION_TOKEN").unwrap_or_default();
+    match hand_off(&root, &Request { urls: urls.to_vec(), token }) {
+        Ok(()) => {
+            if ignored_options {
+                eprintln!("kite: profile {profile} is open in a running Kite, which went on as it was: close it to start with other options");
+            }
+            std::process::exit(0);
+        }
+        Err(e) => {
+            log::warn!("profile {profile} is in use, and its Kite didn't take this: {e}");
+            // (What looked at the lock only for a moment may have been in the way.)
+            claim(&root)
+        }
+    }
 }
 
 /// `--factory`, before anything reads the settings: they may be what's broken.

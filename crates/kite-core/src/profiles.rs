@@ -74,6 +74,14 @@ impl Profiles {
         file.try_lock().is_err()
     }
 
+    /// The profile open in Kite, if it's just the one: where a link should go,
+    /// without asking.
+    pub fn only_open(&self) -> Option<String> {
+        let mut open = self.list().into_iter().filter(|p| p.in_use);
+        let only = open.next()?;
+        open.next().is_none().then_some(only.name)
+    }
+
     pub fn create(&self, name: &str) -> anyhow::Result<()> {
         validate(name)?;
         let dir = self.dir(name);
@@ -169,6 +177,20 @@ mod tests {
         p.set_choices(&Choices { ask: false, last: "Work".into() }).unwrap();
         assert!(!p.should_ask());
         assert_eq!(Profiles::at(dir.path()).choices().last, "Work");
+    }
+
+    #[test]
+    fn knows_the_only_open_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Profiles::at(dir.path());
+        p.create("Work").unwrap();
+        p.create("Home").unwrap();
+        assert_eq!(p.only_open(), None);
+        let work = lock(&dir.path().join("profiles/Work")).unwrap();
+        assert_eq!(p.only_open().as_deref(), Some("Work"));
+        let home = lock(&dir.path().join("profiles/Home")).unwrap();
+        assert_eq!(p.only_open(), None, "which one isn't clear");
+        drop((work, home));
     }
 
     #[test]

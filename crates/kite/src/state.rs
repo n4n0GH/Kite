@@ -64,14 +64,11 @@ fn install_notifyrc() {
 }
 
 pub fn init(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::Result<()> {
-    init_app(profile, initial_urls, private)?;
-    // Open for as long as Kite runs (the profile picker reads this). A second
-    // Kite started on the profile on purpose just doesn't hold it.
-    if let Some(lock) = kite_core::profiles::lock(app().shared.profile.root()) {
-        std::mem::forget(lock);
-    }
-    Ok(())
+    init_app(profile, initial_urls, private)
 }
+
+/// This Kite's hold on its profile, until `Browser.listenForStarts` puts it to work.
+pub static INSTANCE: Mutex<Option<kite_core::instance::Instance>> = Mutex::new(None);
 
 fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::Result<()> {
     install_notifyrc();

@@ -82,9 +82,8 @@ private:
             const bool inUse = p[QStringLiteral("inUse")].toBool();
             auto *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("user-identity")), inUse ? QStringLiteral("%1 (open)").arg(name) : name, list);
             item->setData(Qt::UserRole, name);
-            // Another Kite has it open: two would overwrite each other's data.
-            if (inUse) item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
-            else if (name == wanted || !current) current = item;
+            // (One that's open can be picked too: the Kite that has it opens a window.)
+            if (name == wanted || !current) current = item;
         }
         list->setCurrentItem(current);
         updateButtons();

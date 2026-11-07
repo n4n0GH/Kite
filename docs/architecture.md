@@ -131,6 +131,7 @@ instead (`qml/ExtBridge.qml`).
 | `reader`, `startpage`, `standin` | Reader view pages; custom start pages; generated stand-in files |
 | `backup`, `browser_import` | The settings file; importing bookmarks from other browsers |
 | `plugins` | Parses and checks plugin manifests; installs, lists and removes plugin files |
+| `instance` | One Kite to a profile: what's started on an open profile hands its URLs to the Kite that has it, and ends |
 | `kwin`, `screensaver` | KWin scripting (picture-in-picture staying on top); screen inhibition |
 
 ### kite-core: the WebExtension platform
@@ -285,6 +286,8 @@ profiles/<name>/
     browsedata.db     history, icons, search engines, site settings
     bookmarks.json    bookmark tree
     session.json      last session, closed tabs and windows
+    profile.lock      held by the Kite that has the profile open
+    instance.sock     where that Kite takes URLs from others started on the profile
     downloads.json    download history
     adblock/          filter subscriptions
     extensions/       registry.json, storage.db and the unpacked extensions
