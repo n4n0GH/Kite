@@ -72,6 +72,9 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Desktop:** Kirigami/Breeze UI following the KDE colour scheme and icon theme, KDE
   notifications, Chromium's overlay scrollbars shown when the pointer nears the edge, Screen
   Wake Lock through the desktop's screensaver inhibition.
+* **Web MIDI:** MIDI devices for sites you allow, through ALSA's sequencer (QtWebEngine has no MIDI
+  of its own). SysEx, which can change a device's settings and firmware, is a permission of its own.
+  Top-level pages only.
 
 ## Building
 
@@ -149,7 +152,7 @@ crates/kite        the application
   cpp/  thin C++: QtWebEngine init, moz-extension:/kite: scheme handlers,
         request interceptor, cookie store hooks and filter, DNS over HTTPS,
         input filter (menu bar on Alt, drags over the window, scrollbar reveal)
-  src/js/  page scripts (Screen Wake Lock shim, scrollbar styling, fingerprint protection)
+  src/js/  page scripts (Screen Wake Lock and Web MIDI shims, scrollbar styling, fingerprint protection)
   icons/   Kite's own icons (a fallback icon theme in the resources)
   qml/  UI: windows, tabs and tab groups, split view, location bar, menus, library,
         downloads, preferences, extensions window (Kirigami / Breeze)

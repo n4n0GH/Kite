@@ -24,6 +24,10 @@ pub struct SiteSettings {
     pub js: String,
     /// 1 = fingerprint protection on ("privacy.antiFingerprinting").
     pub fingerprint: i64,
+    /// Web MIDI: 0 = ask, 1 = allow, 2 = block.
+    pub midi: i64,
+    /// Web MIDI with SysEx, which can change a device's settings and firmware.
+    pub midi_sysex: i64,
 }
 
 impl SiteSettings {
@@ -37,7 +41,7 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
     Ok(db
         .query_row(
             "SELECT zoom_level, allow_cookies, wa_js_enabled, wa_autoload_images, f_notifications, f_geolocation,
-                    wa_force_dark_mode, kite_css, kite_js, kite_fp
+                    wa_force_dark_mode, kite_css, kite_js, kite_fp, kite_midi, kite_midi_sysex
              FROM site_settings WHERE server = ?1",
             [host],
             |r| {
@@ -52,6 +56,8 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
                     css: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
                     js: r.get::<_, Option<String>>(8)?.unwrap_or_default(),
                     fingerprint: r.get::<_, Option<i64>>(9)?.unwrap_or_default(),
+                    midi: r.get::<_, Option<i64>>(10)?.unwrap_or_default(),
+                    midi_sysex: r.get::<_, Option<i64>>(11)?.unwrap_or_default(),
                 })
             },
         )
@@ -68,6 +74,8 @@ const COLUMNS: &[(&str, &str)] = &[
     ("geolocation", "f_geolocation"),
     ("darkMode", "wa_force_dark_mode"),
     ("fingerprint", "kite_fp"),
+    ("midi", "kite_midi"),
+    ("midiSysex", "kite_midi_sysex"),
 ];
 
 const TEXT_COLUMNS: &[(&str, &str)] = &[("css", "kite_css"), ("js", "kite_js")];
@@ -89,7 +97,7 @@ pub fn set_text(db: &Connection, host: &str, key: &str, value: &str) -> anyhow::
 /// All of a site's settings at once, in place of what it had.
 pub fn store(db: &Connection, host: &str, s: &SiteSettings) -> anyhow::Result<()> {
     clear(db, host)?;
-    for (key, value) in [("zoom", s.zoom), ("cookies", s.cookies), ("javascript", s.javascript), ("images", s.images), ("notifications", s.notifications), ("geolocation", s.geolocation), ("darkMode", s.dark_mode), ("fingerprint", s.fingerprint)] {
+    for (key, value) in [("zoom", s.zoom), ("cookies", s.cookies), ("javascript", s.javascript), ("images", s.images), ("notifications", s.notifications), ("geolocation", s.geolocation), ("darkMode", s.dark_mode), ("fingerprint", s.fingerprint), ("midi", s.midi), ("midiSysex", s.midi_sysex)] {
         set(db, host, key, value)?;
     }
     set_text(db, host, "css", &s.css)?;
@@ -127,6 +135,23 @@ pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn midi_decisions_are_kept_and_reset() {
+        let db = crate::db::open_in_memory().unwrap();
+        assert_eq!(get(&db, "a.org").unwrap().midi, 0, "asks");
+        set(&db, "a.org", "midi", 1).unwrap();
+        set(&db, "a.org", "midiSysex", 2).unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!((s.midi, s.midi_sysex), (1, 2));
+        assert_eq!(get(&db, "b.org").unwrap().midi, 0, "for that site only");
+        assert!(!s.is_empty());
+        store(&db, "c.org", &s).unwrap();
+        assert_eq!(get(&db, "c.org").unwrap().midi_sysex, 2, "imports with the rest");
+        reset(&db, "a.org").unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!((s.midi, s.midi_sysex), (0, 0), "cleared with the other permissions");
+    }
 
     #[test]
     fn dark_mode_css_js() {

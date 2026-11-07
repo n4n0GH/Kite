@@ -409,6 +409,9 @@ QQC2.TextField {
             ]
             const list = kinds.map(k => ({name: k.name, icon: k.icon, perm: t.view.profile.queryPermission(m[0], k.type)}))
             list.push({name: "Keep screen on", icon: "video-display", wakeLock: true, key: (field.win.privateMode ? "private:" : "") + Browser.hostOf(t.url)})
+            const site = Browser.hostOf(t.url)
+            list.push({name: "MIDI devices", icon: "audio-midi", midi: true, sysex: false, site: site})
+            list.push({name: "Full control of MIDI devices", icon: "audio-midi", midi: true, sysex: true, site: site})
             permissions = list
         }
         // kite:certificate for an https address.
@@ -419,11 +422,13 @@ QQC2.TextField {
         // 0 = ask, 1 = allow, 2 = block
         function stateOf(p) {
             if (p.wakeLock) { const d = field.win.app.wakeLockSites[p.key]; return d === undefined ? 0 : d ? 1 : 2 }
+            if (p.midi) return field.tab.midiChoice(p.site, p.sysex)
             const S = WebEnginePermission.State
             return p.perm.state === S.Granted ? 1 : p.perm.state === S.Denied ? 2 : 0
         }
         function setState(p, i) {
             if (p.wakeLock) { if (i === 0) field.win.app.forgetWakeLock(p.key); else field.win.app.rememberWakeLock(p.key, i === 1); return }
+            if (p.midi) { field.tab.setMidiChoice(p.site, p.sysex, i); return }
             if (i === 1) p.perm.grant(); else if (i === 2) p.perm.deny(); else p.perm.reset()
         }
         contentItem: ColumnLayout {
@@ -476,7 +481,7 @@ QQC2.TextField {
                 onClicked: { field.win.app.showSiteSettings(Browser.hostOf(field.tab.url)); siteInfo.close() }
             }
             // Keeps the site's custom CSS and JavaScript (written by the user).
-            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.resetSiteSettings(h); field.win.app.siteSettingsChanged(h); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
+            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.resetSiteSettings(h); field.win.app.forgetMidi(h); field.win.app.siteSettingsChanged(h); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
         }
     }
 }

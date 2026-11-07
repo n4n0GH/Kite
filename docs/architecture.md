@@ -40,7 +40,7 @@ interface and the state that belongs to it, such as which tabs a window has.
 | `crates/kite-core/src/webext/js/` | The `browser.*` API and the scripts injected into pages |
 | `crates/kite-core/examples/` | Developer tools: `amo-install`, `dnr-check`, `kwallet-check` |
 | `crates/kite/src/` | The QML singletons and the C ABI |
-| `crates/kite/src/js/` | Page scripts: reader extraction, fingerprint protection, wake lock, scrollbars, Google sign-in identity |
+| `crates/kite/src/js/` | Page scripts: reader extraction, fingerprint protection, wake lock, Web MIDI, scrollbars, Google sign-in identity |
 | `crates/kite/cpp/` | The C++ layer |
 | `crates/kite/qml/` | The interface, see [ui.md](ui.md) |
 | `crates/kite/plugins/` | Plugins that ship with Kite, see [plugins.md](plugins.md) |
@@ -131,6 +131,7 @@ instead (`qml/ExtBridge.qml`).
 | `reader`, `startpage`, `standin` | Reader view pages; custom start pages; generated stand-in files |
 | `backup`, `browser_import` | The settings file; importing bookmarks from other browsers |
 | `plugins` | Parses and checks plugin manifests; installs, lists and removes plugin files |
+| `midi` | MIDI devices for Web MIDI, through ALSA's sequencer, loaded when needed |
 | `instance` | One Kite to a profile: what's started on an open profile hands its URLs to the Kite that has it, and ends |
 | `kwin`, `screensaver` | KWin scripting (picture-in-picture staying on top); screen inhibition |
 

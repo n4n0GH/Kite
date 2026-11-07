@@ -489,6 +489,7 @@ Item {
         retired = true
         if (app.pipTab === wt) app.stopPip(false)
         setWakeLock(false)
+        stopMidi()
         window.unregisterTab(wt)
     }
     Component.onDestruction: leave()
@@ -656,6 +657,7 @@ Item {
                         if (!Browser.isExternalUrl(u)) wt.externalPrompt = ""
                         // A wake lock prompt belongs to the page being left.
                         if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
+                        wt.leftForMidi(u)
                         wt.loginForm = false
                         wt.frameLoginForm = false
                         wt.loginFrames = ({})
@@ -806,6 +808,7 @@ Item {
                 onRenderProcessTerminated: (status, code) => {
                     if (status !== WebEngineView.NormalTerminationStatus) wt.crashed = true
                     wt.setWakeLock(false)
+                    wt.stopMidi()
                 }
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
@@ -896,6 +899,8 @@ Item {
 
     function permissionText(type) {
         if (type === "wakeLock") return "keep your screen on"
+        if (type === "midi") return "use your MIDI devices"
+        if (type === "midiSysex") return "fully control your MIDI devices, which can change their settings and firmware (SysEx)"
         const names = {}
         try {
             names[WebEnginePermission.PermissionType.Geolocation] = "know your location"
@@ -942,6 +947,112 @@ Item {
         pendingPermissions = pendingPermissions.concat([entry])
     }
 
+    // ---- Web MIDI (crates/kite/src/js/webmidi.js, kite_core::midi) ----
+    property string midiSite: ""       // whose session this tab has
+    property bool midiSysex: false
+    property var midiPorts: []
+    function midiSiteNow() { return Browser.hostOf(web.url.toString()) || web.url.toString() }
+    // 0 = ask, 1 = allow, 2 = block; of plain access, or with SysEx too.
+    function midiChoice(site, sysex) {
+        const s = window.privateMode ? (app.midiPrivateSites[site] || {}) : JSON.parse(Browser.siteSettings(site))
+        if (sysex) return s.midi === 2 ? 2 : (s.midi_sysex || 0)
+        if (s.midi_sysex === 1) return 1
+        return s.midi || 0
+    }
+    function setMidiChoice(site, sysex, value) {
+        if (window.privateMode) app.rememberMidi(site, sysex ? "midi_sysex" : "midi", value)
+        else Browser.setSiteSetting(site, sysex ? "midiSysex" : "midi", value)
+        app.midiChoiceChanged(site)
+    }
+    function recheckMidi(site) { if (site === midiSite && midiChoice(site, midiSysex) !== 1) stopMidi() }
+    function stopMidi() {
+        if (midiSite === "") return
+        Browser.midiStop(tabId)
+        midiSite = ""
+        midiSysex = false
+        midiPorts = []
+        bridge.midiToPage("kite-midi-event", JSON.stringify({event: "ports", ports: []}))
+    }
+    // A session is for one site. Moving within it, as in a single-page app, doesn't end it.
+    function leftForMidi(url) {
+        if (pendingPermissions.some(p => p.midi)) pendingPermissions = pendingPermissions.filter(p => !p.midi)
+        if (midiSite !== "" && (Browser.hostOf(url) || url) !== midiSite) stopMidi()
+    }
+    function answerMidi(requests, granted) {
+        if (!granted) {
+            for (const r of requests) bridge.midiToPage("kite-midi-answer", JSON.stringify({id: r.id, granted: false}))
+            return
+        }
+        const site = midiSiteNow()
+        const sysex = requests.some(r => r.sysex)
+        if (midiSite === "") {
+            const ports = Browser.midiStart(tabId, site, sysex)
+            if (ports === "") {
+                for (const r of requests) bridge.midiToPage("kite-midi-answer", JSON.stringify({id: r.id, granted: true, error: "MIDI devices aren't available on this system"}))
+                return
+            }
+            midiPorts = JSON.parse(ports)
+            midiSite = site
+            midiSysex = sysex
+        } else if (sysex && !midiSysex) {
+            Browser.midiCommand(tabId, JSON.stringify({op: "allowSysex"}))
+            midiSysex = true
+        }
+        for (const r of requests) bridge.midiToPage("kite-midi-answer", JSON.stringify({id: r.id, granted: true, ports: midiPorts}))
+    }
+    function requestMidi(json) {
+        let r
+        try { r = JSON.parse(json) } catch (e) { return }
+        if (!Number.isInteger(r.id)) return
+        const sysex = r.sysex === true
+        const request = {id: r.id, sysex: sysex}
+        const site = midiSiteNow()
+        const choice = midiChoice(site, sysex)
+        if (choice !== 0) { answerMidi([request], choice === 1); return }
+        const open = pendingPermissions.find(p => p.midi && p.sysex === sysex)
+        if (open) { open.requests.push(request); return }
+        const entry = {origin: site, midi: true, sysex: sysex, requests: [request]}
+        entry.permission = {
+            permissionType: sysex ? "midiSysex" : "midi",
+            grant: () => { setMidiChoice(site, sysex, 1); answerMidi(entry.requests, true) },
+            deny: () => { setMidiChoice(site, sysex, 2); answerMidi(entry.requests, false) },
+        }
+        pendingPermissions = pendingPermissions.concat([entry])
+    }
+    function queryMidi(json) {
+        let r
+        try { r = JSON.parse(json) } catch (e) { return }
+        if (!Number.isInteger(r.id)) return
+        bridge.midiToPage("kite-midi-state", JSON.stringify({id: r.id, state: ["prompt", "granted", "denied"][midiChoice(midiSiteNow(), r.sysex === true)]}))
+    }
+    function midiOp(json) {
+        if (midiSite === "") return
+        // (It got here from a page of the site the session is for, or it ends.)
+        if (midiSiteNow() !== midiSite) { stopMidi(); return }
+        let r
+        try { r = JSON.parse(json) } catch (e) { return }
+        if (r.op === "stop") stopMidi()
+        // SysEx permission is only ever given above.
+        else if (r.op === "open" || r.op === "close" || r.op === "send") Browser.midiCommand(tabId, json)
+    }
+    // Taken back while in use: it ends now, not at the next visit, in every tab of the site.
+    Connections {
+        target: wt.app
+        enabled: wt.midiSite !== ""
+        function onMidiChoiceChanged(site) { wt.recheckMidi(site) }
+        function onSiteSettingsChanged(site) { wt.recheckMidi(site) }
+    }
+    Connections {
+        target: Browser
+        enabled: wt.midiSite !== ""
+        function onMidiEvent(tab, json) {
+            if (tab !== wt.tabId || wt.midiSite === "") return
+            const e = JSON.parse(json)
+            if (e.event === "ports") wt.midiPorts = e.ports
+            bridge.midiToPage("kite-midi-event", json)
+        }
+    }
+
     WebChannel { id: channel; registeredObjects: [bridge] }
     ExtBridge {
         id: bridge
@@ -960,6 +1071,9 @@ Item {
         }
         onWakeLockRequested: id => wt.requestWakeLock(id)
         onWakeLockReleased: wt.setWakeLock(false)
+        onMidiRequested: json => wt.requestMidi(json)
+        onMidiQueried: json => wt.queryMidi(json)
+        onMidiOpRequested: json => wt.midiOp(json)
         onFormEdited: dirty => wt.formDirty = dirty
         onLoginFormDetected: emptyPassword => {
             wt.loginForm = true

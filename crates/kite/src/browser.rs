@@ -369,6 +369,24 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "startedAgain"]
         fn started_again(self: Pin<&mut Browser>, request: QString);
+        /// Web MIDI for a tab (kite_core::midi): the ports as JSON, or "" without MIDI
+        /// here. Whether a site may have this is decided before asking (WebTab.qml).
+        #[qinvokable]
+        #[cxx_name = "midiStart"]
+        fn midi_start(self: &Browser, tab_id: i32, site: &QString, sysex: bool) -> QString;
+        #[qinvokable]
+        #[cxx_name = "midiCommand"]
+        fn midi_command(self: &Browser, tab_id: i32, command: &QString);
+        #[qinvokable]
+        #[cxx_name = "midiStop"]
+        fn midi_stop(self: &Browser, tab_id: i32);
+        #[qsignal]
+        #[cxx_name = "midiEvent"]
+        fn midi_event(self: Pin<&mut Browser>, tab_id: i32, event: QString);
+        /// Page-world script providing navigator.requestMIDIAccess (js/webmidi.js).
+        #[qinvokable]
+        #[cxx_name = "webMidiScript"]
+        fn web_midi_script(self: &Browser) -> QString;
         /// Lets the next window raised take the focus, on Wayland.
         #[qinvokable]
         #[cxx_name = "useActivationToken"]
@@ -657,6 +675,12 @@ fn parse(s: &QString) -> Value {
 }
 
 /// Turn location-bar text into a URL to load (used by the start page too).
+/// The tabs using MIDI devices.
+fn midi_sessions() -> std::sync::MutexGuard<'static, std::collections::HashMap<i32, kite_core::midi::Session>> {
+    static SESSIONS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i32, kite_core::midi::Session>>> = std::sync::OnceLock::new();
+    SESSIONS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn resolve_input(text: &str) -> String {
     let a = app();
     let engines = search::load_engines(&a.shared.db()).unwrap_or_default();
@@ -1497,6 +1521,47 @@ impl qobject::Browser {
                 });
             });
         });
+    }
+    fn midi_start(&self, tab_id: i32, site: &QString, sysex: bool) -> QString {
+        let qt = self.qt_thread();
+        let on_event = move |event: kite_core::midi::Event| {
+            let _ = qt.queue(move |o| o.midi_event(tab_id, js(&json!(event))));
+        };
+        match kite_core::midi::Session::open(&site.to_string(), sysex, on_event) {
+            Ok((session, ports)) => {
+                midi_sessions().insert(tab_id, session);
+                js(&json!(ports))
+            }
+            Err(e) => {
+                log::info!("Web MIDI: {e}");
+                QString::default()
+            }
+        }
+    }
+    fn midi_command(&self, tab_id: i32, command: &QString) {
+        let sessions = midi_sessions();
+        let Some(session) = sessions.get(&tab_id) else { return };
+        let Ok(command) = serde_json::from_str::<Value>(&command.to_string()) else { return };
+        let id = command["id"].as_str().unwrap_or_default();
+        match command["op"].as_str() {
+            Some("open") => session.open_input(id),
+            Some("close") => session.close_input(id),
+            Some("allowSysex") => session.allow_sysex(),
+            Some("send") => {
+                let Some(data) = command["data"].as_array() else { return };
+                let bytes: Option<Vec<u8>> = data.iter().map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok())).collect();
+                if let Some(bytes) = bytes {
+                    session.send(id, bytes);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn midi_stop(&self, tab_id: i32) {
+        midi_sessions().remove(&tab_id);
+    }
+    fn web_midi_script(&self) -> QString {
+        q(include_str!("js/webmidi.js"))
     }
     fn use_activation_token(&self, token: &QString) {
         // Qt's Wayland code takes it from there when a window asks to be activated.

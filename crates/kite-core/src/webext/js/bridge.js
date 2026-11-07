@@ -46,11 +46,16 @@
   const toKite = (fn) => (kite ? fn(kite) : wakeQueue.push(fn));
   document.addEventListener('kite-wakelock-request', (e) => { const id = +e.detail; if (id > 0) toKite((k) => k.requestWakeLock(id)); });
   document.addEventListener('kite-wakelock-release', () => toKite((k) => k.releaseWakeLock()));
+  // Web MIDI (crates/kite/src/js/webmidi.js). Only ever strings: the page writes them.
+  for (const [name, method] of [['kite-midi-request', 'requestMidi'], ['kite-midi-query', 'queryMidi'], ['kite-midi-op', 'midiOp']]) {
+    document.addEventListener(name, (e) => { if (typeof e.detail === 'string') { const detail = e.detail; toKite((k) => k[method] && k[method](detail)); } });
+  }
   function init() {
     new QWebChannel(qt.webChannelTransport, (ch) => {
       kite = ch.objects.kite;
       kite.deliver.connect(onDeliver);
       if (kite.wakeLockAnswer) kite.wakeLockAnswer.connect((id, granted) => document.dispatchEvent(new CustomEvent('kite-wakelock-answer', { detail: JSON.stringify({ id, granted }) })));
+      if (kite.midiToPage) kite.midiToPage.connect((name, detail) => document.dispatchEvent(new CustomEvent(name, { detail })));
       for (const fn of wakeQueue.splice(0)) fn(kite);
       for (const a of queue.splice(0)) kite.call(...a);
       kite.cosmetic(location.href, applyCosmetic);

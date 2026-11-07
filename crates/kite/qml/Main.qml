@@ -313,6 +313,22 @@ QtObject {
     property var wakeLockSites: ({})
     function rememberWakeLock(key, allowed) { const o = Object.assign({}, wakeLockSites); o[key] = allowed; wakeLockSites = o }
     function forgetWakeLock(key) { const o = Object.assign({}, wakeLockSites); delete o[key]; wakeLockSites = o }
+    // Web MIDI decisions in private windows, which aren't kept (others: site settings).
+    property var midiPrivateSites: ({})
+    signal midiChoiceChanged(string site)
+    // Asked to forget a site's decisions, the ones kept for private windows too.
+    function forgetMidi(site) {
+        const o = Object.assign({}, midiPrivateSites)
+        delete o[site]
+        midiPrivateSites = o
+        midiChoiceChanged(site)
+    }
+    function rememberMidi(site, key, value) {
+        const o = Object.assign({}, midiPrivateSites)
+        o[site] = Object.assign({}, o[site] || {})
+        o[site][key] = value
+        midiPrivateSites = o
+    }
 
     // Qt's own user agent, restored when the setting is cleared.
     property string defaultUserAgent: ""
@@ -666,6 +682,8 @@ QtObject {
             wanted.push({name: "kite:frameForms", sourceCode: Browser.frameFormsScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
+            // navigator.requestMIDIAccess (QtWebEngine refuses MIDI itself).
+            wanted.push({name: "kite:webMidi", sourceCode: Browser.webMidiScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Third-party frames are refused storage along with cookies, which crashes
             // players embedded from elsewhere. (Not if the user turned storage off.)
             if (setting("web.localStorage"))

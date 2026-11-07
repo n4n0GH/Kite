@@ -52,6 +52,16 @@ QtObject {
     function requestWakeLock(id) { if (viewKind === "tab") wakeLockRequested(id) }
     function releaseWakeLock() { if (viewKind === "tab") wakeLockReleased() }
 
+    // Web MIDI (crates/kite/src/js/webmidi.js, relayed by the bridge world). What the page
+    // sends is only what it's asking for: WebTab decides, from where the tab really is.
+    signal midiRequested(string json)
+    signal midiQueried(string json)
+    signal midiOpRequested(string json)
+    signal midiToPage(string name, string detail)
+    function requestMidi(json) { if (viewKind === "tab") midiRequested(json) }
+    function queryMidi(json) { if (viewKind === "tab") midiQueried(json) }
+    function midiOp(json) { if (viewKind === "tab") midiOpRequested(json) }
+
     // Only this view's messages are taken (and converted) here.
     function _onDeliveryReady(view) {
         if (view !== viewKey) return

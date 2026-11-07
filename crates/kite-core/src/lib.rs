@@ -20,6 +20,7 @@ pub mod history;
 pub mod instance;
 pub mod kwallet;
 pub mod kwin;
+pub mod midi;
 pub mod formfill;
 pub mod passwords;
 pub mod plugins;
