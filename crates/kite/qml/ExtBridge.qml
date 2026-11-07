@@ -42,7 +42,6 @@ QtObject {
     function call(token, ctx, method, args, callId) {
         Extensions.call(viewKey, tabId, windowId, token, ctx, method, args, callId)
     }
-    function cosmetic(url) { return Browser.cosmetic(url, inPrivate) }
 
     // Screen Wake Lock (crates/kite/src/js/wakelock.js, relayed by the bridge
     // world): WebTab prompts and answers with wakeLockAnswer.

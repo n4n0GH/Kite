@@ -1,6 +1,6 @@
 // Kite bridge world (QWebEngineScript::ApplicationWorld). Owns the
 // QWebChannel connection for a tab and relays calls from extension
-// content-script worlds, and applies content-blocker cosmetic filters.
+// content-script worlds.
 (function (tokens) {
   'use strict';
   if (window !== top || globalThis.__kiteBridge) return;
@@ -25,21 +25,6 @@
       for (const c of d.ctxs) { const t = ctxToken.get(c); if (t && !seen.has(t)) { seen.add(t); down(t, json); } }
     }
   }
-  function applyCosmetic(res) {
-    if (!res) return;
-    const r = typeof res === 'string' ? JSON.parse(res) : res;
-    if (r.css) {
-      const put = () => { const s = document.createElement('style'); s.textContent = r.css; s.setAttribute('data-kite-adblock', ''); (document.head || document.documentElement).appendChild(s); };
-      document.documentElement ? put() : document.addEventListener('readystatechange', put, { once: true });
-    }
-    if (r.script) {
-      // Scriptlets must run in the page's world.
-      const s = document.createElement('script');
-      s.textContent = '(function(){try{' + r.script + '}catch(e){}})();';
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-    }
-  }
   // Screen Wake Lock: relay the page's requests (crates/kite/src/js/wakelock.js)
   // to the browser and its answers back.
   const wakeQueue = [];
@@ -58,7 +43,6 @@
       if (kite.midiToPage) kite.midiToPage.connect((name, detail) => document.dispatchEvent(new CustomEvent(name, { detail })));
       for (const fn of wakeQueue.splice(0)) fn(kite);
       for (const a of queue.splice(0)) kite.call(...a);
-      kite.cosmetic(location.href, applyCosmetic);
       if (globalThis.__kiteFormsReady) globalThis.__kiteFormsReady(kite);
       if (globalThis.__kiteFillReady) globalThis.__kiteFillReady(kite);
     });

@@ -1251,6 +1251,8 @@ ManagerWindow {
                 placeholderText: "||ads.example.com^\nexample.org##.banner"
                 text: w.get("adblock.customRules")
                 onEditingFinished: w.set("adblock.customRules", text)
+                // (A rule added from a page's Block Element while this is open.)
+                Connections { target: w.app; function onCustomFiltersChanged() { rules.text = w.get("adblock.customRules") } }
             }
             Kirigami.Heading { level: 3; text: "Disabled on These Sites" }
             QQC2.Label { text: w.get("adblock.allowlist").join(", ") || "None"; wrapMode: Text.Wrap; Layout.fillWidth: true }

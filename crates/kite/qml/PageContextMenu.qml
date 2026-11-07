@@ -19,7 +19,10 @@ QQC2.Menu {
     property var extItems: []
     property var info: ({})
 
+    // (Asked anew for each menu.)
+    property int tick: 0
     function show(request) {
+        tick++
         req = request
         linkUrl = request.linkUrl.toString()
         mediaUrl = request.mediaUrl.toString()
@@ -172,5 +175,13 @@ QQC2.Menu {
 
     QQC2.MenuSeparator {}
     QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    // (Where the blocker isn't working here, nor would a rule.)
+    QQC2.MenuItem {
+        text: "Block Element…"
+        icon.name: "edit-delete-remove"
+        visible: menu.tab && menu.tab.canBlockElements(menu.tick)
+        height: visible ? implicitHeight : 0
+        onTriggered: menu.tab.blockElement(menu.req.position.x, menu.req.position.y)
+    }
     QQC2.MenuItem { text: "Inspect Element"; icon.name: "utilities-terminal"; onTriggered: menu.tab.inspectElement() }
 }

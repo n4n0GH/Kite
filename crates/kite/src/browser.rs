@@ -308,8 +308,23 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "adblockAllowed"]
         fn adblock_allowed(self: &Browser, host: &QString) -> bool;
+        /// What the content blocker has for a page, as it's about to be loaded: "" for
+        /// nothing, when it's off for the page or an extension does the blocking.
         #[qinvokable]
-        fn cosmetic(self: &Browser, url: &QString, in_private: bool) -> QString;
+        #[cxx_name = "adblockPagePlan"]
+        fn adblock_page_plan(self: &Browser, url: &QString, in_private: bool) -> QString;
+        /// What generic rules hide among a page's classes and ids: {c, i, x} to a list.
+        #[qinvokable]
+        #[cxx_name = "adblockGeneric"]
+        fn adblock_generic(self: &Browser, found: &QString) -> QString;
+        /// The page script for choosing an element to block (js/element_picker.js).
+        #[qinvokable]
+        #[cxx_name = "elementPickerScript"]
+        fn element_picker_script(self: &Browser) -> QString;
+        /// The page script applying a plan (js/adblock_content.js).
+        #[qinvokable]
+        #[cxx_name = "adblockContentScript"]
+        fn adblock_content_script(self: &Browser) -> QString;
         /// Keep the screen on for a tab holding a Screen Wake Lock (or stop).
         #[qinvokable]
         #[cxx_name = "setWakeLock"]
@@ -1873,13 +1888,26 @@ impl qobject::Browser {
         let list: Vec<String> = serde_json::from_value(app().shared.settings().get("adblock.allowlist")).unwrap_or_default();
         list.iter().any(|h| host == *h || host.ends_with(&format!(".{h}")))
     }
-    fn cosmetic(&self, url: &QString, in_private: bool) -> QString {
+    fn adblock_page_plan(&self, url: &QString, in_private: bool) -> QString {
         // Cosmetic filters and scriptlets are the extension's job too.
         if app().runtime().content_blocker_for(in_private).is_some() {
-            return js(&json!({}));
+            return QString::default();
         }
-        let (css, script) = app().adblock.cosmetic(&url.to_string());
-        js(&json!({"css": css, "script": script}))
+        match app().adblock.page_plan(&url.to_string()) {
+            Some(plan) => js(&json!(plan)),
+            None => QString::default(),
+        }
+    }
+    fn adblock_generic(&self, found: &QString) -> QString {
+        let Ok(found) = serde_json::from_str::<Value>(&found.to_string()) else { return q("[]") };
+        let list = |key: &str| -> Vec<String> { found[key].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect()).unwrap_or_default() };
+        js(&json!(app().adblock.generic_selectors(&list("c"), &list("i"), &list("x"))))
+    }
+    fn element_picker_script(&self) -> QString {
+        q(include_str!("js/element_picker.js"))
+    }
+    fn adblock_content_script(&self) -> QString {
+        q(include_str!("js/adblock_content.js"))
     }
 
     // ---- misc -----------------------------------------------------------------

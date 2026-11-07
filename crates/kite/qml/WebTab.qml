@@ -160,6 +160,20 @@ Item {
             then(hits.length === 1 ? hits[0] : null)
         })
     }
+    // ---- the content blocker (Main.prepareAdblock) ----
+    // (`tick`: for a binding to ask again.)
+    function canBlockElements(tick) {
+        return /^https?:/i.test(url) && app.setting("adblock.enabled") && Browser.contentBlocker(window.privateMode) === "" && !Browser.adblockAllowed(Browser.hostOf(url))
+    }
+    function blockElement(x, y) { elementPicker.start(x, y) }
+    // A frame's classes and ids, and what generic rules hide among them.
+    function adblockFound(json) {
+        const f = JSON.parse(json).f
+        const selectors = Browser.adblockGeneric(json)
+        if (selectors === "[]") return
+        runInFrames("globalThis.__kiteAbFill && __kiteAbFill(" + JSON.stringify(f) + ", " + selectors + ")")
+    }
+
     function frameMessage(text) {
         const msg = JSON.parse(text)
         withFrame(msg.f, frame => {
@@ -635,6 +649,11 @@ Item {
                 helpfulAction: Kirigami.Action { text: "Back to Tab"; icon.name: "kite-pip-exit"; onTriggered: wt.app.stopPip(true) }
             }
 
+            ElementPicker {
+                id: elementPicker
+                tab: wt
+            }
+
             WebEngineView {
                 id: web
                 // (bootstrap.cpp: mouse gestures, on tabs' pages only.)
@@ -726,6 +745,7 @@ Item {
                         // A wake lock prompt belongs to the page being left.
                         if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
                         wt.leftForMidi(u)
+                        if (elementPicker.visible) elementPicker.visible = false
                         wt.loginForm = false
                         wt.frameLoginForm = false
                         wt.loginFrames = ({})
@@ -768,6 +788,7 @@ Item {
                 // (Also "Continue anyway" on the dangerous-site warning.)
                 onNavigationRequested: request => {
                     const u = request.url.toString()
+                    wt.app.prepareAdblock(web.profile, u, wt.window.privateMode)
                     if (Browser.isExternalUrl(u)) {
                         request.reject()
                         if (request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation) wt.externalPrompt = u
@@ -890,7 +911,8 @@ Item {
                     }
                     if (message.startsWith(wt.app.frameSecret)) {
                         const text = message.substring(wt.app.frameSecret.length)
-                        if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
+                        if (text.startsWith("ab:")) wt.adblockFound(text.substring(3))
+                        else if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
                         else wt.frameMessage(text)
                         return
                     }

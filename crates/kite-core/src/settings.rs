@@ -139,7 +139,12 @@ pub fn defaults() -> Map<String, Value> {
         "adblock.enabled": true,
         "adblock.subscriptions": [
             {"title": "EasyList", "url": "https://easylist.to/easylist/easylist.txt", "enabled": true},
-            {"title": "EasyPrivacy", "url": "https://easylist.to/easylist/easyprivacy.txt", "enabled": true}
+            {"title": "EasyPrivacy", "url": "https://easylist.to/easylist/easyprivacy.txt", "enabled": true},
+            {"title": "uBlock filters", "url": "https://ublockorigin.github.io/uAssets/filters/filters.min.txt", "enabled": true},
+            {"title": "uBlock filters: Quick fixes", "url": "https://ublockorigin.github.io/uAssets/filters/quick-fixes.min.txt", "enabled": true},
+            {"title": "uBlock filters: Privacy", "url": "https://ublockorigin.github.io/uAssets/filters/privacy.min.txt", "enabled": true},
+            {"title": "uBlock filters: Badware risks", "url": "https://ublockorigin.github.io/uAssets/filters/badware.min.txt", "enabled": true},
+            {"title": "uBlock filters: Unbreak", "url": "https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt", "enabled": true}
         ],
         "adblock.customRules": "",
         "adblock.allowlist": [],
@@ -160,6 +165,8 @@ pub fn defaults() -> Map<String, Value> {
 const RENAMED: &[(&str, &str)] = &[("appearance.tabPosition", "tabs.position")];
 
 /// Settings whose meaning moved elsewhere.
+const UBLOCK_LISTS_KNOWN: &str = "adblock.ublockLists";
+
 fn migrate(values: &mut Map<String, Value>) {
     // "Open links in background tabs" was the opposite of "Switch to tabs
     // opened from links"; only the latter is left.
@@ -173,6 +180,19 @@ fn migrate(values: &mut Map<String, Value>) {
         if let Some(mine) = keys.remove("pictureInPicture") {
             keys.insert("pip.toggle".into(), mine);
         }
+    }
+    // uBlock Origin's lists are in the defaults now, for profiles that chose their own lists too.
+    // (Once: `set` marks a choice made since, and what's still the default has them anyway.)
+    let wanted = defaults()["adblock.subscriptions"].clone();
+    if !values.contains_key(UBLOCK_LISTS_KNOWN) && values.get("adblock.subscriptions") != Some(&wanted) {
+        if let (Some(Value::Array(have)), Value::Array(wanted)) = (values.get_mut("adblock.subscriptions"), wanted) {
+            for list in wanted {
+                if !have.iter().any(|h| h["url"] == list["url"]) {
+                    have.push(list);
+                }
+            }
+        }
+        values.insert(UBLOCK_LISTS_KNOWN.into(), Value::Bool(true));
     }
     // Settings nothing reads.
     for old in ["tabs.showCloseButtons", "downloads.closeManagerOnFinish"] {
@@ -216,6 +236,9 @@ impl Settings {
     }
 
     pub fn set(&mut self, key: &str, value: Value) -> anyhow::Result<()> {
+        if key == "adblock.subscriptions" {
+            self.values.insert(UBLOCK_LISTS_KNOWN.into(), Value::Bool(true));
+        }
         self.values.insert(key.to_owned(), value);
         self.save()
     }
@@ -299,6 +322,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn profiles_that_chose_their_lists_get_ublocks_too_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"adblock.subscriptions": [{"title": "Mine", "url": "https://mine.example/list.txt", "enabled": true}, {"title": "Off", "url": "https://easylist.to/easylist/easylist.txt", "enabled": false}]}"#).unwrap();
+        let mut s = Settings::load(path.clone());
+        let lists = s.get("adblock.subscriptions");
+        let urls: Vec<&str> = lists.as_array().unwrap().iter().map(|l| l["url"].as_str().unwrap()).collect();
+        assert_eq!(urls[0], "https://mine.example/list.txt", "theirs stay first");
+        assert!(urls.iter().any(|u| u.contains("quick-fixes")));
+        assert_eq!(urls.iter().filter(|u| u.contains("easylist.txt")).count(), 1, "not twice");
+        assert_eq!(lists[1]["enabled"], false, "what they turned off stays off");
+        // Removing one afterwards sticks.
+        s.set("adblock.subscriptions", serde_json::json!([])).unwrap();
+        s.save().unwrap();
+        assert_eq!(Settings::load(path).get("adblock.subscriptions"), serde_json::json!([]));
+    }
+
+    #[test]
+    fn a_new_profile_choosing_fewer_lists_keeps_that() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut s = Settings::load(path.clone());
+        s.set("adblock.subscriptions", serde_json::json!([])).unwrap();
+        s.save().unwrap();
+        assert_eq!(Settings::load(path).get("adblock.subscriptions"), serde_json::json!([]));
+    }
     #[test]
     fn background_tabs_setting_migrates() {
         let dir = std::env::temp_dir().join(format!("kite-settings-bg-{}", std::process::id()));

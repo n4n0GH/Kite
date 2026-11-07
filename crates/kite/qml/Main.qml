@@ -711,9 +711,80 @@ QtObject {
             if (setting("web.googleSignIn"))
                 wanted.push({name: "kite:googleSignIn", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "// ==UserScript==\n// @match https://accounts.google.com/*\n// ==/UserScript==\n" + Browser.googleSignInScript()})
+            for (const s of adblockScriptsOf(p)) wanted.push(s)
             updateScripts(p.userScripts, wanted)
         }
     }
+    // ---- the content blocker, per site (kite_core::adblock, js/adblock_content.js) ----
+    // Scripts of the profile, made as a site is about to be loaded, so they're there as its
+    // document is created: scriptlets have to run before the page's own scripts, and the
+    // page's security policy doesn't apply to these. Not scripts of the view: QtWebEngine
+    // only gives those to a new renderer once it has committed, too late for the first
+    // document after moving to another site. @match keeps them from other sites' pages.
+    readonly property int adblockSitesKept: 24
+    property var adblockSites: ({})    // profile → host → {plan, scripts, used}
+    property int adblockUses: 0
+    function prepareAdblock(profile, url, inPrivate) {
+        if (!/^https?:/i.test(url)) return
+        const host = Browser.hostOf(url)
+        if (!host) return
+        const key = profile.storageName + (profile.offTheRecord ? ":private" : "")
+        const sites = adblockSites[key] || (adblockSites[key] = {})
+        // Asked each time: the lists get updated, and blocking is turned off for sites.
+        const plan = Browser.adblockPagePlan(url, inPrivate)
+        const known = sites[host]
+        if (known && known.plan === plan) { known.used = ++adblockUses; return }
+        if (known) forgetAdblockSite(profile, sites, host)
+        if (plan === "") return
+        const scripts = adblockScriptsFor(host, JSON.parse(plan))
+        sites[host] = {plan: plan, scripts: scripts, used: ++adblockUses}
+        for (const s of scripts) addScript(profile.userScripts, s)
+        const hosts = Object.keys(sites)
+        if (hosts.length > adblockSitesKept) {
+            hosts.sort((a, b) => sites[a].used - sites[b].used)
+            forgetAdblockSite(profile, sites, hosts[0])
+        }
+    }
+    function forgetAdblockSite(profile, sites, host) {
+        for (const s of sites[host].scripts) {
+            for (const old of profile.userScripts.find(s.name)) profile.userScripts.remove(old)
+        }
+        delete sites[host]
+    }
+    function adblockScriptsFor(host, plan) {
+        const header = "// ==UserScript==\n// @match *://" + host + "/*\n// ==/UserScript==\n"
+        const out = []
+        if (plan.script !== "") out.push({name: "kite:ab:page:" + host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + plan.script})
+        const given = {host: host, secret: frameSecret, plan: {hide: plan.hide, procedural: plan.procedural, generichide: plan.generichide, exceptions: plan.exceptions}}
+        out.push({name: "kite:ab:cosmetic:" + host, worldId: 1, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + "(() => {\nconst KITE_AB = " + JSON.stringify(given) + ";\n" + Browser.adblockContentScript() + "\n})();"})
+        return out
+    }
+    // A rule of the user's, kept with their others. `from`: where it came from, in a comment.
+    signal customFiltersChanged()
+    function addCustomFilter(rule, from) {
+        const rules = setting("adblock.customRules")
+        if (rules.split("\n").some(l => l.trim() === rule)) return
+        const comment = from ? "! " + new Date().toISOString().slice(0, 10) + " " + from + "\n" : ""
+        Browser.setSetting("adblock.customRules", JSON.stringify((rules && !rules.endsWith("\n") ? rules + "\n" : rules) + comment + rule + "\n"))
+        Browser.reloadAdblock(false)
+        customFiltersChanged()
+    }
+    function adblockScriptsOf(profile) {
+        const sites = adblockSites[profile.storageName + (profile.offTheRecord ? ":private" : "")] || {}
+        let out = []
+        for (const host in sites) out = out.concat(sites[host].scripts)
+        return out
+    }
+    function addScript(collection, s) {
+        const ws = WebEngine.script()
+        ws.name = s.name
+        ws.sourceCode = s.sourceCode
+        ws.worldId = s.worldId
+        ws.runsOnSubFrames = s.runsOnSubFrames
+        ws.injectionPoint = s.injectionPoint === 0 ? WebEngineScript.DocumentCreation : s.injectionPoint === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
+        collection.insert(ws)
+    }
+
     function updateScripts(collection, wanted) {
         const point = i => i === 0 ? WebEngineScript.DocumentCreation : i === 1 ? WebEngineScript.DocumentReady : WebEngineScript.Deferred
         const names = new Set(wanted.map(s => s.name))

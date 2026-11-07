@@ -6,6 +6,7 @@
 
 use adblock::lists::{FilterSet, ParseOptions};
 use adblock::request::Request;
+use adblock::resources::{PermissionMask, Resource};
 use adblock::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -31,10 +32,138 @@ pub enum Verdict {
 
 /// Refresh downloaded lists older than this.
 const MAX_AGE: std::time::Duration = std::time::Duration::from_secs(4 * 24 * 3600);
+/// Sooner for uBO's quick fixes: what sites change to get around blockers is answered there.
+const QUICK_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(8 * 3600);
 
 /// Starts `engine.dat`, followed by the fingerprint of what the engine was built
 /// from and the serialized engine. In one file, so they can't disagree after a crash.
 const CACHE_MAGIC: &[u8] = b"KITEAB1\n";
+
+/// uBlock Origin's scriptlets and redirect resources, which its lists rely on
+/// (packaging/update-adblock-resources.py makes this file).
+const RESOURCES: &str = include_str!("../resources/ublock-resources.json");
+
+/// What scriptlets marked as needing trust (they can rewrite what pages receive) ask of a list.
+const TRUSTED: u8 = 1;
+
+/// uBO only lets its own lists use those, and what the user writes is theirs.
+fn trusted_list(url: &str) -> bool {
+    url.starts_with("https://ublockorigin.github.io/uAssets/") || url.starts_with("https://raw.githubusercontent.com/uBlockOrigin/uAssets/")
+}
+
+fn parse_options(trusted: bool) -> ParseOptions {
+    ParseOptions { permissions: PermissionMask::from_bits(if trusted { TRUSTED } else { 0 }), ..Default::default() }
+}
+
+fn load_resources(engine: &mut Engine) {
+    #[derive(Deserialize)]
+    struct Bundle {
+        resources: Vec<Resource>,
+    }
+    match serde_json::from_str::<Bundle>(RESOURCES) {
+        Ok(bundle) => engine.use_resources(bundle.resources),
+        Err(e) => log::warn!("adblock: no scriptlets: {e}"),
+    }
+}
+
+/// Is this `!#if` condition true here? Kite counts as uBO on Chromium, and what isn't
+/// known is false, as in uBO.
+fn condition_holds(text: &str) -> bool {
+    fn token_holds(name: &str) -> bool {
+        matches!(name, "ext_ublock" | "env_chromium" | "cap_user_stylesheet" | "true")
+    }
+    // (Lowest first: or, and, not, with parentheses.)
+    fn or(tokens: &[String], at: &mut usize) -> bool {
+        let mut value = and(tokens, at);
+        while tokens.get(*at).is_some_and(|t| t == "||") {
+            *at += 1;
+            let right = and(tokens, at);
+            value = value || right;
+        }
+        value
+    }
+    fn and(tokens: &[String], at: &mut usize) -> bool {
+        let mut value = not(tokens, at);
+        while tokens.get(*at).is_some_and(|t| t == "&&") {
+            *at += 1;
+            let right = not(tokens, at);
+            value = value && right;
+        }
+        value
+    }
+    fn not(tokens: &[String], at: &mut usize) -> bool {
+        match tokens.get(*at).map(String::as_str) {
+            Some("!") => {
+                *at += 1;
+                !not(tokens, at)
+            }
+            Some("(") => {
+                *at += 1;
+                let value = or(tokens, at);
+                *at += 1;
+                value
+            }
+            Some(name) => {
+                *at += 1;
+                token_holds(name)
+            }
+            None => false,
+        }
+    }
+    let mut tokens = Vec::new();
+    let mut rest = text.trim();
+    while !rest.is_empty() {
+        let len = if rest.starts_with("&&") || rest.starts_with("||") {
+            2
+        } else if rest.starts_with(['!', '(', ')']) {
+            1
+        } else {
+            rest.find(|c: char| !(c.is_alphanumeric() || c == '_')).unwrap_or(rest.len()).max(1)
+        };
+        tokens.push(rest[..len].to_owned());
+        rest = rest[len..].trim_start();
+    }
+    or(&tokens, &mut 0)
+}
+
+/// Applies a list's `!#if` directives, which the engine doesn't know: without this, what's
+/// meant for other browsers applies as well. Lines left out keep the others' numbers apart.
+fn preprocess(list: &str) -> String {
+    // For each open `!#if`: is this part being kept, and was what's around it?
+    let mut open: Vec<(bool, bool)> = Vec::new();
+    let mut out = String::with_capacity(list.len());
+    for line in list.lines() {
+        if let Some(condition) = line.strip_prefix("!#if ") {
+            let around = open.last().is_none_or(|o| o.0);
+            open.push((around && condition_holds(condition), around));
+        } else if line.starts_with("!#else") {
+            if let Some(o) = open.last_mut() {
+                o.0 = o.1 && !o.0;
+            }
+        } else if line.starts_with("!#endif") {
+            open.pop();
+        } else if open.last().is_none_or(|o| o.0) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// What a page gets from the lists, before it exists (WebTab.prepareAdblock).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct PagePlan {
+    /// Selectors to hide. Some aren't CSS but uBO's own: js/adblock_content.js sorts that out.
+    pub hide: Vec<String>,
+    /// Filters with an action, in the engine's JSON form.
+    pub procedural: Vec<String>,
+    /// Scriptlets, to run in the page's world before its own scripts.
+    pub script: String,
+    /// Generic rules don't apply here.
+    pub generichide: bool,
+    /// Classes and ids generic rules aren't to hide, for `generic_selectors`.
+    pub exceptions: Vec<String>,
+}
 
 type Fingerprint = [u8; 32];
 
@@ -123,7 +252,7 @@ impl AdBlock {
             let path = list_path(&self.dir, &s.url);
             let stale = std::fs::metadata(&path)
                 .and_then(|m| m.modified())
-                .map(|t| t.elapsed().unwrap_or_default() > MAX_AGE)
+                .map(|t| t.elapsed().unwrap_or_default() > if s.url.contains("quick-fixes") { QUICK_MAX_AGE } else { MAX_AGE })
                 .unwrap_or(true);
             if stale {
                 match fetch(&s.url) {
@@ -139,7 +268,8 @@ impl AdBlock {
     /// Changes when anything an engine is built from does: which lists are enabled,
     /// their files, the custom rules, and Kite itself (which may bring a new engine).
     fn fingerprint(&self, subs: &[Subscription], custom_rules: &str) -> Fingerprint {
-        let mut input = format!("{}\n", env!("CARGO_PKG_VERSION"));
+        // (The version of how lists are read, as Kite's own isn't always bumped in between.)
+        let mut input = format!("{}\n2\n", env!("CARGO_PKG_VERSION"));
         for s in subs.iter().filter(|s| s.enabled) {
             let file = std::fs::metadata(list_path(&self.dir, &s.url)).ok();
             let modified = file.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
@@ -157,11 +287,12 @@ impl AdBlock {
         for s in subs.iter().filter(|s| s.enabled) {
             if let Ok(text) = std::fs::read_to_string(list_path(&self.dir, &s.url)) {
                 lines += text.lines().count();
-                set.add_filter_list(text, ParseOptions::default());
+                set.add_filter_list(preprocess(&text), parse_options(trusted_list(&s.url)));
             }
         }
-        set.add_filter_list(custom_rules.to_owned(), ParseOptions::default());
-        let engine = Engine::new_with_filter_set(set);
+        set.add_filter_list(preprocess(custom_rules), parse_options(true));
+        let mut engine = Engine::new_with_filter_set(set);
+        load_resources(&mut engine);
         // Cache the compiled engine so the next start blocks from the first request.
         let cache = [CACHE_MAGIC, &fingerprint[..], &engine.serialize()].concat();
         let _ = crate::util::write_atomic(&self.dir.join("engine.dat"), &cache);
@@ -185,6 +316,7 @@ impl AdBlock {
         if engine.deserialize(data).is_err() {
             return false;
         }
+        load_resources(&mut engine);
         *self.engine.write().unwrap() = Some(Arc::new(engine));
         *self.built_from.lock().unwrap() = fingerprint;
         true
@@ -214,22 +346,36 @@ impl AdBlock {
         Verdict::Allow
     }
 
-    /// CSS (element hiding) and scriptlet JS for a page.
-    pub fn cosmetic(&self, url: &str) -> (String, String) {
+    /// What a page at this address gets, or None if blocking is off for it.
+    pub fn page_plan(&self, url: &str) -> Option<PagePlan> {
         if !self.is_enabled() || self.allowlisted(url) {
-            return (String::new(), String::new());
+            return None;
         }
-        let Some(engine) = self.engine.read().unwrap().clone() else { return Default::default() };
+        let engine = self.engine.read().unwrap().clone()?;
         let res = engine.url_cosmetic_resources(url);
-        let mut css = String::new();
-        let selectors: Vec<&String> = res.hide_selectors.iter().collect();
-        for chunk in selectors.chunks(500) {
-            css += &chunk.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(",\n");
-            css += " { display: none !important; }\n";
-        }
-        (css, res.injected_script)
+        let script = if res.injected_script.is_empty() {
+            String::new()
+        } else {
+            // (What uBO's scriptlets expect around them. Inside a function, for the page not to see them.)
+            format!("(function(){{const scriptletGlobals={{}};\n{}\n}})();", res.injected_script)
+        };
+        Some(PagePlan {
+            hide: res.hide_selectors.into_iter().collect(),
+            procedural: res.procedural_actions.into_iter().collect(),
+            script,
+            generichide: res.generichide,
+            exceptions: res.exceptions.into_iter().collect(),
+        })
+    }
+
+    /// What generic rules hide among these classes and ids.
+    pub fn generic_selectors(&self, classes: &[String], ids: &[String], exceptions: &[String]) -> Vec<String> {
+        let Some(engine) = self.engine.read().unwrap().clone() else { return Vec::new() };
+        let exceptions: std::collections::HashSet<String> = exceptions.iter().cloned().collect();
+        engine.hidden_class_id_selectors(classes, ids, &exceptions)
     }
 }
+
 
 fn fetch(url: &str) -> anyhow::Result<String> {
     let mut resp = ureq::get(url).header("User-Agent", crate::webext::amo::USER_AGENT).call()?;
@@ -239,6 +385,93 @@ fn fetch(url: &str) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn engine_with(rules: &str, trusted: bool) -> AdBlock {
+        let ab = AdBlock::new(std::path::PathBuf::from("/nonexistent"));
+        let mut set = FilterSet::new(false);
+        set.add_filter_list(preprocess(rules), parse_options(trusted));
+        let mut engine = Engine::new_with_filter_set(set);
+        load_resources(&mut engine);
+        *ab.engine.write().unwrap() = Some(Arc::new(engine));
+        ab
+    }
+
+    #[test]
+    fn conditions_like_ubo() {
+        for yes in ["env_chromium", "!env_firefox", "ext_ublock && !ext_ubol", "env_firefox || env_chromium", "!(env_firefox || env_safari)", "cap_user_stylesheet", "!unknown_thing"] {
+            assert!(condition_holds(yes), "{yes}");
+        }
+        for no in ["env_firefox", "env_safari", "cap_html_filtering", "ext_ubol", "!env_chromium", "env_chromium && env_mobile", "unknown_thing"] {
+            assert!(!condition_holds(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn directives_leave_out_what_is_for_others() {
+        let list = "a\n!#if env_firefox\nb\n!#else\nc\n!#endif\n!#if env_chromium\nd\n!#if env_mobile\ne\n!#else\nf\n!#endif\n!#else\ng\n!#endif\n!#if env_safari\n!#if env_chromium\nh\n!#else\ni\n!#endif\n!#endif\nj\n";
+        assert_eq!(preprocess(list), "a\nc\nd\nf\nj\n");
+    }
+
+    #[test]
+    fn every_scriptlet_loads_with_what_it_depends_on() {
+        #[derive(Deserialize)]
+        struct Bundle {
+            resources: Vec<Resource>,
+        }
+        let bundle: Bundle = serde_json::from_str(RESOURCES).unwrap();
+        assert!(bundle.resources.len() > 150);
+        let trusted = engine_with("example.org##+js(trusted-replace-xhr-response, a, b, c)\nexample.net##+js(json-prune-fetch-response, adPlacements)\nexample.com##+js(acs, x, y)\n", true);
+        for (host, wants) in [("example.org", "function "), ("example.net", "adPlacements"), ("example.com", "abortCurrentScript")] {
+            let plan = trusted.page_plan(&format!("https://{host}/")).unwrap();
+            assert!(plan.script.contains(wants), "{host}: {}", &plan.script[..plan.script.len().min(300)]);
+            assert!(plan.script.starts_with("(function(){const scriptletGlobals={};"), "wrapped");
+        }
+    }
+
+    #[test]
+    fn trusted_scriptlets_need_a_trusted_list() {
+        let rule = "example.org##+js(trusted-replace-xhr-response, a, b, c)\n";
+        assert!(!engine_with(rule, true).page_plan("https://example.org/").unwrap().script.is_empty());
+        assert!(engine_with(rule, false).page_plan("https://example.org/").unwrap().script.is_empty());
+        assert!(trusted_list("https://ublockorigin.github.io/uAssets/filters/filters.min.txt"));
+        assert!(!trusted_list("https://easylist.to/easylist/easylist.txt"));
+        assert!(!trusted_list("https://ublockorigin.github.io.evil.example/uAssets/x.txt"));
+    }
+
+    #[test]
+    fn redirects_give_something_harmless_instead() {
+        let ab = engine_with("||ads.example/a.js^$script,redirect=noopjs\n||ads.example/b.png^$image,redirect=1x1.gif\n", true);
+        for (url, kind, wanted) in [("https://ads.example/a.js", "script", "data:application/javascript"), ("https://ads.example/b.png", "image", "data:image/gif")] {
+            match ab.check(url, "https://news.test/", kind) {
+                Verdict::Redirect(to) => assert!(to.starts_with(wanted), "{to}"),
+                other => panic!("{url}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_page_gets_its_plan_and_generic_rules_on_asking() {
+        let ab = engine_with("##.generic-ad\n###generic-id\n##div[data-ad]\nnews.test##.site-only\nnews.test##div:has-text(Sponsored)\nnews.test##.popup:style(color: red)\nkept.test#@#.generic-ad\nnews.test##+js(set, a, 1)\n", true);
+        let plan = ab.page_plan("https://news.test/x").unwrap();
+        assert!(plan.hide.contains(&".site-only".to_string()), "{:?}", plan.hide);
+        assert!(plan.hide.contains(&"div[data-ad]".to_string()));
+        assert!(plan.hide.contains(&"div:has-text(Sponsored)".to_string()));
+        assert_eq!(plan.procedural.len(), 1, "{:?}", plan.procedural);
+        assert!(plan.script.contains("setConstant"));
+        assert_eq!(ab.generic_selectors(&["generic-ad".into(), "other".into()], &["generic-id".into()], &[]).len(), 2);
+        let kept = ab.page_plan("https://kept.test/").unwrap();
+        assert!(ab.generic_selectors(&["generic-ad".into()], &[], &kept.exceptions).is_empty(), "the exception holds");
+    }
+
+    #[test]
+    fn nothing_for_a_page_blocking_is_off_for() {
+        let ab = engine_with("news.test##.x\n", true);
+        ab.set_allowlist(vec!["news.test".into()]);
+        assert_eq!(ab.page_plan("https://news.test/"), None);
+        let ab = engine_with("news.test##.x\n", true);
+        ab.set_enabled(false);
+        assert_eq!(ab.page_plan("https://news.test/"), None);
+    }
     #[test]
     fn blocks_and_hides() {
         let dir = tempfile::tempdir().unwrap();
@@ -247,7 +480,7 @@ mod tests {
         assert_eq!(ab.check("https://ads.example.com/x.js", "https://news.test/", "script"), Verdict::Block);
         assert_eq!(ab.check("https://ads.example.com/ok/x.js", "https://news.test/", "script"), Verdict::Allow);
         assert_eq!(ab.check("https://ads.example.com/", "", "mainFrame"), Verdict::Allow);
-        assert!(ab.cosmetic("https://example.org/").0.contains(".banner"));
+        assert!(ab.page_plan("https://example.org/").unwrap().hide.contains(&".banner".to_string()));
         ab.set_allowlist(vec!["news.test".into()]);
         assert_eq!(ab.check("https://ads.example.com/x.js", "https://www.news.test/", "script"), Verdict::Allow);
         let cached = AdBlock::new(dir.path().into());

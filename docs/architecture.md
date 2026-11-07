@@ -125,7 +125,7 @@ instead (`qml/ExtBridge.qml`).
 | `session` | The last session, closed tabs and windows, named sessions |
 | `search` | Search engines and address bar input (address or search?) |
 | `sitesettings`, `privacy` | Per-site settings; tracking parameters and HTTPS upgrades |
-| `adblock`, `safebrowsing` | The built-in content blocker; dangerous-site protection |
+| `adblock`, `safebrowsing` | The built-in content blocker: filter lists, uBO's scriptlets (`resources/`), and what each page gets (`page_plan`), which `WebTab.prepareAdblock` puts in the view's scripts before the page exists; dangerous-site protection |
 | `passwords`, `kwallet`, `formfill` | Saved logins and their backends; saved addresses |
 | `certs`, `certview` | Accepted certificate exceptions; the `kite:certificate` page |
 | `reader`, `startpage`, `standin` | Reader view pages; custom start pages; generated stand-in files |

@@ -66,8 +66,10 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
 * **Dangerous-site warnings (opt-in, off by default):** pages and downloads checked against
   Google Safe Browsing (with your own API key; only hash prefixes leave the computer) or the
   open malware-filter phishing/URLhaus lists (checked entirely locally).
-* **Content blocking:** built in (Brave's engine with EasyList/EasyPrivacy), paused while an
-  extension such as uBlock Origin does the blocking.
+* **Content blocking:** built in, without an extension's memory: Brave's engine with EasyList,
+  EasyPrivacy and uBlock Origin's lists and scriptlets (`crates/kite-core/resources/`, GPLv3, from
+  [uBlock Origin](https://github.com/gorhill/uBlock); `packaging/update-adblock-resources.py` refreshes
+  them). Paused while an extension such as uBlock Origin does the blocking.
 * **Passwords:** see below.
 * **Desktop:** Kirigami/Breeze UI following the KDE colour scheme and icon theme, KDE
   notifications, Chromium's overlay scrollbars shown when the pointer nears the edge, Screen
