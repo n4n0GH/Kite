@@ -7,7 +7,7 @@ import org.kde.kite
 // Extensions on the toolbar (like Firefox's unified extensions button):
 // buttons of the extensions pinned to the toolbar (browser actions, with
 // badge), and the "Extensions" puzzle button opening a panel with all
-// add-ons. Unpinned extensions ("extensions.unpinned") live in that panel;
+// add-ons and the active plugins. Unpinned extensions ("extensions.unpinned") live in that panel;
 // their action runs from there, and their popup opens under the puzzle
 // button, placed like a toolbar button's.
 RowLayout {
@@ -33,6 +33,7 @@ RowLayout {
     }
     // Clicking an extension's button (or its row in the panel).
     function trigger(action, anchor) {
+        extMenu.close()
         const tabId = win.currentTab ? win.currentTab.tabId : -1
         if (action.popup) win.openPageActionPopup(action, anchor)
         else Extensions.actionClicked(action.ext, "browserAction", tabId)
@@ -94,9 +95,11 @@ RowLayout {
         property int installed: 0
         // Plugins may have been switched elsewhere since it was last open.
         property int pluginStates: 0
+        readonly property var activePlugins: { pluginStates; return root.win.app.plugins.filter(p => root.win.app.pluginEnabled(p)) }
         onClosed: {
             extMenu.close()
-            if (root.win.currentTab) root.win.currentTab.focusPage()
+            // (Removing an extension from its menu closes the panel for the dialog, which needs the keyboard.)
+            if (root.win.currentTab && !removeDialog.visible) root.win.currentTab.focusPage()
         }
         onAboutToShow: {
             pluginStates++
@@ -107,14 +110,21 @@ RowLayout {
 
         contentItem: ColumnLayout {
             spacing: 0
-            // Kite's own optional features: on and off here, the rest in Settings.
-            Kirigami.Heading { level: 4; text: "Plugins"; Layout.margins: Kirigami.Units.smallSpacing }
+            // Kite's own optional features: only those that are on, as there may be many
+            // installed, and to their settings. Settings has the rest, and the switches.
+            SectionTitle { text: "Plugins" }
+            QQC2.Label {
+                visible: panel.activePlugins.length === 0
+                text: "No plugins are on"
+                opacity: 0.7
+                Layout.fillWidth: true
+                Layout.margins: Kirigami.Units.smallSpacing
+            }
             Repeater {
-                model: root.win.app.plugins
+                model: panel.activePlugins
                 delegate: RowLayout {
                     id: pluginRow
                     required property var modelData
-                    readonly property bool on: { panel.pluginStates; return root.win.app.pluginEnabled(modelData) }
                     Layout.fillWidth: true
                     Layout.leftMargin: Kirigami.Units.smallSpacing
                     Layout.rightMargin: Kirigami.Units.smallSpacing
@@ -125,18 +135,8 @@ RowLayout {
                         Layout.preferredHeight: Layout.preferredWidth
                     }
                     QQC2.Label { text: pluginRow.modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
-                    QQC2.Switch {
-                        Accessible.name: pluginRow.modelData.name
-                        enabled: !root.win.app.pluginsDisabled
-                        checked: pluginRow.on
-                        onToggled: {
-                            root.win.app.setPluginEnabled(pluginRow.modelData, checked)
-                            panel.pluginStates++
-                        }
-                    }
                     QQC2.ToolButton {
                         visible: !!pluginRow.modelData.settingsPage
-                        enabled: pluginRow.on
                         icon.name: "configure"
                         display: QQC2.AbstractButton.IconOnly
                         text: "Configure " + pluginRow.modelData.name
@@ -148,12 +148,13 @@ RowLayout {
                     }
                 }
             }
+            ManageButton { text: "Manage Plugins"; onManage: root.win.app.showPreferences("extensions") }
             Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Kirigami.Units.smallSpacing }
-            Kirigami.Heading { level: 4; text: "Extensions"; Layout.margins: Kirigami.Units.smallSpacing }
+            SectionTitle { text: "Extensions" }
             QQC2.Label {
                 visible: panel.exts.length === 0
                 text: panel.installed === 0 ? "No extensions installed"
-                    : "No extensions have permission to run in this private window. To allow one, open Manage Extensions and turn on Private windows in its details."
+                    : "No extensions have permission to run in this private window. To allow one, choose Manage Extensions and turn on Private windows in its details."
                 wrapMode: Text.Wrap
                 opacity: 0.7
                 Layout.fillWidth: true
@@ -213,14 +214,13 @@ RowLayout {
                             icon.name: "overflow-menu"
                             display: QQC2.AbstractButton.IconOnly
                             text: "More"
-                            onClicked: root.openMenu(row.modelData.id, row.pinned, !!row.act, this, 0, height)
+                            // (Pinning has its own button here.)
+                            onClicked: root.openMenu(row.modelData.id, row.pinned, false, this, 0, height)
                         }
                     }
                 }
             }
-            Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Kirigami.Units.smallSpacing; Layout.bottomMargin: Kirigami.Units.smallSpacing }
-            QQC2.ItemDelegate { Layout.fillWidth: true; icon.name: "get-hot-new-stuff"; text: "Find More Extensions…"; onClicked: { panel.close(); root.win.app.showAddons("browse") } }
-            QQC2.ItemDelegate { Layout.fillWidth: true; icon.name: "configure"; text: "Manage Extensions"; onClicked: { panel.close(); root.win.app.showAddons("installed") } }
+            ManageButton { text: "Manage Extensions"; onManage: root.win.app.showAddons("installed") }
         }
     }
 
@@ -250,13 +250,49 @@ RowLayout {
             icon.name: extMenu.pinned ? "window-unpin" : "window-pin"
             onTriggered: root.setPinned(extMenu.extId, !extMenu.pinned)
         }
-        QQC2.MenuItem { text: "Manage Extension"; icon.name: "configure"; onTriggered: root.win.app.showAddons("installed") }
         QQC2.MenuItem {
             text: "Options"; icon.name: "settings-configure"
             enabled: Extensions.optionsUrl(extMenu.extId) !== ""
             onTriggered: root.win.openTab(Extensions.optionsUrl(extMenu.extId), {background: false})
         }
-        QQC2.MenuItem { text: "Remove Extension"; icon.name: "edit-delete"; onTriggered: root.win.app.showAddons("installed") }
+        QQC2.MenuItem {
+            text: "Remove Extension"; icon.name: "edit-delete"
+            onTriggered: {
+                panel.close()
+                const ext = JSON.parse(Extensions.list()).find(e => e.id === extMenu.extId)
+                removeDialog.extId = extMenu.extId
+                removeDialog.extName = ext ? ext.name : "this extension"
+                removeDialog.open()
+            }
+        }
+    }
+    Kirigami.PromptDialog {
+        id: removeDialog
+        property string extId
+        property string extName
+        parent: root.win.contentItem
+        title: "Remove " + extName + "?"
+        subtitle: "The extension and its data will be removed."
+        standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+        onAccepted: {
+            const u = Extensions.uninstall(extId)
+            if (u !== "") root.win.app.openUrl(u, "tab")
+        }
+        onClosed: if (root.win.currentTab) root.win.currentTab.focusPage()
+    }
+
+    // A section of the panel: its title, and under its list the way to where it's managed.
+    component SectionTitle: Kirigami.Heading {
+        level: 4
+        Layout.fillWidth: true
+        Layout.margins: Kirigami.Units.smallSpacing
+    }
+    component ManageButton: QQC2.Button {
+        signal manage()
+        icon.name: "configure"
+        Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing
+        onClicked: { panel.close(); manage() }
     }
 
     // A browser action's badge (e.g. uBlock Origin's blocked-request count).

@@ -3,7 +3,7 @@
 Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys,
 Picture-in-Picture and Plasma Integration are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
 hand it out as a file, and users install it with **Settings → Plugins & Extensions → Install Plugin
-from File…**. Users switch plugins on and off there, or in the toolbar's extensions panel.
+from File…**. Users switch plugins on and off there. The toolbar's extensions panel lists those that are on, with a button to their settings.
 
 ## Plugins or WebExtensions?
 
@@ -320,7 +320,7 @@ And this one in `PLUGIN_FILES`:
 Then check it with `cargo test -p kite plugins_are_valid_and_complete`.
 
 There's nothing else to wire up. Because of what it declares, the plugin also has:
-- a row in the toolbar's extensions panel, with its switch
+- a row in the toolbar's extensions panel while it's on, with a button to its settings
 - a **Configure** button in Settings
 - its action in **Settings → Shortcuts**, where users can change the keys
 - an entry in the command palette, both to switch it and to run the action

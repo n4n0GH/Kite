@@ -99,7 +99,7 @@ Matching and ranking are in `fuzzy.js` and `CommandBar.refresh`. A setting's sco
 
 | What | File |
 |---|---|
-| Extensions panel (extensions and plugins, with toggles) | `ExtensionButtons.qml` |
+| Extensions panel (extensions, and active plugins with their settings) | `ExtensionButtons.qml` |
 | An extension's popup | `ExtensionPopup.qml` |
 | Sidebar: bookmarks, history, an extension's panel | `Sidebar.qml` |
 | Find in page | `FindBar.qml` |
