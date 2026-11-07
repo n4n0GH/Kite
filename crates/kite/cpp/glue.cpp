@@ -3,6 +3,7 @@
 //  * the profile-wide request interceptor (content blocking, DNR, webRequest)
 //  * cookie store mirroring (cookies API)
 // Everything here forwards to Rust via a small C ABI (src/ffi.rs).
+#include <QMimeDatabase>
 #include <QBuffer>
 #include <QCryptographicHash>
 #include <QAbstractSocket>
@@ -366,6 +367,40 @@ static QNetworkCookie cookieFromJson(const QJsonObject &o, QUrl *originOut)
     else if (ss == "no_restriction") c.setSameSitePolicy(QNetworkCookie::SameSite::None);
     if (originOut) *originOut = url.isValid() ? QUrl(url.scheme() + "://" + url.host()) : QUrl();
     return c;
+}
+
+// Qt's own file dialog for pages does this too, but can't be told where to open.
+extern "C" const char *kite_cpp_file_name_filters(const char *accepted_json)
+{
+    QMimeDatabase db;
+    QStringList filters, globs;
+    const auto add = [&](const QMimeType &type) {
+        if (!type.isValid() || type.globPatterns().isEmpty()) return;
+        globs += type.globPatterns();
+        filters += type.filterString();
+    };
+    const QJsonArray accepted = QJsonDocument::fromJson(accepted_json).array();
+    for (const QJsonValue &value : accepted) {
+        const QString item = value.toString().trimmed().toLower();
+        if (item.startsWith(QLatin1Char('.'))) {
+            const QString glob = QLatin1Char('*') + item;
+            globs += glob;
+            filters += QStringLiteral("%1 (%1)").arg(glob);
+        } else if (item.endsWith(QLatin1String("/*"))) {
+            const QString prefix = item.chopped(1);
+            for (const QMimeType &type : db.allMimeTypes())
+                if (type.name().startsWith(prefix)) add(type);
+        } else {
+            add(db.mimeTypeForName(item));
+        }
+    }
+    globs.removeDuplicates();
+    filters.removeDuplicates();
+    if (filters.size() > 1) filters.prepend(QStringLiteral("Accepted types (%1)").arg(globs.join(QLatin1Char(' '))));
+    if (!filters.isEmpty()) filters.append(QStringLiteral("All files (*)"));
+    static QByteArray out;
+    out = QJsonDocument(QJsonArray::fromStringList(filters)).toJson(QJsonDocument::Compact);
+    return out.constData();
 }
 
 extern "C" void kite_cpp_set_cookie(const char *json)

@@ -276,6 +276,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "reloadAdblock"]
         fn reload_adblock(self: Pin<&mut Browser>, download: bool);
+        /// Name filters for a file dialog from what a page's file input accepts.
+        #[qinvokable]
+        #[cxx_name = "fileFilters"]
+        fn file_filters(self: &Browser, accepted: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "refreshAdblock"]
         fn refresh_adblock(self: Pin<&mut Browser>);
@@ -1197,6 +1201,9 @@ impl qobject::Browser {
     fn reload_adblock(self: Pin<&mut Self>, download: bool) {
         let thread = self.qt_thread();
         app().reload_adblock(download, move |r| report_adblock(thread, r));
+    }
+    fn file_filters(&self, accepted: &QString) -> QString {
+        q(crate::ffi::file_name_filters(&accepted.to_string()))
     }
     fn refresh_adblock(self: Pin<&mut Self>) {
         let thread = self.qt_thread();

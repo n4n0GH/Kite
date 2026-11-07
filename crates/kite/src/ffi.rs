@@ -29,6 +29,13 @@ pub extern "C" fn kite_buf_free(b: KiteBuf) {
     }
 }
 
+/// JSON list of a file dialog's name filters, from the JSON list of what a page's
+/// file input accepts (`.pdf`, `image/*`, `text/plain`).
+pub fn file_name_filters(accepted_json: &str) -> String {
+    let Ok(json) = std::ffi::CString::new(accepted_json) else { return "[]".into() };
+    unsafe { s(kite_cpp_file_name_filters(json.as_ptr())) }.to_owned()
+}
+
 unsafe fn s<'a>(p: *const c_char) -> &'a str {
     if p.is_null() {
         ""
@@ -46,6 +53,7 @@ extern "C" {
     fn kite_cpp_delete_cookies_of(hosts_json: *const c_char);
     fn kite_cpp_hook_container_profiles();
     fn kite_cpp_qwebchannel_js() -> *const c_char;
+    fn kite_cpp_file_name_filters(accepted_json: *const c_char) -> *const c_char;
     fn kite_cpp_copy_text(text: *const c_char);
     fn kite_cpp_site_of(host: *const c_char) -> *const c_char;
     fn kite_cpp_cert_fingerprint(error: *const std::ffi::c_void) -> *const c_char;

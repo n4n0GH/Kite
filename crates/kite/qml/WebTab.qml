@@ -721,6 +721,10 @@ Item {
                     Qt.callLater(() => { web.url = target })
                 }
 
+                onFileDialogRequested: request => {
+                    request.accepted = true
+                    pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window})
+                }
                 onNewWindowRequested: request => {
                     // (No tab for a link to another program: as above.)
                     if (Browser.isExternalUrl(request.requestedUrl.toString())) {
@@ -985,6 +989,11 @@ Item {
                 inspectedView: web
             }
         }
+    }
+
+    Component {
+        id: pageFileDialogComponent
+        PageFileDialog {}
     }
 
     Component {

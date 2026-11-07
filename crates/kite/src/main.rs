@@ -76,8 +76,20 @@ Environment:
                          console::extension, Qt to qt::<category>; e.g.
                          RUST_LOG=console::page=info shows all page messages";
 
+/// Start in the home folder, wherever Kite was started from: file dialogs that aren't
+/// told where to open do so in the working directory, and an AppImage keeps the
+/// one it was launched in.
+fn work_in_home() {
+    let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_owned()) else { return };
+    if let Some(dir) = std::env::var_os("KITE_DATA_DIR").and_then(|d| std::path::absolute(d).ok()) {
+        std::env::set_var("KITE_DATA_DIR", dir);
+    }
+    let _ = std::env::set_current_dir(home);
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,console::page=error")).init();
+    work_in_home();
     let mut profile = kite_core::profiles::DEFAULT.to_owned();
     let mut chosen = false;
     let mut pick = false;

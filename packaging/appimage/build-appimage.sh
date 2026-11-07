@@ -15,6 +15,7 @@
 #   ARCH            target architecture (default: uname -m)
 #   CARGO           cargo binary (default: cargo, or ~/.cargo/bin/cargo)
 #   KITE_TOOLS_DIR  where linuxdeploy is cached (default: target/appimage-tools)
+#   KITE_DIST_DIR   where the AppImage goes (default: dist)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -24,7 +25,7 @@ CARGO=${CARGO:-$(command -v cargo || echo "$HOME/.cargo/bin/cargo")}
 TOOLS=${KITE_TOOLS_DIR:-$ROOT/target/appimage-tools}
 WORK=$ROOT/target/appimage
 APPDIR=$WORK/AppDir
-DIST=$ROOT/dist
+DIST=${KITE_DIST_DIR:-$ROOT/dist}
 VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)
 BUILD=1
 [[ ${1:-} == --no-build ]] && BUILD=0
@@ -99,6 +100,13 @@ copy_plugins printsupport
 # KDE's look, icons and file dialogs. The system's can't load against the bundled Qt.
 copy_plugins platformthemes
 copy_plugins styles
+# What KDE's file dialog lists folders with: without it, the list stays empty.
+if [[ -f $QT_PLUGINS/kf6/kio/kio_file.so ]]; then
+    mkdir -p "$APPDIR/usr/plugins/kf6/kio"
+    cp -a "$QT_PLUGINS/kf6/kio/kio_file.so" "$APPDIR/usr/plugins/kf6/kio/"
+fi
+# How KDE's libraries talk to Wayland and X11, the file dialog's among them.
+copy_plugins kf6/kwindowsystem
 # Sharing (ShareDialog.qml, a plugin's, which the scanner doesn't look at): the ways
 # that don't need accounts or other applications' libraries. Running one takes the
 # system's purposeprocess, so without KDE on the system sharing just reports failing.
@@ -137,7 +145,7 @@ export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
 export LDAI_OUTPUT="$WORK/Kite-$VERSION-$ARCH.AppImage"
 export OUTPUT=$LDAI_OUTPUT
 deps_only=()
-for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/platformthemes "$APPDIR"/usr/plugins/styles "$APPDIR"/usr/plugins/wayland-*; do
+for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/kf6/kio "$APPDIR"/usr/plugins/kf6/kwindowsystem "$APPDIR"/usr/plugins/platformthemes "$APPDIR"/usr/plugins/styles "$APPDIR"/usr/plugins/wayland-*; do
     [[ -d $d ]] && deps_only+=(--deploy-deps-only "$d")
 done
 (cd "$WORK" && "$LINUXDEPLOY" --appdir "$APPDIR" \
