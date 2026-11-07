@@ -122,9 +122,12 @@ Bundles Qt, QtWebEngine and the KDE QML modules Kite uses (including the `org.kd
 Kirigami's desktop platform plugin and the Wayland client plugins) with
 [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and linuxdeploy-plugin-qt. Both are
 downloaded into `target/appimage-tools` on first use; set `LINUXDEPLOY` / `LINUXDEPLOY_PLUGIN_QT`
-to use your own copies, and `QMAKE` to pick the Qt to bundle. An AppImage only runs on systems whose
-glibc is at least as new as the build system's, so build on an older distribution (e.g. in a
-container) for wider compatibility.
+to use your own copies, and `QMAKE` to pick the Qt to bundle.
+
+The AppImage also carries the build system's glibc and what's tied to it, in `usr/glibc`, and runs on
+those on systems with an older glibc. Everywhere else it uses the system's, as its graphics drivers
+can need a newer one. Graphics, X11 and sound libraries always come from the system. `KITE_OWN_GLIBC=1`
+or `0` forces either way, for testing.
 
 ## Architecture
 

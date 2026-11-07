@@ -13,9 +13,8 @@
 #   install     it's also installed for this user, or replaces the Kite already
 #               installed: see install-appimage.sh
 #
-# Portability: an AppImage runs on systems whose glibc is at least as new as
-# the build system's. Build on an old distribution (or in a container of
-# one) to support more systems.
+# Portability: it runs on systems with an older glibc than the build system's by
+# carrying its own: see add_own_glibc.
 #
 # Environment:
 #   QMAKE           qmake of the Qt to bundle (default: qmake6)
@@ -179,14 +178,94 @@ if [[ -d /usr/share/icu ]]; then
     mkdir -p "$APPDIR/usr/share"
     cp -a /usr/share/icu "$APPDIR/usr/share/"
 fi
+# On a system with an older glibc than this one's, which couldn't load what's bundled,
+# Kite runs on a copy of this one, through its loader: see add_own_glibc below. Everywhere
+# else it's left out of it, and the system's drivers can need a glibc newer than this.
+GLIBC_VERSION=$(getconf GNU_LIBC_VERSION | cut -d' ' -f2)
+LOADER=$(basename "$(readelf -l "$BIN" | sed -n 's/.*interpreter: \(.*\)]/\1/p')")
 APPRUN=$WORK/AppRun
-cat > "$APPRUN" <<'EOF'
+cat > "$APPRUN" <<EOF
 #!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-for d in "$HERE"/usr/share/icu/*; do [ -d "$d" ] && export ICU_DATA="$d"; done
-exec "$HERE/usr/bin/kite" "$@"
+HERE="\$(dirname "\$(readlink -f "\$0")")"
+for d in "\$HERE"/usr/share/icu/*; do [ -d "\$d" ] && export ICU_DATA="\$d"; done
+# Older than $GLIBC_VERSION, or not telling? KITE_OWN_GLIBC=1 or 0 decides instead, for testing.
+own=\${KITE_OWN_GLIBC:-}
+if [ -z "\$own" ]; then
+    have=\$(getconf GNU_LIBC_VERSION 2>/dev/null | cut -d' ' -f2)
+    major=\${have%%.*}; minor=\${have#*.}; minor=\${minor%%.*}
+    case "\$major\$minor" in
+        ''|*[!0-9]*) own=1 ;;
+        *) if [ "\$major" -lt ${GLIBC_VERSION%%.*} ] || { [ "\$major" -eq ${GLIBC_VERSION%%.*} ] && [ "\$minor" -lt ${GLIBC_VERSION#*.} ]; }; then own=1; else own=0; fi ;;
+    esac
+fi
+if [ "\$own" = 1 ]; then
+    # (Read by QtWebEngineProcess's own wrapper.)
+    export KITE_OWN_GLIBC=1
+    exec "\$HERE/usr/glibc/$LOADER" --library-path "\$HERE/usr/glibc:\$HERE/usr/lib" --argv0 "\$HERE/usr/bin/kite" "\$HERE/usr/bin/kite" "\$@"
+fi
+export KITE_OWN_GLIBC=0
+exec "\$HERE/usr/bin/kite" "\$@"
 EOF
 chmod +x "$APPRUN"
+
+# Some distributions (openSUSE) keep builds of libraries for newer CPUs too, and the system's
+# own loader, which the scan asks, picks those on this CPU. Bundled, they'd crash on any CPU
+# without what they were built for, so the plain builds go in instead.
+use_plain_cpu_builds() {
+    local libdir file name variant
+    libdir=$(dirname "$(ldd "$BIN" | awk '$1 == "libc.so.6" {print $3}')")
+    for file in "$APPDIR"/usr/lib/*; do
+        [[ -f $file && ! -L $file ]] || continue
+        name=$(basename "$file")
+        for variant in "$libdir"/glibc-hwcaps/*/"$name"; do
+            [[ -e $variant && -e $libdir/$name ]] || continue
+            cp -L --remove-destination "$libdir/$name" "$file"
+            break
+        done
+    done
+}
+
+# What Kite runs on with a system too old for it. Beside Kite's other libraries it would be
+# found on every system, so it has a folder of its own, only ever named by the loader.
+# The loader is then what the system sees as running, and Qt looks for qt.conf beside that.
+# It isn't inherited: programs Kite starts use the system's libraries, as they should.
+add_own_glibc() {
+    local own=$APPDIR/usr/glibc lib libdir
+    libdir=$(dirname "$(ldd "$BIN" | awk '$1 == "libc.so.6" {print $3}')")
+    mkdir -p "$own"
+    cp -L "$libdir/$LOADER" "$own/"
+    for lib in "${OWN_GLIBC_LIBS[@]}"; do
+        [[ -e $libdir/$lib ]] && cp -L "$libdir/$lib" "$own/"
+    done
+    # An old system's versions of these are also too old for what's bundled. What's tied
+    # to its hardware and session stays the system's, with what those depend on.
+    local path name
+    for lib in "${OWN_SYSTEM_LIBS[@]}"; do
+        [[ -e $libdir/$lib ]] || continue
+        cp -L "$libdir/$lib" "$own/"
+        while read -r name _ path _; do
+            [[ $path == /* && -e $path ]] || continue
+            [[ -e $APPDIR/usr/lib/$name || -e $own/$name ]] && continue
+            [[ -e $libdir/$name ]] && path=$libdir/$name
+            [[ $name =~ ^lib(GL|EGL|GLX|OpenGL|gbm|drm|xcb|X11|Xau|Xdmcp|asound|ffi|bsd|md) ]] && continue
+            cp -L "$path" "$own/"
+        done < <(ldd "$libdir/$lib")
+    done
+    cp "$APPDIR/usr/bin/qt.conf" "$own/"
+    local process=$APPDIR/usr/libexec/QtWebEngineProcess
+    mv "$process" "$process.bin"
+    cat > "$process" <<EOF
+#!/bin/sh
+HERE="\$(dirname "\$(readlink -f "\$0")")"
+if [ "\$KITE_OWN_GLIBC" = 1 ]; then
+    exec "\$HERE/../glibc/$LOADER" --library-path "\$HERE/../glibc:\$HERE/../lib" --argv0 "\$0" "\$HERE/QtWebEngineProcess.bin" "\$@"
+fi
+exec "\$HERE/QtWebEngineProcess.bin" "\$@"
+EOF
+    chmod +x "$process"
+}
+OWN_GLIBC_LIBS=(libc.so.6 libm.so.6 libmvec.so.1 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libresolv.so.2 libanl.so.1 libnss_compat.so.2 libgcc_s.so.1 libstdc++.so.6)
+OWN_SYSTEM_LIBS=(libharfbuzz.so.0 libfreetype.so.6 libfontconfig.so.1 libfribidi.so.0 libexpat.so.1 libz.so.1 libgmp.so.10 libcom_err.so.2 libICE.so.6 libSM.so.6 libwayland-client.so.0 libwayland-cursor.so.0 libwayland-egl.so.1)
 
 # ---- bundle -------------------------------------------------------------------------
 say "Bundling with linuxdeploy"
@@ -195,6 +274,13 @@ export QML_SOURCES_PATHS="$ROOT/crates/kite/qml:$EXTRA_QML"
 export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
 export LDAI_OUTPUT="$WORK/Kite-$VERSION-$ARCH.AppImage"
 export OUTPUT=$LDAI_OUTPUT
+# What NSS loads at runtime from beside itself, which the scan can't see. Without it, a
+# system that doesn't happen to have them ends Kite at the first HTTPS connection.
+nss_modules=()
+libdir=$(dirname "$(ldd "$BIN" | awk '$1 == "libnss3.so" {print $3}')")
+for lib in libsoftokn3.so libfreebl3.so libfreeblpriv3.so libnssdbm3.so libnssckbi.so; do
+    [[ -e $libdir/$lib ]] && nss_modules+=(--library "$libdir/$lib")
+done
 deps_only=()
 for d in "$APPDIR"/usr/plugins/kf6/kirigami/platform "$APPDIR"/usr/plugins/kf6/purpose "$APPDIR"/usr/plugins/kf6/kio "$APPDIR"/usr/plugins/kf6/kwindowsystem "$APPDIR"/usr/plugins/platformthemes "$APPDIR"/usr/plugins/styles "$APPDIR"/usr/plugins/wayland-*; do
     [[ -d $d ]] && deps_only+=(--deploy-deps-only "$d")
@@ -204,8 +290,11 @@ done
     --custom-apprun "$APPRUN" \
     --desktop-file "$APPDIR/usr/share/applications/org.kde.kite.desktop" \
     --icon-file "$APPDIR/usr/share/icons/hicolor/scalable/apps/org.kde.kite.svg" \
-    "${deps_only[@]}" \
-    --plugin qt --output appimage)
+    "${deps_only[@]}" "${nss_modules[@]}" \
+    --plugin qt)
+use_plain_cpu_builds
+add_own_glibc
+(cd "$WORK" && "$LINUXDEPLOY" --appdir "$APPDIR" --output appimage)
 
 mkdir -p "$DIST"
 mv -f "$LDAI_OUTPUT" "$DIST/"
