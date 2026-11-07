@@ -463,7 +463,11 @@ QQC2.ApplicationWindow {
 
     onActiveChanged: if (active) app.windowActivated(bw)
     onClosing: close => {
-        if (!app.quitting && app.windows.length === 1 && count > 1 && false) close.accepted = false
+        // The last window takes Kite with it.
+        if (!app.quitting && app.windows.length === 1 && app.askBeforeQuit(() => bw.close())) {
+            close.accepted = false
+            return
+        }
         for (let i = count - 1; i >= 0; --i) {
             const t = tabById(tabModel.get(i).tabId)
             if (t) Extensions.browserEvent("tabRemoved", JSON.stringify({tabId: t.tabId, windowId: windowId, windowClosing: true}))

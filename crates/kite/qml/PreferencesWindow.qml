@@ -1291,20 +1291,23 @@ ManagerWindow {
     // for the answer, in order; a page opened from elsewhere may come with
     // both a change of page and a submenu.
     property var waitingToLeave: []
-    function leavePage(then) {
+    readonly property bool askingAboutUnsaved: unsavedDialog.visible
+    function hasUnsaved() {
         const current = pageStack.currentItem
-        if (!current || !current.unsaved) { then(); return }
+        return !!current && !!current.unsaved
+    }
+    function leavePage(then) {
+        if (!hasUnsaved()) { then(); return }
         waitingToLeave.push(then)
-        if (!unsavedDialog.visible) {
+        if (!askingAboutUnsaved) {
             unsavedDialog.answer = ""
             unsavedDialog.open()
         }
     }
     onClosing: close => {
-        const current = pageStack.currentItem
-        if (!current || !current.unsaved) return
+        if (!hasUnsaved()) return
         close.accepted = false
-        if (!unsavedDialog.visible) leavePage(() => w.close())
+        if (!askingAboutUnsaved) leavePage(() => w.close())
     }
     Kirigami.PromptDialog {
         id: unsavedDialog

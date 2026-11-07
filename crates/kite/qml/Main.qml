@@ -560,8 +560,18 @@ QtObject {
         return w.openTab(url, {background: where === "background"})
     }
 
+    // Settings with changes not applied asks before Kite goes; then `then`
+    // carries on. Whether it's asking.
+    function askBeforeQuit(then) {
+        const prefs = _singletons["preferences"]
+        if (!prefs || !prefs.hasUnsaved()) return false
+        prefs.show(); prefs.raise(); prefs.requestActivate()
+        if (!prefs.askingAboutUnsaved) prefs.leavePage(then)
+        return true
+    }
     function quit(sessionSaved) {
         if (quitting) return
+        if (askBeforeQuit(() => quit(sessionSaved))) return
         quitting = true
         if (!sessionSaved) saveSession()
         Browser.setRunning(false)
