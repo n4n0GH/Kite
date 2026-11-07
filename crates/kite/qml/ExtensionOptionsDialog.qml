@@ -13,17 +13,22 @@ Window {
     color: Kirigami.Theme.backgroundColor
     function open(url, name) {
         title = name + " — Options"
-        view.url = url
+        view.active = true
+        view.item.url = url
         visible = true; raise(); requestActivate()
     }
-    onClosing: view.url = "about:blank"
-    WebEngineView {
+    onClosing: view.active = false
+    // Only while open: a web view holds a renderer process even when it shows nothing.
+    Loader {
         id: view
         anchors.fill: parent
-        profile: w.profile
-        webChannel: WebChannel { registeredObjects: [bridge] }
-        settings.localContentCanAccessRemoteUrls: true
-        onWindowCloseRequested: w.close()
-        ExtBridge { id: bridge; viewKey: "options"; viewKind: "options" }
+        active: false
+        sourceComponent: WebEngineView {
+            profile: w.profile
+            webChannel: WebChannel { registeredObjects: [bridge] }
+            settings.localContentCanAccessRemoteUrls: true
+            onWindowCloseRequested: w.close()
+            ExtBridge { id: bridge; viewKey: "options"; viewKind: "options" }
+        }
     }
 }

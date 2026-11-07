@@ -34,9 +34,9 @@ QQC2.Popup {
     // open transition, by which time the page may already have laid out.)
     property bool active: false
     function takeSize() {
-        if (!active || view.url.toString() === "about:blank") return
-        pageWidth = view.contentsSize.width
-        pageHeight = view.contentsSize.height
+        if (!active || !view.item) return
+        pageWidth = view.item.contentsSize.width
+        pageHeight = view.item.contentsSize.height
     }
     width: Math.min(maxPopupWidth, Math.max(Kirigami.Units.gridUnit * 4, Math.min(800, pageWidth || 320)) + 2 * padding)
     height: Math.min(maxPopupHeight, Math.max(Kirigami.Units.gridUnit * 2, Math.min(600, pageHeight || 200)) + 2 * padding)
@@ -59,34 +59,40 @@ QQC2.Popup {
         parent = anchor
         anchorItem = anchor
         popupUrl = action.popup
-        view.url = action.popup
+        view.active = true
+        view.item.url = action.popup
         open()
     }
 
-    onClosed: { active = false; view.url = "about:blank"; popupUrl = "" }
+    onClosed: { active = false; view.active = false; popupUrl = "" }
 
-    contentItem: WebEngineView {
+    // Only while open: a web view holds a renderer process even when it shows nothing,
+    // and each window has one of these popups.
+    contentItem: Loader {
         id: view
-        profile: popup.profile
-        webChannel: WebChannel { registeredObjects: [bridge] }
-        settings.localContentCanAccessRemoteUrls: true
-        settings.javascriptCanAccessClipboard: true
-        settings.scrollAnimatorEnabled: popup.win.app.liveSettings["web.smoothScrolling"]
-        backgroundColor: "white"
-        onWindowCloseRequested: popup.close()
-        onContentsSizeChanged: popup.takeSize()
-        onLoadingChanged: info => { if (info.status === WebEngineView.LoadSucceededStatus) popup.takeSize() }
-        onNewWindowRequested: request => { popup.win.openTab(request.requestedUrl.toString(), {background: false}); popup.close() }
-        onNavigationRequested: request => {
-            // Links that leave the extension open in a tab.
-            if (request.isMainFrame && !request.url.toString().startsWith("moz-extension:") && request.url.toString() !== "about:blank") {
-                request.reject()
-                popup.win.openTab(request.url.toString(), {background: false})
-                popup.close()
+        active: false
+        sourceComponent: WebEngineView {
+            profile: popup.profile
+            webChannel: WebChannel { registeredObjects: [bridge] }
+            settings.localContentCanAccessRemoteUrls: true
+            settings.javascriptCanAccessClipboard: true
+            settings.scrollAnimatorEnabled: popup.win.app.liveSettings["web.smoothScrolling"]
+            backgroundColor: "white"
+            onWindowCloseRequested: popup.close()
+            onContentsSizeChanged: popup.takeSize()
+            onLoadingChanged: info => { if (info.status === WebEngineView.LoadSucceededStatus) popup.takeSize() }
+            onNewWindowRequested: request => { popup.win.openTab(request.requestedUrl.toString(), {background: false}); popup.close() }
+            onNavigationRequested: request => {
+                // Links that leave the extension open in a tab.
+                if (request.isMainFrame && !request.url.toString().startsWith("moz-extension:") && request.url.toString() !== "about:blank") {
+                    request.reject()
+                    popup.win.openTab(request.url.toString(), {background: false})
+                    popup.close()
+                }
             }
+            onContextMenuRequested: request => request.accepted = false
+            onJavaScriptConsoleMessage: (level, message, line, source) => popup.win.app.logConsole(true, "popup", level, message, source, line)
         }
-        onContextMenuRequested: request => request.accepted = false
-        onJavaScriptConsoleMessage: (level, message, line, source) => popup.win.app.logConsole(true, "popup", level, message, source, line)
     }
     ExtBridge {
         id: bridge
