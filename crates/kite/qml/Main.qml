@@ -1196,6 +1196,7 @@ QtObject {
 
     property Component libraryComponent: Component { LibraryWindow {} }
     property Component downloadsComponent: Component { DownloadsWindow {} }
+    property Component blockedComponent: Component { BlockedRequestsWindow {} }
     property Component preferencesComponent: Component { PreferencesWindow {} }
     property Component addonsComponent: Component { AddonsWindow {} }
     property var _singletons: ({})
@@ -1214,6 +1215,7 @@ QtObject {
     }
     function showLibrary(page) { return showSingleton("library", libraryComponent, {page: page || "history"}) }
     function showDownloads() { return showSingleton("downloads", downloadsComponent) }
+    function showBlockedRequests(host) { return showSingleton("blocked", blockedComponent, {host: host}) }
     function showPreferences(page) { return showSingleton("preferences", preferencesComponent, {page: page || "general"}) }
     function showPluginSettings(plugin) { showPreferences("extensions").openPluginSettings(plugin) }
     function showAddons(page) { return showSingleton("addons", addonsComponent, {page: page || "installed"}) }

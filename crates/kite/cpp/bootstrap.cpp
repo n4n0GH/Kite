@@ -470,7 +470,8 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     QApplication::setApplicationName(QStringLiteral("kite"));
     QApplication::setOrganizationName(QStringLiteral("kde"));
     QApplication::setApplicationDisplayName(QStringLiteral("Kite"));
-    // Kite's own icons (crates/kite/icons/kite/, names start with "kite-"):
+    // Kite's own icons (crates/kite/icons/kite/, names start with "kite-", and copies
+    // of Breeze ones for themes without them):
     // an icon theme in the resources used after the user's theme (it
     // inherits Breeze, the usual fallback), for QIcon lookups; Kirigami's
     // lookup (QML icons) only searches the user's theme and the fallback

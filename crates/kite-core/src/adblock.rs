@@ -150,6 +150,52 @@ fn preprocess(list: &str) -> String {
     out
 }
 
+/// A request blocked on a page.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Blocked {
+    pub url: String,
+    pub kind: &'static str,
+    /// When, in ms since the epoch.
+    pub at: i64,
+    /// Given something harmless instead (a `redirect=` rule), rather than nothing.
+    pub replaced: bool,
+}
+
+/// How many requests of a site's pages were blocked, and the latest of them. Bounded, as a
+/// session can be long: some sites, some entries each.
+#[derive(Default)]
+struct BlockedLog {
+    sites: std::collections::HashMap<String, SiteBlocked>,
+    uses: u64,
+}
+#[derive(Default)]
+struct SiteBlocked {
+    count: u64,
+    latest: std::collections::VecDeque<Blocked>,
+    used: u64,
+}
+const BLOCKED_KEPT_PER_SITE: usize = 200;
+const BLOCKED_SITES_KEPT: usize = 100;
+
+impl BlockedLog {
+    fn note(&mut self, site: String, blocked: Blocked) {
+        self.uses += 1;
+        let uses = self.uses;
+        if !self.sites.contains_key(&site) && self.sites.len() >= BLOCKED_SITES_KEPT {
+            if let Some(oldest) = self.sites.iter().min_by_key(|(_, s)| s.used).map(|(h, _)| h.clone()) {
+                self.sites.remove(&oldest);
+            }
+        }
+        let s = self.sites.entry(site).or_default();
+        s.count += 1;
+        s.used = uses;
+        if s.latest.len() == BLOCKED_KEPT_PER_SITE {
+            s.latest.pop_front();
+        }
+        s.latest.push_back(blocked);
+    }
+}
+
 /// What a page gets from the lists, before it exists (WebTab.prepareAdblock).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct PagePlan {
@@ -175,6 +221,8 @@ pub struct AdBlock {
     allowlist: RwLock<Vec<String>>,
     enabled: std::sync::atomic::AtomicBool,
     pub blocked_count: std::sync::atomic::AtomicU64,
+    /// What was blocked on each site this session (by the host of the page, without "www.").
+    blocked_on: Mutex<BlockedLog>,
 }
 
 pub fn list_path(dir: &Path, url: &str) -> PathBuf {
@@ -209,6 +257,7 @@ impl AdBlock {
             allowlist: RwLock::new(vec![]),
             enabled: true.into(),
             blocked_count: 0.into(),
+            blocked_on: Mutex::default(),
         }
     }
 
@@ -335,6 +384,8 @@ impl AdBlock {
         let r = engine.check_network_request(&req);
         if r.should_block() {
             self.blocked_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let site = crate::util::host_of(source).trim_start_matches("www.").to_owned();
+            self.blocked_on.lock().unwrap().note(site, Blocked { url: url.to_owned(), kind: request_type(qt_type), at: crate::util::now_ms(), replaced: r.redirect.is_some() });
             if let Some(redirect) = r.redirect {
                 return Verdict::Redirect(redirect);
             }
@@ -344,6 +395,20 @@ impl AdBlock {
             return Verdict::Redirect(rewritten);
         }
         Verdict::Allow
+    }
+
+    /// How many requests were blocked on pages of this site, this session.
+    pub fn blocked_on(&self, host: &str) -> u64 {
+        self.blocked_on.lock().unwrap().sites.get(host.trim_start_matches("www.")).map_or(0, |s| s.count)
+    }
+
+    /// The latest of them, newest first.
+    pub fn blocked_list(&self, host: &str) -> Vec<Blocked> {
+        self.blocked_on.lock().unwrap().sites.get(host.trim_start_matches("www.")).map_or_else(Vec::new, |s| s.latest.iter().rev().cloned().collect())
+    }
+
+    pub fn clear_blocked(&self, host: &str) {
+        self.blocked_on.lock().unwrap().sites.remove(host.trim_start_matches("www."));
     }
 
     /// What a page at this address gets, or None if blocking is off for it.
@@ -461,6 +526,44 @@ mod tests {
         assert_eq!(ab.generic_selectors(&["generic-ad".into(), "other".into()], &["generic-id".into()], &[]).len(), 2);
         let kept = ab.page_plan("https://kept.test/").unwrap();
         assert!(ab.generic_selectors(&["generic-ad".into()], &[], &kept.exceptions).is_empty(), "the exception holds");
+    }
+
+    #[test]
+    fn counts_what_was_blocked_by_site() {
+        let ab = engine_with("||ads.example^\n", true);
+        ab.check("https://ads.example/a.js", "https://www.news.test/x", "script");
+        ab.check("https://ads.example/b.js", "https://news.test/y", "script");
+        ab.check("https://ads.example/c.js", "https://other.test/", "image");
+        ab.check("https://fine.example/d.js", "https://quiet.test/", "script");
+        assert_eq!(ab.blocked_on("news.test"), 2);
+        assert_eq!(ab.blocked_on("www.news.test"), 2, "with or without www");
+        assert_eq!(ab.blocked_on("other.test"), 1);
+        assert_eq!(ab.blocked_on("quiet.test"), 0);
+        let list = ab.blocked_list("news.test");
+        assert_eq!(list.iter().map(|b| b.url.as_str()).collect::<Vec<_>>(), ["https://ads.example/b.js", "https://ads.example/a.js"], "newest first");
+        assert_eq!(list[0].kind, "script");
+        ab.clear_blocked("www.news.test");
+        assert!(ab.blocked_list("news.test").is_empty());
+        assert_eq!(ab.blocked_on("news.test"), 0);
+    }
+
+    #[test]
+    fn what_is_kept_of_it_is_bounded() {
+        let mut log = BlockedLog::default();
+        let one = |n: usize| Blocked { url: format!("https://ads.example/{n}"), kind: "script", at: 0, replaced: false };
+        for n in 0..BLOCKED_KEPT_PER_SITE + 5 {
+            log.note("busy.test".into(), one(n));
+        }
+        let busy = &log.sites["busy.test"];
+        assert_eq!(busy.count as usize, BLOCKED_KEPT_PER_SITE + 5, "all counted");
+        assert_eq!(busy.latest.len(), BLOCKED_KEPT_PER_SITE, "the latest kept");
+        assert_eq!(busy.latest.front().unwrap().url, "https://ads.example/5");
+        for n in 0..BLOCKED_SITES_KEPT + 3 {
+            log.note(format!("site{n}.test"), one(n));
+        }
+        assert_eq!(log.sites.len(), BLOCKED_SITES_KEPT);
+        assert!(!log.sites.contains_key("busy.test"), "the least recent went first");
+        assert!(log.sites.contains_key(&format!("site{}.test", BLOCKED_SITES_KEPT + 2)));
     }
 
     #[test]

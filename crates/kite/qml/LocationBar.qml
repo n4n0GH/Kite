@@ -227,17 +227,30 @@ QQC2.TextField {
             }
         }
         QQC2.ToolButton {
+            id: shieldButton
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
             // Content-blocking extensions (uBlock Origin, ...) have their own button.
             visible: field.tab && field.tab.url.startsWith("http") && Browser.contentBlocker(field.win.privateMode) === ""
-            icon.name: field.shieldAllowed ? "security-low" : "security-high"
-            icon.color: field.shieldAllowed ? Kirigami.Theme.disabledTextColor : Kirigami.Theme.positiveTextColor
+            // (Not a lock: that's the connection's, beside the address.) In the red of
+            // Breeze's quit icon (its ColorScheme-NegativeText) once something was blocked
+            // on the site, as the text otherwise, and dimmed with blocking off there.
+            icon.name: "cards-block-symbolic"
+            icon.color: field.shieldAllowed ? Kirigami.Theme.disabledTextColor : blockedHere > 0 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+            property int blockedHere: 0
+            function countBlocked() { blockedHere = field.tab ? Browser.adblockBlockedOn(Browser.hostOf(field.tab.url)) : 0 }
+            // (Requests are blocked as the page goes on loading, and long after.)
+            Timer { interval: 1000; repeat: true; triggeredOnStart: true; running: shieldButton.visible && field.win.active; onTriggered: shieldButton.countBlocked() }
+            Connections { target: field; function onTabChanged() { shieldButton.countBlocked() } }
             onClicked: shieldMenu.popup()
             QQC2.ToolTip.text: "Content blocker"; QQC2.ToolTip.visible: hovered
             QQC2.Menu {
                 id: shieldMenu
-                QQC2.MenuItem { enabled: false; text: Browser.adblockBlocked() + " requests blocked this session" }
+                QQC2.MenuItem {
+                    text: (shieldButton.blockedHere === 1 ? "1 request" : shieldButton.blockedHere + " requests") + " blocked on this site…"
+                    icon.name: "view-list-details"
+                    onTriggered: field.win.app.showBlockedRequests(Browser.hostOf(field.tab.url))
+                }
                 QQC2.MenuItem {
                     text: field.shieldAllowed ? "Enable blocking on this site" : "Disable blocking on this site"
                     onTriggered: { Browser.adblockAllow(Browser.hostOf(field.tab.url), !field.shieldAllowed); field.shieldAllowed = !field.shieldAllowed; field.tab.view.reload() }

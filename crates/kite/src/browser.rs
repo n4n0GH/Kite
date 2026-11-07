@@ -302,6 +302,17 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "adblockBlocked"]
         fn adblock_blocked(self: &Browser) -> i32;
+        /// What was blocked on pages of a site, this session.
+        #[qinvokable]
+        #[cxx_name = "adblockBlockedOn"]
+        fn adblock_blocked_on(self: &Browser, host: &QString) -> i32;
+        /// The latest of those, newest first: [{url, kind, at, replaced}].
+        #[qinvokable]
+        #[cxx_name = "adblockBlockedList"]
+        fn adblock_blocked_list(self: &Browser, host: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "adblockClearBlocked"]
+        fn adblock_clear_blocked(self: &Browser, host: &QString);
         #[qinvokable]
         #[cxx_name = "adblockAllow"]
         fn adblock_allow(self: Pin<&mut Browser>, host: &QString, allow: bool);
@@ -1299,6 +1310,15 @@ impl qobject::Browser {
     fn refresh_adblock(self: Pin<&mut Self>) {
         let thread = self.qt_thread();
         app().refresh_adblock(move |r| report_adblock(thread, r));
+    }
+    fn adblock_blocked_on(&self, host: &QString) -> i32 {
+        app().adblock.blocked_on(&host.to_string()) as i32
+    }
+    fn adblock_blocked_list(&self, host: &QString) -> QString {
+        js(&json!(app().adblock.blocked_list(&host.to_string())))
+    }
+    fn adblock_clear_blocked(&self, host: &QString) {
+        app().adblock.clear_blocked(&host.to_string());
     }
     fn adblock_blocked(&self) -> i32 {
         app().adblock.blocked_count.load(std::sync::atomic::Ordering::Relaxed) as i32
