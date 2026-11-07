@@ -148,6 +148,10 @@ test('jsaction: only what happens on a click', () => {
   assert.ok(!K.jsactionClicks(null));
 });
 
+test('nothing QML cannot run: this file is loaded there too', () => {
+  assert.ok(!/\.flatMap\(|\.flat\(/.test(src), 'flat and flatMap don\'t exist in QML\'s JavaScript');
+});
+
 test('angular click attributes, however they are written', () => {
   for (const name of ['ng-click', 'ng:click', 'ng_click', 'data-ng-click', 'x-ng-click', 'data-ng:click']) assert.ok(K.NG_CLICK.includes(name), name);
   assert.strictEqual(K.NG_CLICK.length, 9);

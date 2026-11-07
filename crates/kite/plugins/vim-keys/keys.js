@@ -114,7 +114,8 @@ function isExcepted(host, sites) {
 
 // ---- what gets a link hint ----
 const HINT_ROLES = ["button", "tab", "link", "checkbox", "menuitem", "menuitemcheckbox", "menuitemradio", "radio", "textbox", "switch", "option"]
-const NG_CLICK = ["", "data-", "x-"].flatMap(prefix => ["-", ":", "_"].map(separator => prefix + "ng" + separator + "click"))
+// (Spelled out: this file also runs in QML, whose JavaScript has no flatMap.)
+const NG_CLICK = ["ng-click", "ng:click", "ng_click", "data-ng-click", "data-ng:click", "data-ng_click", "x-ng-click", "x-ng:click", "x-ng_click"]
 
 // Sites often leave nothing else to say that an element is clickable.
 function classSaysButton(value) {
