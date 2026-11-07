@@ -276,6 +276,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "reloadAdblock"]
         fn reload_adblock(self: Pin<&mut Browser>, download: bool);
+        /// The files in the folder at a file: URL, up to 10000 (more gives 10001).
+        #[qinvokable]
+        #[cxx_name = "folderFileCount"]
+        fn folder_file_count(self: &Browser, folder: &QString) -> i32;
+        /// The path of a file: URL, or "".
+        #[qinvokable]
+        #[cxx_name = "localPath"]
+        fn local_path(self: &Browser, url: &QString) -> QString;
+        /// Whether a file: URL is a folder.
+        #[qinvokable]
+        #[cxx_name = "folderExists"]
+        fn folder_exists(self: &Browser, folder: &QString) -> bool;
         /// Name filters for a file dialog from what a page's file input accepts.
         #[qinvokable]
         #[cxx_name = "fileFilters"]
@@ -671,6 +683,10 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
+}
+
+fn local_folder(url: &QString) -> Option<std::path::PathBuf> {
+    url::Url::parse(&url.to_string()).ok()?.to_file_path().ok()
 }
 
 fn report_adblock(thread: cxx_qt::CxxQtThread<qobject::Browser>, built: anyhow::Result<usize>) {
@@ -1201,6 +1217,15 @@ impl qobject::Browser {
     fn reload_adblock(self: Pin<&mut Self>, download: bool) {
         let thread = self.qt_thread();
         app().reload_adblock(download, move |r| report_adblock(thread, r));
+    }
+    fn folder_file_count(&self, folder: &QString) -> i32 {
+        local_folder(folder).map_or(0, |f| kite_core::util::count_files(&f, 10000) as i32)
+    }
+    fn local_path(&self, url: &QString) -> QString {
+        q(local_folder(url).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+    }
+    fn folder_exists(&self, folder: &QString) -> bool {
+        local_folder(folder).is_some_and(|f| f.is_dir())
     }
     fn file_filters(&self, accepted: &QString) -> QString {
         q(crate::ffi::file_name_filters(&accepted.to_string()))

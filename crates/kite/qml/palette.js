@@ -27,6 +27,7 @@ const TOGGLES = [
     {page: "browsing", text: "Enable JavaScript", key: "web.javascript"},
     {page: "browsing", text: "Load images automatically", key: "web.autoloadImages"},
     {page: "browsing", text: "Allow local storage", key: "web.localStorage"},
+    {page: "browsing", text: "Open a page's file picker in the last folder used, until Kite closes", key: "browsing.rememberFileFolder"},
     {page: "browsing", text: "Enable plugins (PDF viewer is always on)", key: "web.pluginsEnabled"},
     {page: "browsing", text: "Smooth scrolling", key: "web.smoothScrolling"},
     {page: "browsing", text: "Spatial navigation (arrow keys between links)", key: "web.spatialNavigation"},

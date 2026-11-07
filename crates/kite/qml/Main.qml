@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls as QQC2
@@ -918,6 +919,15 @@ QtObject {
             }
         }
     }
+
+    // Where a page's next file picker opens: the last one's folder until Kite closes
+    // ("browsing.rememberFileFolder"), else home. Private windows don't leave theirs behind.
+    property string _lastFileFolder: ""
+    function fileFolder() {
+        const home = StandardPaths.writableLocation(StandardPaths.HomeLocation).toString()
+        return setting("browsing.rememberFileFolder") && _lastFileFolder !== "" && Browser.folderExists(_lastFileFolder) ? _lastFileFolder : home
+    }
+    function rememberFileFolder(folder, inPrivate) { if (!inPrivate) _lastFileFolder = folder }
 
     // ---- downloads --------------------------------------------------------------
     property var activeDownloads: ({})

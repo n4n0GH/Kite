@@ -90,6 +90,7 @@ pub fn defaults() -> Map<String, Value> {
         "tabs.unloadAfterMinutes": 10,
         "tabs.unloadKeepPinned": true,
         "browsing.formFillSave": true,
+        "browsing.rememberFileFolder": true,   // file pickers for pages reopen where the last one ended
         "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
         "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
         "web.doNotTrack": false,

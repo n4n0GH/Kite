@@ -723,7 +723,7 @@ Item {
 
                 onFileDialogRequested: request => {
                     request.accepted = true
-                    pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window})
+                    pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window, app: wt.app, site: Browser.hostOf(wt.url)})
                 }
                 onNewWindowRequested: request => {
                     // (No tab for a link to another program: as above.)
