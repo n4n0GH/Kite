@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "kite"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1390,7 +1390,7 @@ dependencies = [
 
 [[package]]
 name = "kite-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "adblock",
  "ammonia",
