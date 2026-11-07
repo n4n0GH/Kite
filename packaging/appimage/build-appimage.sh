@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# Build a Kite AppImage: packaging/appimage/build-appimage.sh [--no-build]
+# Build a Kite AppImage:
+#   packaging/appimage/build-appimage.sh [--no-build] [--standalone | --install]
 #
 # Builds Kite in release mode and bundles it with Qt, QtWebEngine and the KDE
 # QML modules it uses into dist/Kite-<version>-<arch>.AppImage, using
 # linuxdeploy and linuxdeploy-plugin-qt (downloaded on first use into
 # target/appimage-tools, or taken from $LINUXDEPLOY / $LINUXDEPLOY_PLUGIN_QT).
+#
+# On a terminal, it first asks what to do with the AppImage. --standalone and
+# --install answer in advance, and without a terminal it's standalone:
+#   standalone  it stays in dist/, for you to place and run
+#   install     it's also installed for this user, or replaces the Kite already
+#               installed: see install-appimage.sh
 #
 # Portability: an AppImage runs on systems whose glibc is at least as new as
 # the build system's. Build on an old distribution (or in a container of
@@ -28,9 +35,53 @@ APPDIR=$WORK/AppDir
 DIST=${KITE_DIST_DIR:-$ROOT/dist}
 VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)
 BUILD=1
-[[ ${1:-} == --no-build ]] && BUILD=0
+ACTION=ask
+for arg in "$@"; do
+    case $arg in
+        --no-build) BUILD=0 ;;
+        --standalone) ACTION=standalone ;;
+        --install) ACTION=install ;;
+        *) echo "usage: $0 [--no-build] [--standalone | --install]" >&2; exit 2 ;;
+    esac
+done
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
+
+# ---- what to do with it --------------------------------------------------------
+# Before anything else, as the build takes a while.
+source "$ROOT/packaging/appimage/install-appimage.sh"
+ask_action() {
+    local path choice first_action second_action
+    if (( ${#INSTALLED[@]} > 0 )); then
+        echo "Kite is already installed:"
+        for path in "${INSTALLED[@]}"; do
+            printf '  %s (%s)\n' "$path" "$(appimage_version "$path")"
+        done
+        echo "What should happen to the new AppImage?"
+        echo "  1) Update: replace what's listed above with $VERSION"
+        echo "  2) Standalone: leave it in $DIST, and leave the installed Kite as it is"
+        first_action=install second_action=standalone
+    else
+        echo "What should happen to the new AppImage?"
+        echo "  1) Standalone: leave it in $DIST, for you to place and run"
+        echo "  2) Install: copy it to $KITE_NEW_PATH, with a desktop file and icon"
+        first_action=standalone second_action=install
+    fi
+    while :; do
+        read -r -p "Choice [1]: " choice || { echo; exit 1; }
+        case ${choice:-1} in
+            1) ACTION=$first_action; return ;;
+            2) ACTION=$second_action; return ;;
+        esac
+    done
+}
+if [[ $ACTION != standalone ]]; then
+    find_installed
+    if [[ $ACTION == ask ]]; then
+        if [[ -t 0 ]]; then ask_action; else ACTION=standalone; fi
+    fi
+    [[ $ACTION == install ]] && check_can_install
+fi
 
 QT_PLUGINS=$("$QMAKE" -query QT_INSTALL_PLUGINS)
 QT_QML=$("$QMAKE" -query QT_INSTALL_QML)
@@ -159,3 +210,8 @@ done
 mkdir -p "$DIST"
 mv -f "$LDAI_OUTPUT" "$DIST/"
 say "Done: $DIST/$(basename "$LDAI_OUTPUT")"
+
+if [[ $ACTION == install ]]; then
+    say "Installing"
+    install_kite "$DIST/$(basename "$LDAI_OUTPUT")"
+fi

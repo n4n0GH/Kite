@@ -98,6 +98,26 @@ packaging/appimage/build-appimage.sh            # release build + bundle → dis
 packaging/appimage/build-appimage.sh --no-build # bundle the existing target/release/kite
 ```
 
+The script first asks what to do with the result: keep it as a standalone file in `dist/`, or install
+it for your user, without root. `--standalone` and `--install` answer in advance, and without a
+terminal it stays standalone.
+
+Installing copies the AppImage to `~/.local/bin/kite` (`KITE_INSTALL_PATH` picks another path) and adds
+`~/.local/share/applications/org.kde.kite.desktop` and
+`~/.local/share/icons/hicolor/scalable/apps/org.kde.kite.svg`. Kite is then in the application menu,
+and can be chosen as the default browser in the system settings. To uninstall, delete those three files.
+
+If a Kite AppImage is already installed, the choice is to update it instead: it's looked for in
+`~/.local/bin`, `~/bin`, `~/Applications`, `~/AppImages` and `~/.appimages`, and through your desktop
+files, so one integrated by AppImageLauncher is found. Each one is replaced where it is, keeping its
+file name, even if that has the old version in it. Copies elsewhere, like the ones in `dist/`, are left alone.
+
+To install an AppImage you already have, without building:
+
+```sh
+packaging/appimage/install-appimage.sh dist/Kite-<version>-<arch>.AppImage
+```
+
 Bundles Qt, QtWebEngine and the KDE QML modules Kite uses (including the `org.kde.desktop` style,
 Kirigami's desktop platform plugin and the Wayland client plugins) with
 [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and linuxdeploy-plugin-qt. Both are

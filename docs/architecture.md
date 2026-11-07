@@ -47,7 +47,7 @@ interface and the state that belongs to it, such as which tabs a window has.
 | `crates/kite/icons/` | Kite's own icons, used as a fallback icon theme, and a link to the application icon: compiled in, it's the window's icon when none is installed |
 | `crates/kite/build.rs` | Compiles the QML module and resources, including every plugin file |
 | `data/` | Desktop file and application icon |
-| `packaging/appimage/` | `build-appimage.sh` |
+| `packaging/appimage/` | `build-appimage.sh`, and `install-appimage.sh`, which installs or updates an AppImage for the user |
 
 ## Start-up
 
