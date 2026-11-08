@@ -560,6 +560,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pageLoadRedirect"]
         fn page_load_redirect(self: &Browser, url: &QString, in_private: bool) -> QString;
+        /// A message from kite:welcome (WebTab): its answer, as JSON, or "null".
+        #[qinvokable]
+        #[cxx_name = "welcomeCommand"]
+        fn welcome_command(self: Pin<&mut Browser>, message: &QString) -> QString;
+        /// This profile hasn't finished its welcome page (never in private mode).
+        #[qinvokable]
+        #[cxx_name = "welcomePending"]
+        fn welcome_pending(self: &Browser) -> bool;
+        /// Browsing started before the welcome page was finished: the default
+        /// (High) level, nothing imported.
+        #[qinvokable]
+        #[cxx_name = "welcomeAbandon"]
+        fn welcome_abandon(self: Pin<&mut Browser>);
         /// A change from the kite:config page (WebTab): its answer, as JSON.
         #[qinvokable]
         #[cxx_name = "configCommand"]
@@ -749,6 +762,40 @@ fn apply_setting(key: &str, v: &serde_json::Value) {
         k if k.starts_with("privacy.") => a.privacy.apply(k, v),
         _ => {}
     }
+}
+
+/// Bookmarks from another browser's profile (`source`: a browser_import::Source),
+/// into a new folder in the Bookmarks Menu; what's there already stays out, so
+/// that importing again only brings what's new. Says how it went.
+fn import_bookmarks(source: &Value) -> String {
+    use kite_core::browser_import as import;
+    let result = (|| -> anyhow::Result<String> {
+        let source: import::Source = serde_json::from_value(source.clone())?;
+        let nodes = import::read(&source)?;
+        let mut b = app().shared.bookmarks();
+        let mut known = std::collections::HashSet::new();
+        import::urls_in(&b.root.children, &mut known);
+        let (nodes, new, already) = import::select(nodes, &known);
+        let also = if already > 0 { format!(" ({already} you already had stayed out)") } else { String::new() };
+        if new == 0 {
+            return Ok(format!("Nothing new in {}{also}.", source.label()));
+        }
+        let name = format!("Imported from {}", source.label());
+        let mut folder = Node::folder(&name);
+        folder.children = nodes;
+        let menu = b.menu_id();
+        b.insert(menu, None, folder)?;
+        let what = if new == 1 { "1 bookmark".to_owned() } else { format!("{new} bookmarks") };
+        Ok(format!("Imported {what} into \"{name}\" in the Bookmarks Menu{also}."))
+    })();
+    result.unwrap_or_else(|e| format!("Import failed: {e}"))
+}
+
+/// The browsers found to import bookmarks from: [{label, source}].
+pub fn import_sources() -> Value {
+    let Some(dirs) = directories::BaseDirs::new() else { return json!([]) };
+    let sources = kite_core::browser_import::detect(dirs.home_dir(), dirs.config_dir());
+    json!(sources.iter().map(|s| json!({"label": s.label(), "source": s})).collect::<Vec<_>>())
 }
 
 fn local_folder(url: &QString) -> Option<std::path::PathBuf> {
@@ -1863,36 +1910,70 @@ impl qobject::Browser {
     }
 
     fn bookmark_sources(&self) -> QString {
-        let Some(dirs) = directories::BaseDirs::new() else { return q("[]") };
-        let sources = kite_core::browser_import::detect(dirs.home_dir(), dirs.config_dir());
-        js(&json!(sources.iter().map(|s| json!({"label": s.label(), "source": s})).collect::<Vec<_>>()))
+        js(&import_sources())
     }
 
     /// Into a new folder in the Bookmarks Menu; what's there already stays out, so
     /// that importing again only brings what's new.
     fn import_bookmarks_from(self: Pin<&mut Self>, source: &QString) -> QString {
-        use kite_core::browser_import as import;
-        let result = (|| -> anyhow::Result<String> {
-            let source: import::Source = serde_json::from_str(&source.to_string())?;
-            let nodes = import::read(&source)?;
-            let mut b = app().shared.bookmarks();
-            let mut known = std::collections::HashSet::new();
-            import::urls_in(&b.root.children, &mut known);
-            let (nodes, new, already) = import::select(nodes, &known);
-            let also = if already > 0 { format!(" ({already} you already had stayed out)") } else { String::new() };
-            if new == 0 {
-                return Ok(format!("Nothing new in {}{also}.", source.label()));
-            }
-            let name = format!("Imported from {}", source.label());
-            let mut folder = Node::folder(&name);
-            folder.children = nodes;
-            let menu = b.menu_id();
-            b.insert(menu, None, folder)?;
-            let what = if new == 1 { "1 bookmark".to_owned() } else { format!("{new} bookmarks") };
-            Ok(format!("Imported {what} into \"{name}\" in the Bookmarks Menu{also}."))
-        })();
+        let message = import_bookmarks(&serde_json::from_str(&source.to_string()).unwrap_or(Value::Null));
         self.bookmarks_changed();
-        q(result.unwrap_or_else(|e| format!("Import failed: {e}")))
+        q(message)
+    }
+
+    fn welcome_command(mut self: Pin<&mut Self>, message: &QString) -> QString {
+        let m: Value = serde_json::from_str(&message.to_string()).unwrap_or(Value::Null);
+        // Only that page has this.
+        if m["token"].as_str() != Some(crate::state::welcome_token()) {
+            log::warn!("kite:welcome: a message without its token");
+            return q("null");
+        }
+        match m["op"].as_str() {
+            Some("finish") => {
+                let Some(level) = m["level"].as_str().and_then(kite_core::welcome::Level::parse) else { return q("null") };
+                let imported = if m["source"].is_object() {
+                    let message = import_bookmarks(&m["source"]);
+                    self.as_mut().bookmarks_changed();
+                    message
+                } else {
+                    String::new()
+                };
+                self.as_mut().apply_welcome(level);
+                js(&json!({"imported": imported}))
+            }
+            // Done showing "All done": on to the start page.
+            Some("go") => js(&json!({"go": true})),
+            _ => q("null"),
+        }
+    }
+
+    fn welcome_pending(&self) -> bool {
+        !app().private && app().shared.settings().get_str("general.welcome") == "pending"
+    }
+
+    fn welcome_abandon(mut self: Pin<&mut Self>) {
+        if self.welcome_pending() {
+            log::info!("welcome: browsing started first, so the default level it is");
+            self.as_mut().apply_welcome(kite_core::welcome::Level::High);
+        }
+    }
+
+    /// A privacy level's settings, applied as if each were changed in Settings,
+    /// and the welcome page marked as done.
+    fn apply_welcome(mut self: Pin<&mut Self>, level: kite_core::welcome::Level) {
+        let a = app();
+        let mut changed = vec![];
+        for (key, value) in kite_core::welcome::settings_for(level) {
+            if a.shared.settings().get(key) != value {
+                let _ = a.shared.settings().set(key, value.clone());
+                changed.push((key, value));
+            }
+        }
+        let _ = a.shared.settings().set("general.welcome", json!("done"));
+        for (key, value) in changed {
+            apply_setting(key, &value);
+            self.as_mut().setting_changed(q(key), js(&value));
+        }
     }
 
     fn selection_url(&self, text: &QString) -> QString {

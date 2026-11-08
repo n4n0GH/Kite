@@ -40,6 +40,7 @@ pub mod standin;
 pub mod startpage;
 pub mod util;
 pub mod webext;
+pub mod welcome;
 
 pub use paths::Profile;
 pub use rusqlite;

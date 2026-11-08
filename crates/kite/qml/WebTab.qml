@@ -754,6 +754,9 @@ Item {
                         if (!Browser.isExternalUrl(u)) wt.externalPrompt = ""
                         // A wake lock prompt belongs to the page being left, and any
                         // other to its site: none stays up over another site's page.
+                        // Browsing before the welcome page is finished: it's left
+                        // there, with the default level and nothing imported.
+                        if (/^https?:/i.test(u) && Browser.welcomePending()) { Browser.welcomeAbandon(); wt.app.leaveWelcome(wt) }
                         if (wt.pendingPermissions.some(p => p.wakeLock || (p.originUrl !== undefined && wt.originOf(p.originUrl) !== wt.originOf(u))))
                             wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock && (p.originUrl === undefined || wt.originOf(p.originUrl) === wt.originOf(u)))
                         wt.leftForMidi(u)
@@ -931,6 +934,15 @@ Item {
                     if (web.url.toString().startsWith("kite:config") && message.startsWith("kite-config:")) {
                         const answer = Browser.configCommand(message.substring(12))
                         if (answer !== "null") web.runJavaScript("__kiteConfigDone(" + answer + ")")
+                        return
+                    }
+                    // The welcome page's choices (Browser checks its token too).
+                    if (web.url.toString().startsWith("kite:welcome") && message.startsWith("kite-welcome:")) {
+                        const answer = Browser.welcomeCommand(message.substring(13))
+                        if (answer === "null") return
+                        if (JSON.parse(answer).go) { web.url = wt.app.newTabUrl(); return }
+                        if (answer.includes('"imported":"') && !answer.includes('"imported":""')) wt.window.toast(JSON.parse(answer).imported, "bookmarks", 8000)
+                        web.runJavaScript("__kiteWelcomeDone(" + answer + ")")
                         return
                     }
                     if (message.startsWith(wt.app.frameSecret)) {

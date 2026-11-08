@@ -1730,7 +1730,7 @@ ManagerWindow {
             }
             // ---- WebExtensions ----
             Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "WebExtensions" }
-            QQC2.CheckBox { text: "Enable WebExtensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
+            QQC2.CheckBox { text: "Enable WebExtensions"; checked: w.get("extensions.enabled"); onToggled: w.set("extensions.enabled", checked) }
             QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
             QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
             QQC2.CheckBox { text: "Let other sites offer add-ons to install"; checked: w.get("extensions.siteInstalls"); onToggled: w.set("extensions.siteInstalls", checked) }

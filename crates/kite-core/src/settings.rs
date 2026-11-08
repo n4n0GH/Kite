@@ -27,6 +27,9 @@ pub fn defaults() -> Map<String, Value> {
         "startpage.newtab.file": "",
         "startpage.newtab.copy": false,
         "general.searchEngine": "DuckDuckGo",
+        // The first-launch page (kite:welcome): "pending" in a new profile until
+        // it's finished or left; profiles from before it are "done".
+        "general.welcome": "done",
         "general.searchFromLocationBar": true,
         "general.showSearchSuggestions": true,
         // Appearance
@@ -97,7 +100,7 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.rememberFileFolder": true,   // file pickers for pages reopen where the last one ended
         "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
         "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
-        "web.doNotTrack": false,
+        "web.doNotTrack": true,
         "web.spellcheck": true,
         "web.spellcheckLanguages": ["en-US"],
         // Privacy
@@ -109,7 +112,7 @@ pub fn defaults() -> Map<String, Value> {
         "privacy.globalPrivacyControl": true,  // Sec-GPC header, navigator.globalPrivacyControl
         "privacy.stripTrackingParams": true,   // fbclid, gclid, utm_* … removed from page URLs
         "privacy.blockPings": true,            // <a ping> click beacons
-        "privacy.httpsOnly": false,            // upgrade page loads to https
+        "privacy.httpsOnly": true,             // upgrade page loads to https
         "privacy.genericUserAgent": true,      // no "QtWebEngine/x.y" in the user agent
         "privacy.webrtcPublicOnly": true,      // WebRTC doesn't reveal local network addresses
         "privacy.dnsOverHttps": "off",         // "off" | "auto" (fall back to system DNS) | "secure"
@@ -213,6 +216,10 @@ fn migrate(values: &mut Map<String, Value>) {
 impl Settings {
     pub fn load(path: PathBuf) -> Self {
         let mut values = defaults();
+        // A new profile gets the welcome page: one with neither settings nor a
+        // session (after --factory, the session is still there). It's written
+        // down at once, so quitting halfway brings the page back next time.
+        let new = !path.exists() && !path.with_file_name("session.json").exists();
         if let Ok(text) = std::fs::read_to_string(&path) {
             if let Ok(Value::Object(stored)) = serde_json::from_str::<Value>(&text) {
                 for (k, v) in stored {
@@ -221,7 +228,14 @@ impl Settings {
             }
         }
         migrate(&mut values);
-        Self { path, values }
+        let s = Self { path, values };
+        if new {
+            let mut s = s;
+            s.values.insert("general.welcome".into(), Value::String("pending".into()));
+            let _ = s.save();
+            return s;
+        }
+        s
     }
 
     pub fn get(&self, key: &str) -> Value {
@@ -399,7 +413,30 @@ mod tests {
         assert_eq!(s.get_str("general.searchEngine"), "DuckDuckGo");
         s.set("general.searchEngine", "Wikipedia".into()).unwrap();
         let stored: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-        assert_eq!(stored.as_object().unwrap().len(), 1);
+        // (And that this new profile hasn't been through its welcome page.)
+        let mut keys: Vec<_> = stored.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["general.searchEngine", "general.welcome"]);
         assert_eq!(Settings::load(p).get_str("general.searchEngine"), "Wikipedia");
+    }
+
+    #[test]
+    fn only_new_profiles_get_the_welcome_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        assert_eq!(Settings::load(p.clone()).get_str("general.welcome"), "pending");
+        // Quitting halfway: still pending.
+        assert_eq!(Settings::load(p.clone()).get_str("general.welcome"), "pending");
+        Settings::load(p.clone()).set("general.welcome", "done".into()).unwrap();
+        assert_eq!(Settings::load(p.clone()).get_str("general.welcome"), "done");
+        // A profile from before the welcome page, or after --factory (its session stays).
+        let old = dir.path().join("old");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("settings.json"), "{}").unwrap();
+        assert_eq!(Settings::load(old.join("settings.json")).get_str("general.welcome"), "done");
+        let reset = dir.path().join("reset");
+        std::fs::create_dir(&reset).unwrap();
+        std::fs::write(reset.join("session.json"), "{}").unwrap();
+        assert_eq!(Settings::load(reset.join("settings.json")).get_str("general.welcome"), "done");
     }
 }

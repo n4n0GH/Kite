@@ -256,6 +256,14 @@ own address; a restored session reopens the page itself.
 * **Left out:** videos and other embedded content, and images given as `data:` addresses. Images
   are requested without a referrer, so sites refusing those won't show theirs.
 
+## First launch
+
+A new profile starts on `kite:welcome`. It offers to import bookmarks from another browser on the
+computer, then asks how private Kite should be, from Low to Extreme with High as the default. Each
+level only sets ordinary settings, which can all be changed later in Settings. Starting to browse
+before it's finished skips it with the default level. Quitting halfway brings it back next time,
+and it can be opened again at `kite:welcome`. Profiles from before 0.8.0 don't get it.
+
 ## Advanced settings
 
 `kite:config` lists every setting and lets you change it, including those Settings has no control for

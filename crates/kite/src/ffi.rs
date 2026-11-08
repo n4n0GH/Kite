@@ -282,6 +282,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                 (200, "text/html".into(), kite_core::config::page(&crate::browser::config_entries(), crate::state::config_token(), &kite_core::config::secret()).into_bytes())
             }
             "config" => (403, "text/plain".into(), vec![]),
+            // The first-launch page (kite_core::welcome).
+            "welcome" => {
+                let sources = crate::browser::import_sources();
+                (200, "text/html".into(), kite_core::welcome::page(crate::state::welcome_token(), &kite_core::config::secret(), &sources).into_bytes())
+            }
             // HTTPS-only: the site has no working https version.
             "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),

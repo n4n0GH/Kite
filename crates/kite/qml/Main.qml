@@ -302,6 +302,8 @@ QtObject {
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
             if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage"].includes(key)) app.installUserScripts()
+            // (As the switch in Settings does; the welcome page's levels change it too.)
+            if (key === "extensions.enabled") { app.installUserScripts(); app.backgroundHost.reload() }
             if (key.startsWith("plugins.")) {
                 app.pluginActions = app.enabledPluginActions()
                 app.installUserScripts()
@@ -362,6 +364,18 @@ QtObject {
         const session = JSON.parse(Browser.lastSession())
         const crashed = Browser.crashedLastTime()
         Browser.setRunning(true)
+        // A new profile: the welcome page, by itself (also after quitting it
+        // halfway). Addresses to open, as from a link in another app, mean
+        // browsing has started: then it's skipped, with the default level.
+        if (Browser.welcomePending()) {
+            if (urls.length === 0) {
+                newWindow({urls: ["kite:welcome"]})
+                backgroundHost.reload()
+                Browser.listenForStarts()
+                return
+            }
+            Browser.welcomeAbandon()
+        }
         if (!Browser.isPrivate() && (startup === "restore" || crashed) && session.length > 0) {
             for (const w of session) restoreWindow(w)
             if (urls.length) for (const u of urls) activeWindow.openTab(u, {background: false})
@@ -420,6 +434,16 @@ QtObject {
         for (const u of urls) w.openTab(u, {background: false})
         activeWindow = w
         return w
+    }
+
+    // The welcome page was left by browsing elsewhere: any other tab still showing
+    // it goes to the start page, so it isn't kept, and restored, with the session.
+    function leaveWelcome(except) {
+        for (const w of windows)
+            for (const id in w.tabItems) {
+                const t = w.tabItems[id]
+                if (t !== except && t.url.startsWith("kite:welcome")) t.load(newTabUrl())
+            }
     }
 
     function restoreWindow(saved) {

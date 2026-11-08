@@ -40,6 +40,8 @@ fn belongs_here(key: &str, value: &Value) -> bool {
         || key.starts_with("startpage.")
         || key == "downloads.directory"
         || key == "browsing.safeBrowsingKey"
+        // Whether this profile has seen its welcome page.
+        || key == "general.welcome"
         // A page from a file: the file isn't coming along.
         || (matches!(key, "general.homepageMode" | "general.newTabPageMode") && value == "file")
 }

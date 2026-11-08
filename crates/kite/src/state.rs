@@ -42,6 +42,12 @@ pub fn config_token() -> &'static str {
     TOKEN.get_or_init(kite_core::config::secret)
 }
 
+/// What kite:welcome's messages have to come with (WebTab hands them on).
+pub fn welcome_token() -> &'static str {
+    static TOKEN: OnceLock<String> = OnceLock::new();
+    TOKEN.get_or_init(kite_core::config::secret)
+}
+
 /// The key the warning pages' "continue anyway" links carry. Web pages can
 /// navigate to `kite:` addresses too, so without it any page could switch
 /// off a warning for a site of its choosing.
