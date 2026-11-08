@@ -103,6 +103,22 @@ pub struct Registry {
     pub broken: Vec<(InstallInfo, String)>,
 }
 
+/// Firefox's rule for an add-on id: a `{GUID}` or an email-like name, at
+/// most 80 characters. The id names the add-on's folder, so anything else
+/// (`..`, `.`, an empty id) would point the install, and the removal of the
+/// old copy that comes with it, somewhere else in the profile.
+pub fn valid_id(id: &str) -> bool {
+    let guid = id.len() == 38
+        && id.starts_with('{')
+        && id.ends_with('}')
+        && id[1..37].chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let email = id.split_once('@').is_some_and(|(local, domain)| {
+        let ok = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || "-._".contains(c));
+        ok(local) && !domain.is_empty() && ok(domain)
+    });
+    id.len() <= 80 && (guid || email) && !id.starts_with('.')
+}
+
 pub fn sanitize_id(id: &str) -> String {
     id.chars().map(|c| if c.is_ascii_alphanumeric() || "@.-_".contains(c) { c } else { '_' }).collect()
 }
@@ -177,16 +193,33 @@ impl Registry {
     /// Validate an XPI and return its manifest without installing.
     pub fn inspect(bytes: &[u8]) -> anyhow::Result<Manifest> {
         let text = super::xpi::read_manifest(bytes)?;
-        Manifest::parse(&text, None)
+        let m = Manifest::parse(&text, None)?;
+        if let Some(id) = &m.gecko_id {
+            anyhow::ensure!(valid_id(id), "the add-on's id {id:?} isn't a valid add-on id");
+        }
+        Ok(m)
+    }
+
+    /// The folder for an add-on: always directly inside the extensions folder.
+    fn folder_for(&self, id: &str) -> anyhow::Result<PathBuf> {
+        let name = sanitize_id(id);
+        anyhow::ensure!(valid_id(id) && !name.starts_with('.'), "the add-on's id {id:?} isn't a valid add-on id");
+        Ok(self.dir.join(name))
+    }
+
+    /// Whether `path` is an add-on folder this registry may delete.
+    fn owns(&self, path: &Path) -> bool {
+        path.parent() == Some(self.dir.as_path())
+            && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| !n.starts_with('.') && n != "registry.json")
     }
 
     /// Install or update from XPI bytes.
     pub fn install_xpi(&mut self, bytes: &[u8], source: &str, amo_slug: &str) -> anyhow::Result<InstallResult> {
         let pre = Self::inspect(bytes)?;
         let id = pre.gecko_id.clone().unwrap_or_else(|| fallback_id(&pre.name));
+        let dest = self.folder_for(&id)?;
         let staging = self.dir.join(format!(".staging-{}", uuid::Uuid::new_v4()));
         super::xpi::extract(bytes, &staging)?;
-        let dest = self.dir.join(sanitize_id(&id));
         let now = crate::util::now_ms();
 
         let existing = self.extensions.iter().position(|e| e.info.id == id);
@@ -212,7 +245,7 @@ impl Registry {
                 }
             }
         };
-        if dest.exists() {
+        if dest.exists() && self.owns(&dest) {
             std::fs::remove_dir_all(&dest)?;
         }
         std::fs::rename(&staging, &dest)?;
@@ -260,12 +293,12 @@ impl Registry {
     pub fn uninstall(&mut self, id: &str) -> anyhow::Result<()> {
         if let Some(i) = self.extensions.iter().position(|e| e.info.id == id) {
             let e = self.extensions.remove(i);
-            if e.info.source != "temporary" && e.info.path.starts_with(&self.dir) {
+            if e.info.source != "temporary" && self.owns(&e.info.path) {
                 let _ = std::fs::remove_dir_all(&e.info.path);
             }
         } else if let Some(i) = self.broken.iter().position(|(e, _)| e.id == id) {
             let (info, _) = self.broken.remove(i);
-            if info.path.starts_with(&self.dir) {
+            if info.source != "temporary" && self.owns(&info.path) {
                 let _ = std::fs::remove_dir_all(&info.path);
             }
         } else {
@@ -330,6 +363,23 @@ pub fn version_newer(candidate: &str, current: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn ids_cannot_leave_the_extensions_folder() {
+        for good in ["uBlock0@raymondhill.net", "{446900e4-71c2-419f-a6a7-df9c091e268b}", "my-ext@kite.local", "a.b_c-d@e.f"] {
+            assert!(valid_id(good), "{good}");
+        }
+        for bad in ["..", ".", "", "../x@y", "x@", "@", ".x@y", "a/b@c", "x@y/..", "{not-a-guid}", &format!("{}@x", "a".repeat(80))] {
+            assert!(!valid_id(bad), "{bad}");
+        }
+        let r = Registry { dir: PathBuf::from("/p/extensions"), extensions: vec![], broken: vec![] };
+        assert!(r.owns(Path::new("/p/extensions/x@y")));
+        assert!(!r.owns(Path::new("/p/extensions/..")));
+        assert!(!r.owns(Path::new("/p/extensions")));
+        assert!(!r.owns(Path::new("/p/extensions/.staging-1")));
+        assert!(!r.owns(Path::new("/p/extensions/a/b")));
+    }
+
     use super::*;
     use crate::webext::xpi::make_xpi;
     #[test]

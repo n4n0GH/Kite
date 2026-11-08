@@ -1026,6 +1026,8 @@ QtObject {
         Repeater {
             model: bgWin.pages
             delegate: WebEngineView {
+                // A local file may not read other local files (Chrome's default; Qt's is on).
+                settings.localContentCanAccessFileUrls: false
                 required property var modelData
                 width: 400; height: 300
                 profile: app.profile

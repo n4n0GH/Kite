@@ -256,17 +256,17 @@ pub mod qobject {
         #[cxx_name = "safeBrowsingCheck"]
         fn safe_browsing_check(self: &Browser, url: &QString) -> QString;
         /// Visit `host` anyway this session.
+        /// A "continue anyway" link from the dangerous-site or HTTPS-only
+        /// warning (`kite:dangerous-allow?url=…&key=…`, `kite:https-allow?…`):
+        /// makes the exception and returns the page to load, or "" when the
+        /// link didn't come from Kite's own warning page.
         #[qinvokable]
-        #[cxx_name = "safeBrowsingAllow"]
-        fn safe_browsing_allow(self: &Browser, host: &QString);
+        #[cxx_name = "allowFromWarning"]
+        fn allow_from_warning(self: &Browser, link: &QString) -> QString;
         /// The lists' state, for Settings.
         #[qinvokable]
         #[cxx_name = "safeBrowsingStatus"]
         fn safe_browsing_status(self: &Browser) -> QString;
-        /// Visit `host` over plain http this session (HTTPS-only exception).
-        #[qinvokable]
-        #[cxx_name = "allowHttp"]
-        fn allow_http(self: &Browser, host: &QString);
         /// Text settings: "css" or "js".
         #[qinvokable]
         #[cxx_name = "setSiteText"]
@@ -1273,14 +1273,26 @@ impl qobject::Browser {
     fn safe_browsing_check(&self, url: &QString) -> QString {
         q(app().safe_browsing.check(&url.to_string()).map(|t| t.as_str()).unwrap_or(""))
     }
-    fn safe_browsing_allow(&self, host: &QString) {
-        app().safe_browsing.allow(&host.to_string());
+    fn allow_from_warning(&self, link: &QString) -> QString {
+        let link = link.to_string();
+        let Some(rest) = link.strip_prefix("kite:") else { return q("") };
+        let (page, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let param = |name: &str| url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == name).map(|(_, v)| v.into_owned()).unwrap_or_default();
+        if param("key") != crate::state::warning_key() {
+            return q("");
+        }
+        let target = param("url");
+        let Ok(u) = url::Url::parse(&target) else { return q("") };
+        let Some(host) = u.host_str() else { return q("") };
+        match (page, u.scheme()) {
+            ("dangerous-allow", "http" | "https") => app().safe_browsing.allow(host),
+            ("https-allow", "http") => app().privacy.allow_http(host),
+            _ => return q(""),
+        }
+        q(&target)
     }
     fn safe_browsing_status(&self) -> QString {
         q(&app().safe_browsing.status())
-    }
-    fn allow_http(&self, host: &QString) {
-        app().privacy.allow_http(&host.to_string());
     }
     fn set_site_text(self: Pin<&mut Self>, host: &QString, key: &QString, value: &QString) {
         let _ = kite_core::sitesettings::set_text(&app().shared.db(), &host.to_string(), &key.to_string(), &value.to_string());

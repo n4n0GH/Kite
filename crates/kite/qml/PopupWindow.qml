@@ -34,6 +34,8 @@ Window {
             Kirigami.Icon { source: view.url.toString().startsWith("https") ? "security-high" : "security-low"; width: Kirigami.Units.iconSizes.small; height: width; anchors { left: parent.left; leftMargin: 4; verticalCenter: parent.verticalCenter } }
         }
         WebEngineView {
+            // A local file may not read other local files (Chrome's default; Qt's is on).
+            settings.localContentCanAccessFileUrls: false
             id: view
             Layout.fillWidth: true
             Layout.fillHeight: true

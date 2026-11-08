@@ -30,6 +30,8 @@ Window {
         anchors.fill: parent
         active: false
         sourceComponent: WebEngineView {
+            // A local file may not read other local files (Chrome's default; Qt's is on).
+            settings.localContentCanAccessFileUrls: false
             profile: w.profile
             onUrlChanged: {
                 const u = url.toString()

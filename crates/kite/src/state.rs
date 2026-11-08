@@ -42,6 +42,14 @@ pub fn config_token() -> &'static str {
     TOKEN.get_or_init(kite_core::config::secret)
 }
 
+/// The key the warning pages' "continue anyway" links carry. Web pages can
+/// navigate to `kite:` addresses too, so without it any page could switch
+/// off a warning for a site of its choosing.
+pub fn warning_key() -> &'static str {
+    static KEY: OnceLock<String> = OnceLock::new();
+    KEY.get_or_init(kite_core::config::secret)
+}
+
 /// What `--factory` did, to say so in the first window.
 pub static STARTUP_NOTICE: Mutex<String> = Mutex::new(String::new());
 

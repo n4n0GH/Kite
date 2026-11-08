@@ -72,6 +72,8 @@ QQC2.Popup {
         id: view
         active: false
         sourceComponent: WebEngineView {
+            // A local file may not read other local files (Chrome's default; Qt's is on).
+            settings.localContentCanAccessFileUrls: false
             profile: popup.profile
             webChannel: WebChannel { registeredObjects: [bridge] }
             settings.localContentCanAccessRemoteUrls: true

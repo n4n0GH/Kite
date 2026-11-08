@@ -170,11 +170,36 @@ pub unsafe extern "C" fn kite_certificate_page(host: *const c_char, chain_json: 
 /// Serve `moz-extension://` and `kite:` URLs. Returns the body; sets HTTP-like
 /// status and mime type.
 #[no_mangle]
-pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, status: *mut i32, mime: *mut KiteBuf) -> KiteBuf {
-    let (code, ty, body) = serve(s(url), s(initiator), in_private != 0);
+pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, status: *mut i32, mime: *mut KiteBuf, cors: *mut std::ffi::c_int) -> KiteBuf {
+    let (url, initiator) = (s(url), s(initiator));
+    let (code, ty, body) = serve(url, initiator, in_private != 0);
     *status = code;
     *mime = KiteBuf::from_vec(ty.into_bytes());
+    *cors = (code == 200 && readable_cross_origin(url)) as std::ffi::c_int;
     KiteBuf::from_vec(body)
+}
+
+/// Whether other origins may read this response: only an extension's
+/// web_accessible_resources (Firefox semantics). Everything else, `kite:`
+/// pages included, stays opaque to them.
+fn readable_cross_origin(url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url) else { return false };
+    if u.scheme() != "moz-extension" {
+        return false;
+    }
+    let path = u.path().trim_start_matches('/');
+    if path.starts_with("__kite__/") {
+        return false;
+    }
+    let rt = app().runtime();
+    rt.registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|ext| web_accessible(ext, path))
+}
+
+fn web_accessible(ext: &kite_core::webext::registry::Extension, path: &str) -> bool {
+    ext.manifest.web_accessible_resources.iter().any(|g| {
+        let g = g.trim_start_matches('/');
+        regex::Regex::new(&kite_core::webext::matchpattern::glob_to_regex(g)).map(|r| r.is_match(path)).unwrap_or(false)
+    })
 }
 
 fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>) {
@@ -254,9 +279,12 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     let Some(ext) = rt.registry.by_uuid(uuid).filter(|e| e.info.enabled) else {
         return (404, "text/plain".into(), b"Extension not found".to_vec());
     };
-    // Same-extension or top-level navigations may load anything; other
-    // origins only web_accessible_resources (Firefox semantics).
-    let same_origin = initiator.is_empty() || initiator == "null" || initiator.trim_end_matches('/').eq_ignore_ascii_case(ext.base_url().trim_end_matches('/'));
+    // Same-extension or browser-initiated loads may load anything; other
+    // origins only web_accessible_resources (Firefox semantics). An opaque
+    // origin ("null": sandboxed or srcdoc/data: frames) is a web page's,
+    // never the extension's: treating it as same-origin handed any page the
+    // extension's token through api.js.
+    let same_origin = initiator.is_empty() || initiator.trim_end_matches('/').eq_ignore_ascii_case(ext.base_url().trim_end_matches('/'));
     if path == scripts::API_PATH {
         if !same_origin {
             return (403, "text/plain".into(), vec![]);
@@ -270,14 +298,8 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             None => (404, "text/plain".into(), vec![]),
         };
     }
-    if !same_origin {
-        let allowed = ext.manifest.web_accessible_resources.iter().any(|g| {
-            let g = g.trim_start_matches('/');
-            regex::Regex::new(&kite_core::webext::matchpattern::glob_to_regex(g)).map(|r| r.is_match(&path)).unwrap_or(false)
-        });
-        if !allowed {
-            return (403, "text/plain".into(), vec![]);
-        }
+    if !same_origin && !web_accessible(ext, &path) {
+        return (403, "text/plain".into(), vec![]);
     }
     let Some(file) = ext.resolve(&path) else { return (403, "text/plain".into(), vec![]) };
     let file = if file.is_dir() { file.join("index.html") } else { file };
@@ -682,7 +704,7 @@ fn html_escape(s: &str) -> String {
 /// The page shown when HTTPS-only couldn't load a site over https.
 fn https_only_page(http_url: &str) -> String {
     let host = html_escape(&kite_core::util::host_of(http_url));
-    let allow = format!("kite:https-allow?url={}", url::form_urlencoded::byte_serialize(http_url.as_bytes()).collect::<String>());
+    let allow = format!("kite:https-allow?url={}&key={}", url::form_urlencoded::byte_serialize(http_url.as_bytes()).collect::<String>(), crate::state::warning_key());
     format!(
         r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Secure connection not available</title>
 <meta name="color-scheme" content="light dark">
@@ -715,7 +737,7 @@ fn dangerous_page(target: &str, threat: &str) -> String {
         kite_core::safebrowsing::Mode::Google => "Google Safe Browsing",
         _ => "the malware-filter project's open lists",
     };
-    let allow = format!("kite:dangerous-allow?url={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>());
+    let allow = format!("kite:dangerous-allow?url={}&key={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>(), crate::state::warning_key());
     format!(
         r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title>
 <meta name="color-scheme" content="light dark">

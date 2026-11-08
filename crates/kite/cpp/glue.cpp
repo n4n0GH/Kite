@@ -55,7 +55,7 @@ public:
 extern "C" {
 struct KiteBuf { unsigned char *ptr; size_t len; size_t cap; };
 void kite_buf_free(KiteBuf b);
-KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime);
+KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime, int *cors);
 KiteBuf kite_certificate_page(const char *host, const char *chainJson, const char *error);
 KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method, int inPrivate);
 void kite_cookie_event(const char *json, int removed, int initial);
@@ -245,7 +245,8 @@ public:
         }
         int status = 0;
         KiteBuf mimeBuf{nullptr, 0, 0};
-        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), m_private ? 1 : 0, &status, &mimeBuf));
+        int cors = 0;
+        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), m_private ? 1 : 0, &status, &mimeBuf, &cors));
         QByteArray mime = takeBuf(mimeBuf);
         if (status == 404) { job->fail(QWebEngineUrlRequestJob::UrlNotFound); return; }
         if (status == 403) { job->fail(QWebEngineUrlRequestJob::RequestDenied); return; }
@@ -254,7 +255,9 @@ public:
         buffer->setData(body);
         buffer->open(QIODevice::ReadOnly);
         QMultiMap<QByteArray, QByteArray> headers;
-        headers.insert("Access-Control-Allow-Origin", "*");
+        // Only web-accessible extension files are readable by other origins;
+        // everything else (api.js with its token, kite: pages) stays opaque.
+        if (cors) headers.insert("Access-Control-Allow-Origin", "*");
         headers.insert("Cache-Control", "no-cache");
         job->setAdditionalResponseHeaders(headers);
         job->reply(mime, buffer);

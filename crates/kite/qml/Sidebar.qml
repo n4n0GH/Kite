@@ -130,6 +130,8 @@ QQC2.Pane {
             Layout.fillHeight: true
             active: root.mode.startsWith("ext:")
             sourceComponent: WebEngineView {
+                // A local file may not read other local files (Chrome's default; Qt's is on).
+                settings.localContentCanAccessFileUrls: false
                 id: panel
                 readonly property var info: root.extSidebars.find(s => "ext:" + s.ext === root.mode) || null
                 profile: root.win.app.profile

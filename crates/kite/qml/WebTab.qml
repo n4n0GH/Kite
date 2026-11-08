@@ -95,6 +95,14 @@ Item {
         logins = list
     }
     // (`frameId`: for a login form in that frame.)
+    // Filling as a page loads, without a click: only over https. Logins are
+    // stored by host alone (Falkon's format), so one saved on https://site
+    // would otherwise go into http://site too, where anyone on the network
+    // can add a script that reads it. On http a login is filled when picked.
+    function autofillHere() {
+        return Passwords.autofillEnabled() && web.url.toString().startsWith("https://")
+    }
+
     function fillLogin(id, frameId) {
         if (frameId === undefined) {
             const data = Passwords.fillData(web.url.toString(), id)
@@ -188,7 +196,7 @@ Item {
                 frameLoginForm = true
                 refreshLogins()
                 const own = logins.find(l => l.frameId === msg.f && !l.frameHost)
-                if (arg && own && originOf(url) === originOf(web.url.toString()) && Passwords.autofillEnabled()) fillLogin(own.id, msg.f)
+                if (arg && own && originOf(url) === originOf(web.url.toString()) && autofillHere()) fillLogin(own.id, msg.f)
                 break
             }
             case "formSubmitted": {
@@ -655,6 +663,8 @@ Item {
             }
 
             WebEngineView {
+                // A local file may not read other local files (Chrome's default; Qt's is on).
+                settings.localContentCanAccessFileUrls: false
                 id: web
                 // (bootstrap.cpp: mouse gestures, on tabs' pages only.)
                 readonly property bool kiteTabPage: true
@@ -809,11 +819,11 @@ Item {
                         return
                     }
                     request.reject()
-                    const target = decodeURIComponent((u.match(/[?&]url=([^&]*)/) || [])[1] || "")
-                    if (!/^https?:/.test(target)) return
-                    if (dangerous) Browser.safeBrowsingAllow(Browser.hostOf(target))
-                    else if (target.startsWith("http:")) Browser.allowHttp(Browser.hostOf(target))
-                    else return
+                    // Only the warning page's own link counts: it carries a key
+                    // web pages can't know, and the warning is the tab's page.
+                    if (!request.isMainFrame || !/^kite:(dangerous|https-only)\?/.test(web.url.toString())) return
+                    const target = Browser.allowFromWarning(u)
+                    if (target === "") return
                     // Not from inside this handler (that re-enters Chromium).
                     Qt.callLater(() => { web.url = target })
                 }
@@ -1203,7 +1213,7 @@ Item {
             wt.loginForm = true
             wt.refreshLogins()
             const own = wt.logins.find(l => l.frameId === undefined)
-            if (emptyPassword && own && Passwords.autofillEnabled()) wt.fillLogin(own.id)
+            if (emptyPassword && own && wt.autofillHere()) wt.fillLogin(own.id)
         }
     }
     Connections { target: Passwords; function onChanged() { wt.refreshLogins() } }
@@ -1288,6 +1298,8 @@ Item {
                     }
                 }
                 WebEngineView {
+                    // A local file may not read other local files (Chrome's default; Qt's is on).
+                    settings.localContentCanAccessFileUrls: false
                     id: toolsView
                     Layout.fillWidth: true
                     Layout.fillHeight: true

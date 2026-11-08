@@ -262,13 +262,42 @@ fn factory_reset(profile: &str, private: bool) {
 /// Chromium's proxy switches for "privacy.proxy": "none" connects directly,
 /// "manual" uses the given HTTP or SOCKS5 proxy (SOCKS5 also resolves host
 /// names through the proxy), "system" leaves it to the desktop settings.
+/// A host name, an IPv4 address or a bracketed IPv6 one, and nothing else:
+/// the flags are joined with spaces into QTWEBENGINE_CHROMIUM_FLAGS, so a
+/// space here (say, from an imported settings file) would add flags of its
+/// own, such as --no-sandbox.
+fn valid_proxy_host(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 253
+        && !host.starts_with('-')
+        && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c))
+}
+
 fn proxy_flags(mode: &str, kind: &str, host: &str, port: i64) -> Vec<String> {
     match mode {
         "none" => vec!["--no-proxy-server".into()],
-        "manual" if !host.trim().is_empty() && (1..=65535).contains(&port) => {
+        "manual" if valid_proxy_host(host.trim()) && (1..=65535).contains(&port) => {
             let scheme = if kind == "http" { "http" } else { "socks5" };
             vec![format!("--proxy-server={scheme}://{}:{port}", host.trim())]
         }
+        "manual" if !valid_proxy_host(host.trim()) && !host.trim().is_empty() => {
+            eprintln!("kite: ignoring the proxy setting: {host:?} isn't a host name or address");
+            vec![]
+        }
         _ => vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_host_cannot_add_flags() {
+        assert_eq!(proxy_flags("manual", "http", " proxy.lan ", 3128), vec!["--proxy-server=http://proxy.lan:3128"]);
+        assert_eq!(proxy_flags("manual", "socks", "[::1]", 1080), vec!["--proxy-server=socks5://[::1]:1080"]);
+        for bad in ["1.2.3.4 --no-sandbox", "a\t--remote-debugging-port=9222", "--no-sandbox", "a;b", "a/b"] {
+            assert!(proxy_flags("manual", "http", bad, 8080).is_empty(), "{bad}");
+        }
     }
 }
