@@ -1042,7 +1042,8 @@ ManagerWindow {
             Kirigami.FormLayout {
                 Layout.fillWidth: true
                 QQC2.CheckBox { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; checked: w.get("passwords.save"); onToggled: w.set("passwords.save", checked) }
-                QQC2.CheckBox { text: "Fill in saved logins automatically"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
+                QQC2.CheckBox { text: "Fill logins automatically over https"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
+                QQC2.Label { text: "On plain http pages, and with this off, a login is filled when you pick it from the password icon in the location bar."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 QQC2.CheckBox { id: genOn; Kirigami.FormData.label: "Generator:"; text: "Suggest strong passwords on sign-up forms"; checked: w.get("passwords.generator"); onToggled: w.set("passwords.generator", checked) }
                 RowLayout {
                     enabled: genOn.checked
