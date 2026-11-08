@@ -66,6 +66,28 @@ pub fn is_google_sign_in(url: &str) -> bool {
     url.starts_with("https://") && host_of(url) == "accounts.google.com"
 }
 
+/// This process's own folder for temporary files: a fresh, randomly named one
+/// (mode 0700) in the user's runtime directory, or the temp directory without
+/// one. A predictable name in a shared /tmp could be made in advance by another
+/// user, who would then see or swap what Kite puts there.
+static TEMP_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+pub fn private_temp_dir() -> std::io::Result<&'static std::path::Path> {
+    if let Some(d) = TEMP_DIR.get() {
+        return Ok(d);
+    }
+    let base = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).filter(|d| d.is_dir()).unwrap_or_else(std::env::temp_dir);
+    let made = tempfile::Builder::new().prefix("kite-").tempdir_in(base)?.keep();
+    Ok(TEMP_DIR.get_or_init(|| made))
+}
+
+/// Remove this process's temporary folder (on quitting).
+pub fn remove_private_temp_dir() {
+    if let Some(d) = TEMP_DIR.get() {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
 #[cfg(test)]
 mod display_url_tests {
     use super::display_url;

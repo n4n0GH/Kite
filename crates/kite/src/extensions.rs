@@ -592,16 +592,22 @@ impl qobject::Extensions {
         }
         // Localized name for the prompt.
         let name = {
-            let dir = std::env::temp_dir().join(format!("kite-inspect-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            let n = kite_core::webext::xpi::extract(&bytes, &dir)
+            let dir = kite_core::util::private_temp_dir().map(|d| d.join("inspect"));
+            if let Ok(dir) = &dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            let n = dir
+                .as_ref()
                 .ok()
-                .map(|_| {
-                    let msgs = kite_core::webext::i18n::Messages::load(&dir, manifest.default_locale.as_deref());
+                .filter(|dir| kite_core::webext::xpi::extract(&bytes, dir).is_ok())
+                .map(|dir| {
+                    let msgs = kite_core::webext::i18n::Messages::load(dir, manifest.default_locale.as_deref());
                     msgs.localize(&manifest.name, &id)
                 })
                 .unwrap_or_else(|| manifest.name.clone());
-            let _ = std::fs::remove_dir_all(&dir);
+            if let Ok(dir) = &dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
             n
         };
         let req = {

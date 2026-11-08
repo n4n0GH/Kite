@@ -1944,9 +1944,10 @@ impl qobject::Browser {
 
     // ---- misc -----------------------------------------------------------------
     fn temp_file(&self, name: &QString) -> QString {
-        let dir = std::env::temp_dir().join(format!("kite-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        q(dir.join(name.to_string().replace('/', "_")).to_string_lossy())
+        match kite_core::util::private_temp_dir() {
+            Ok(dir) => q(dir.join(name.to_string().replace('/', "_")).to_string_lossy()),
+            Err(_) => q(""),
+        }
     }
     fn file_to_data_url(&self, path: &QString) -> QString {
         use base64::Engine;

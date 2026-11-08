@@ -36,6 +36,17 @@ impl Profile {
 
     pub fn open_at(root: PathBuf, name: &str) -> anyhow::Result<Self> {
         std::fs::create_dir_all(&root)?;
+        // History, cookies, passwords and settings are the user's alone. The
+        // files are made with the usual umask (0644), so it's the folders that
+        // keep others out: the profile's, and the one holding all profiles.
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let private = std::fs::Permissions::from_mode(0o700);
+            let _ = std::fs::set_permissions(&root, private.clone());
+            if let Some(all) = root.parent().filter(|p| p.file_name().is_some_and(|n| n == "profiles")) {
+                let _ = std::fs::set_permissions(all, private);
+            }
+        }
         for sub in ["adblock", "extensions", "webengine"] {
             std::fs::create_dir_all(root.join(sub))?;
         }

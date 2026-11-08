@@ -440,6 +440,11 @@ QQC2.ApplicationWindow {
         fullScreenTab = tab
         contentFullScreen = true
         showFullScreen()
+        // Say who took the screen, and the way out: with Kite's own bars gone,
+        // a page could otherwise draw a browser of its own.
+        fullScreenNotice.site = Browser.hostOf(tab.url) || "This page"
+        fullScreenNotice.opacity = 1
+        fullScreenNoticeTimer.restart()
     }
     // The page left fullscreen itself (`fromPage`), or Kite makes it leave
     // (Escape, the window leaving fullscreen).
@@ -452,6 +457,32 @@ QQC2.ApplicationWindow {
         if (!wasFullScreen && visibility === Window.FullScreen) showNormal()
     }
     onVisibilityChanged: if (contentFullScreen && visibility !== Window.FullScreen) exitContentFullScreen(false)
+
+    Rectangle {
+        id: fullScreenNotice
+        property string site: ""
+        parent: bw.contentItem
+        z: 1000
+        opacity: 0
+        visible: opacity > 0 && bw.contentFullScreen
+        Behavior on opacity { NumberAnimation { duration: Kirigami.Units.longDuration } }
+        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: Kirigami.Units.gridUnit * 2 }
+        width: Math.min(noticeLabel.implicitWidth + Kirigami.Units.gridUnit * 2, parent.width - Kirigami.Units.gridUnit * 2)
+        height: noticeLabel.implicitHeight + Kirigami.Units.largeSpacing * 2
+        radius: Kirigami.Units.cornerRadius
+        color: Kirigami.Theme.textColor
+        QQC2.Label {
+            id: noticeLabel
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, parent.parent.width - Kirigami.Units.gridUnit * 4)
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+            color: Kirigami.Theme.backgroundColor
+            text: fullScreenNotice.site + " is now full screen. Press Esc to leave."
+        }
+        Timer { id: fullScreenNoticeTimer; interval: 4000; onTriggered: fullScreenNotice.opacity = 0 }
+    }
     property var toolbarActions: []
     property int downloadsActive: 0
 

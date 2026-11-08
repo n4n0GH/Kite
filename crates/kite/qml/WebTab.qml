@@ -752,8 +752,10 @@ Item {
                         wt.readerAvailable = false
                         // (A link it was asked about comes through here too.)
                         if (!Browser.isExternalUrl(u)) wt.externalPrompt = ""
-                        // A wake lock prompt belongs to the page being left.
-                        if (wt.pendingPermissions.some(p => p.wakeLock)) wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock)
+                        // A wake lock prompt belongs to the page being left, and any
+                        // other to its site: none stays up over another site's page.
+                        if (wt.pendingPermissions.some(p => p.wakeLock || (p.originUrl !== undefined && wt.originOf(p.originUrl) !== wt.originOf(u))))
+                            wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock && (p.originUrl === undefined || wt.originOf(p.originUrl) === wt.originOf(u)))
                         wt.leftForMidi(u)
                         if (elementPicker.visible) elementPicker.visible = false
                         wt.loginForm = false
@@ -861,7 +863,7 @@ Item {
                         permission.deny()
                         return
                     }
-                    wt.pendingPermissions = wt.pendingPermissions.concat([{permission: permission, origin: Browser.hostOf(permission.origin.toString()) || permission.origin.toString()}])
+                    wt.pendingPermissions = wt.pendingPermissions.concat([{permission: permission, origin: wt.promptOrigin(permission.origin.toString()), originUrl: permission.origin.toString()}])
                 }
 
                 onCertificateError: error => {
@@ -890,9 +892,9 @@ Item {
                 // site would then get every such link, from any page.
                 onRegisterProtocolHandlerRequested: request => {
                     if (wt.window.privateMode || !wt.app.setting("privacy.protocolHandlers")) { request.reject(); return }
-                    const site = Browser.hostOf(request.origin.toString()) || request.origin.toString()
+                    const site = wt.promptOrigin(request.origin.toString())
                     if (wt.pendingPermissions.some(p => p.protocolHandler === request.scheme)) { request.reject(); return }
-                    wt.pendingPermissions = wt.pendingPermissions.concat([{origin: site, protocolHandler: request.scheme, permission: {
+                    wt.pendingPermissions = wt.pendingPermissions.concat([{origin: site, originUrl: request.origin.toString(), protocolHandler: request.scheme, permission: {
                         permissionType: "protocolHandler:" + request.scheme,
                         grant: () => request.accept(),
                         deny: () => request.reject(),
@@ -1042,6 +1044,15 @@ Item {
     }
 
     property string _lastCommitted: ""
+
+    // Who is asking, as the prompt names it: the host for an https site on its
+    // usual port, otherwise its scheme and port too (http://example.com is not
+    // the https site, and its answer shouldn't look like it was).
+    function promptOrigin(u) {
+        const m = String(u).match(/^([a-z][a-z0-9+.-]*):\/\/([^\/?#]*)/i)
+        if (!m) return String(u)
+        return m[1].toLowerCase() === "https" && !/:\d+$/.test(m[2]) ? m[2] : m[1].toLowerCase() + "://" + m[2]
+    }
 
     function escapeHtml(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
 

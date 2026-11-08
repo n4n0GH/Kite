@@ -555,10 +555,14 @@ impl SafeBrowsing {
     }
 }
 
-/// Google's durations: "1800.5s".
+/// Google's durations: "1800.5s". At most a day: a reply's "inf", NaN or a
+/// huge number would panic in Duration or overflow `Instant + ttl`.
 fn parse_duration(s: Option<&str>) -> Option<Duration> {
     let secs: f64 = s?.trim_end_matches('s').parse().ok()?;
-    Some(Duration::from_secs_f64(secs.max(0.0)))
+    if !secs.is_finite() {
+        return None;
+    }
+    Some(Duration::from_secs_f64(secs.clamp(0.0, 86_400.0)))
 }
 
 fn fetch(url: &str) -> anyhow::Result<String> {
@@ -652,5 +656,9 @@ mod tests {
         assert_eq!(parse_duration(Some("1800s")), Some(Duration::from_secs(1800)));
         assert_eq!(parse_duration(Some("300.5s")), Some(Duration::from_secs_f64(300.5)));
         assert_eq!(parse_duration(None), None);
+        assert_eq!(parse_duration(Some("infs")), None);
+        assert_eq!(parse_duration(Some("NaNs")), None);
+        assert_eq!(parse_duration(Some("1e300s")), Some(Duration::from_secs(86_400)));
+        assert_eq!(parse_duration(Some("-5s")), Some(Duration::ZERO));
     }
 }

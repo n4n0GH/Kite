@@ -54,7 +54,7 @@ fn ask_for_profile() -> Option<String> {
     }
 }
 
-const HELP: &str = "Usage: kite [options] [URL...]
+const HELP: &str = "Usage: kite [options] [--] [URL...]
 
 If the profile is open in a running Kite, the URLs open there as new tabs, and
 without any, it opens a new window.
@@ -71,6 +71,7 @@ Options:
                          listed in Settings, where they can be removed)
   -h, --help             Show this help
   -v, --version          Show version
+  --                     What follows are URLs or files, even if they start with -
 
 Environment:
   KITE_DATA_DIR          Base directory for profiles
@@ -104,6 +105,12 @@ fn main() {
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
+            // Everything after "--" is an address or a file, even if it starts
+            // with "-": what another app hands over can't become an option.
+            "--" => {
+                urls.extend(it.by_ref());
+                break;
+            }
             "-h" | "--help" => {
                 println!("{HELP}");
                 return;
@@ -197,6 +204,7 @@ fn main() {
     if private {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }
+    kite_core::util::remove_private_temp_dir();
     std::process::exit(code);
 }
 
