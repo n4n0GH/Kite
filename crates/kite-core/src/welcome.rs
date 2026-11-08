@@ -106,7 +106,7 @@ pub fn page(token: &str, nonce: &str, sources: &Value) -> String {
 
 <section id="ready" hidden>
 <div id="working">
-<div class="kite" aria-hidden="true"><span></span></div>
+<div class="spinner" aria-hidden="true"></div>
 <h1>Setting up your new browser…</h1>
 </div>
 <div id="done" hidden>
