@@ -275,6 +275,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "resetSiteSettings"]
         fn reset_site_settings(self: Pin<&mut Browser>, host: &QString);
+        /// The user agents a site can be given: [{name, userAgent}].
+        #[qinvokable]
+        #[cxx_name = "userAgentPresets"]
+        fn user_agent_presets(self: &Browser) -> QString;
+        /// QtWebEngine's own user agent, which a site's "Kite (naming QtWebEngine)" stands for.
+        #[qinvokable]
+        #[cxx_name = "setQtWebEngineUserAgent"]
+        fn set_qtwebengine_user_agent(self: &Browser, ua: &QString);
+        /// The page script making a site's pages see its chosen user agent ("" = none).
+        #[qinvokable]
+        #[cxx_name = "siteIdentityScript"]
+        fn site_identity_script(self: &Browser, host: &QString) -> QString;
 
         // content blocking
         #[qinvokable]
@@ -716,6 +728,11 @@ fn q(s: impl AsRef<str>) -> QString {
 }
 fn js(v: &Value) -> QString {
     q(v.to_string())
+}
+
+/// The page script making pages see `ua` as their user agent (identity.js).
+fn identity_script(ua: &str) -> QString {
+    q(include_str!("js/identity.js").replace("__KITE_UA__", &Value::String(ua.to_owned()).to_string()))
 }
 fn parse(s: &QString) -> Value {
     serde_json::from_str(&s.to_string()).unwrap_or(Value::Null)
@@ -1274,7 +1291,7 @@ impl qobject::Browser {
             return;
         }
         let _ = kite_core::sitesettings::set(&a.shared.db(), &host.to_string(), &key.to_string(), value as i64);
-        app().privacy.load_cookie_rules(&app().shared);
+        app().privacy.load_site_rules(&app().shared);
     }
     fn all_site_settings(&self) -> QString {
         let list = kite_core::sitesettings::all(&app().shared.db()).unwrap_or_default();
@@ -1282,7 +1299,7 @@ impl qobject::Browser {
     }
     fn clear_site_settings(self: Pin<&mut Self>, host: &QString) {
         let _ = kite_core::sitesettings::clear(&app().shared.db(), &host.to_string());
-        app().privacy.load_cookie_rules(&app().shared);
+        app().privacy.load_site_rules(&app().shared);
     }
     fn https_upgrade_failed(&self, url: &QString) -> bool {
         let url = url.to_string();
@@ -1351,10 +1368,25 @@ impl qobject::Browser {
     }
     fn set_site_text(self: Pin<&mut Self>, host: &QString, key: &QString, value: &QString) {
         let _ = kite_core::sitesettings::set_text(&app().shared.db(), &host.to_string(), &key.to_string(), &value.to_string());
+        app().privacy.load_site_rules(&app().shared);
+    }
+    fn user_agent_presets(&self) -> QString {
+        let mut list = vec![json!({"name": "Kite, naming QtWebEngine", "userAgent": kite_core::util::QTWEBENGINE_USER_AGENT})];
+        list.extend(kite_core::util::USER_AGENT_PRESETS.iter().map(|(name, ua)| json!({"name": name, "userAgent": ua})));
+        js(&Value::Array(list))
+    }
+    fn set_qtwebengine_user_agent(&self, ua: &QString) {
+        *app().privacy.qtwebengine_user_agent.write().unwrap() = ua.to_string();
+    }
+    fn site_identity_script(&self, host: &QString) -> QString {
+        match app().privacy.site_user_agent(&host.to_string()) {
+            Some(ua) => identity_script(&ua),
+            None => QString::default(),
+        }
     }
     fn reset_site_settings(self: Pin<&mut Self>, host: &QString) {
         let _ = kite_core::sitesettings::reset(&app().shared.db(), &host.to_string());
-        app().privacy.load_cookie_rules(&app().shared);
+        app().privacy.load_site_rules(&app().shared);
     }
 
     // ---- content blocking ---------------------------------------------------
@@ -1812,7 +1844,7 @@ impl qobject::Browser {
     }
 
     fn google_sign_in_script(&self) -> QString {
-        q(include_str!("js/firefox_identity.js").replace("__KITE_UA__", kite_core::util::FIREFOX_USER_AGENT))
+        identity_script(kite_core::util::FIREFOX_USER_AGENT)
     }
 
     fn place_pip_window(&self, title: &QString, min_width: i32, all_desktops: bool) {

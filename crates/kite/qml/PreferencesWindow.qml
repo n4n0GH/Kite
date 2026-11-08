@@ -1379,6 +1379,7 @@ ManagerWindow {
                 if (s.cookies === 2) parts.push("Cookies blocked")
                 if (s.cookies === 3) parts.push("Cookies until Kite closes")
                 if (s.fingerprint === 1) parts.push("Fingerprint protection")
+                if (s.user_agent) parts.push("Own user agent")
                 if (s.css) parts.push("Custom CSS")
                 if (s.js) parts.push("Custom JavaScript")
                 if (!parts.length && (s.javascript || s.images || s.notifications || s.geolocation || s.midi || s.midi_sysex)) parts.push("Permissions")
@@ -1492,11 +1493,15 @@ ManagerWindow {
                     darkMode.currentIndex = site.dark_mode || 0
                     cookieRule.currentIndex = site.cookies || 0
                     fingerprint.checked = site.fingerprint === 1
+                    const ua = site.user_agent || ""
+                    const preset = uaChoice.presets.findIndex(p => p.userAgent === ua)
+                    uaChoice.currentIndex = !ua ? 0 : preset >= 0 ? preset + 1 : uaChoice.customIndex
+                    uaCustom.text = uaChoice.currentIndex === uaChoice.customIndex ? ua : ""
                     css.text = site.css || ""
                     js.text = site.js || ""
                 }
                 readonly property bool changed: (zoomCustom.checked ? zoomValue.value : -1) !== (site.zoom > 0 ? site.zoom : -1)
-                    || darkMode.currentIndex !== (site.dark_mode || 0) || cookieRule.currentIndex !== (site.cookies || 0) || fingerprint.checked !== (site.fingerprint === 1) || css.text !== (site.css || "") || js.text !== (site.js || "")
+                    || darkMode.currentIndex !== (site.dark_mode || 0) || cookieRule.currentIndex !== (site.cookies || 0) || fingerprint.checked !== (site.fingerprint === 1) || uaChoice.value !== (site.user_agent || "") || css.text !== (site.css || "") || js.text !== (site.js || "")
                 function save() {
                     const h = sitePage.host
                     Browser.setSiteSetting(h, "zoom", zoomCustom.checked ? zoomValue.value : -1)
@@ -1505,6 +1510,7 @@ ManagerWindow {
                     Browser.setSiteSetting(h, "fingerprint", fingerprint.checked ? 1 : 0)
                     Browser.setSiteText(h, "css", css.text)
                     Browser.setSiteText(h, "js", js.text)
+                    Browser.setSiteText(h, "userAgent", uaChoice.value)
                     w.app.siteSettingsChanged(h)
                     load()
                 }
@@ -1555,6 +1561,31 @@ ManagerWindow {
                         opacity: 0.7
                         font: Kirigami.Theme.smallFont
                     }
+                    // The site's own user agent: sent to its server and seen by its pages.
+                    QQC2.ComboBox {
+                        id: uaChoice
+                        Kirigami.FormData.label: "User agent:"
+                        readonly property var presets: JSON.parse(Browser.userAgentPresets())
+                        readonly property int customIndex: presets.length + 1
+                        // What's stored: "" for the one other sites get.
+                        readonly property string value: currentIndex === 0 ? "" : currentIndex === customIndex ? uaCustom.text.trim() : presets[currentIndex - 1].userAgent
+                        model: ["Like other sites"].concat(presets.map(p => p.name), ["Custom…"])
+                        onActivated: if (currentIndex === customIndex) uaCustom.forceActiveFocus()
+                    }
+                    QQC2.TextField {
+                        id: uaCustom
+                        visible: uaChoice.currentIndex === uaChoice.customIndex
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+                        placeholderText: "Type or paste a user agent"
+                    }
+                    QQC2.Label {
+                        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+                        wrapMode: Text.Wrap
+                        text: "For sites that refuse Kite or show it the wrong page. Some refuse a browser claiming to be Chrome that isn't: \"Kite, naming QtWebEngine\" tells them what it is."
+                        opacity: 0.7
+                        font: Kirigami.Theme.smallFont
+                    }
                 }
                 Kirigami.Heading { level: 4; text: "Custom CSS" }
                 QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Added to every page of this site. Use !important to override the site's own styles." }
@@ -1570,7 +1601,7 @@ ManagerWindow {
                     Layout.preferredHeight: Kirigami.Units.gridUnit * 9
                     QQC2.TextArea { id: js; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "document.querySelector('#banner')?.remove()" }
                 }
-                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and forced dark apply to open tabs right away; forced light, CSS and JavaScript when the site's pages are next loaded." }
+                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and forced dark apply to open tabs right away; forced light, the user agent, CSS and JavaScript when the site's pages are next loaded." }
             }
         }
     }

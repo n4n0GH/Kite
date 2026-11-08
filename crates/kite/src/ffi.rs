@@ -698,11 +698,17 @@ pub extern "C" fn kite_cookie_policy() -> std::ffi::c_int {
     app().cookie_policy.load(std::sync::atomic::Ordering::Relaxed) as std::ffi::c_int
 }
 
-/// Should this user agent override apply (AMO sees Kite as Firefox so it
-/// offers "Add to Firefox" buttons that lead to .xpi files).
+/// Should this user agent override apply: the one chosen for the site (Site
+/// Settings), else AMO sees Kite as Firefox so it offers "Add to Firefox"
+/// buttons that lead to .xpi files.
 #[no_mangle]
 pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
     let url = s(url);
+    if url.starts_with("http") {
+        if let Some(ua) = app().privacy.site_user_agent(&kite_core::util::host_of(url)) {
+            return KiteBuf::from_vec(ua.into_bytes());
+        }
+    }
     let spoof = app().shared.settings().get_bool("extensions.amoSpoofFirefox");
     if spoof && kite_core::util::host_of(url) == "addons.mozilla.org" {
         return KiteBuf::from_vec(kite_core::webext::amo::USER_AGENT.as_bytes().to_vec());

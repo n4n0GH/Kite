@@ -61,6 +61,29 @@ pub fn local_path(text: &str) -> std::path::PathBuf {
 /// A current Firefox's user agent, for the sites that only work for known browsers.
 pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
+/// A site's user agent (Site Settings) meaning Kite's own, naming
+/// "QtWebEngine/x.y" (what "privacy.genericUserAgent" leaves out). Some sites
+/// refuse anything that claims to be Chrome but isn't, like invent.kde.org.
+pub const QTWEBENGINE_USER_AGENT: &str = "kite:qtwebengine";
+
+/// Common browsers' user agents, offered for a site (name, user agent).
+pub const USER_AGENT_PRESETS: &[(&str, &str)] = &[
+    ("Firefox on Linux", FIREFOX_USER_AGENT),
+    ("Firefox on Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"),
+    ("Firefox on macOS", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0"),
+    ("Chrome on Linux", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"),
+    ("Chrome on Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"),
+    ("Edge on Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0"),
+    ("Safari on macOS", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"),
+    ("Chrome on Android", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"),
+    ("Safari on iPhone", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"),
+];
+
+/// What a site's chosen user agent stands for, given QtWebEngine's own.
+pub fn resolve_user_agent(chosen: &str, qtwebengine: &str) -> String {
+    if chosen == QTWEBENGINE_USER_AGENT { qtwebengine.to_owned() } else { chosen.trim().to_owned() }
+}
+
 /// Is this where Google signs people in? It refuses browsers it doesn't know.
 pub fn is_google_sign_in(url: &str) -> bool {
     url.starts_with("https://") && host_of(url) == "accounts.google.com"

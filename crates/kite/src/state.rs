@@ -109,7 +109,7 @@ fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     for key in Privacy::KEYS {
         privacy.apply(key, &shared.settings().get(key));
     }
-    privacy.load_cookie_rules(&shared);
+    privacy.load_site_rules(&shared);
     let safe_browsing = Arc::new(kite_core::safebrowsing::SafeBrowsing::new(profile.path("safebrowsing")));
     {
         let s = shared.settings();
@@ -185,6 +185,10 @@ pub struct Privacy {
     /// Host → rule (1 = allow, 2 = block, 3 = allow until Kite closes), read
     /// by the cookie filter on Chromium's network thread.
     pub cookie_rules: std::sync::RwLock<std::collections::HashMap<String, u8>>,
+    /// Host → the user agent chosen for it (Site Settings), as stored.
+    pub site_user_agents: std::sync::RwLock<std::collections::HashMap<String, String>>,
+    /// QtWebEngine's own user agent, naming it (set from QML once known).
+    pub qtwebengine_user_agent: std::sync::RwLock<String>,
 }
 
 impl Privacy {
@@ -224,8 +228,9 @@ impl Privacy {
         self.upgraded.lock().unwrap().get(&host).is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(60))
     }
 
-    /// Reload the sites' cookie rules (after a site setting changed).
-    pub fn load_cookie_rules(&self, shared: &Shared) {
+    /// Reload the sites' cookie rules and user agents (after a site setting changed).
+    pub fn load_site_rules(&self, shared: &Shared) {
+        *self.site_user_agents.write().unwrap() = kite_core::sitesettings::user_agents(&shared.db()).unwrap_or_default();
         let rules = kite_core::sitesettings::all(&shared.db())
             .unwrap_or_default()
             .into_iter()
@@ -233,6 +238,14 @@ impl Privacy {
             .map(|(h, s)| (h, s.cookies as u8))
             .collect();
         *self.cookie_rules.write().unwrap() = rules;
+    }
+
+    /// The user agent chosen for `host` (exactly that host, as the rest of
+    /// its site settings), if any.
+    pub fn site_user_agent(&self, host: &str) -> Option<String> {
+        let chosen = self.site_user_agents.read().unwrap().get(host)?.clone();
+        let ua = kite_core::util::resolve_user_agent(&chosen, &self.qtwebengine_user_agent.read().unwrap());
+        (!ua.is_empty()).then_some(ua)
     }
 
     /// The cookie rule for `host` (or the closest parent domain with one):

@@ -1,6 +1,7 @@
 //! Per-site settings (Falkon `site_settings` table). Kite uses the zoom level,
 //! forced dark mode, the cookie / JavaScript / image overrides, and its own
-//! custom CSS and JavaScript (`kite_css`, `kite_js`; see db.rs).
+//! custom CSS and JavaScript (`kite_css`, `kite_js`) and user agent (`kite_ua`;
+//! see db.rs).
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,9 @@ pub struct SiteSettings {
     pub midi: i64,
     /// Web MIDI with SysEx, which can change a device's settings and firmware.
     pub midi_sysex: i64,
+    /// The user agent the site is sent and its pages see, empty = the one
+    /// other sites get (`util::QTWEBENGINE_USER_AGENT` stands for Kite's own).
+    pub user_agent: String,
 }
 
 impl SiteSettings {
@@ -41,7 +45,7 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
     Ok(db
         .query_row(
             "SELECT zoom_level, allow_cookies, wa_js_enabled, wa_autoload_images, f_notifications, f_geolocation,
-                    wa_force_dark_mode, kite_css, kite_js, kite_fp, kite_midi, kite_midi_sysex
+                    wa_force_dark_mode, kite_css, kite_js, kite_fp, kite_midi, kite_midi_sysex, kite_ua
              FROM site_settings WHERE server = ?1",
             [host],
             |r| {
@@ -58,6 +62,7 @@ pub fn get(db: &Connection, host: &str) -> anyhow::Result<SiteSettings> {
                     fingerprint: r.get::<_, Option<i64>>(9)?.unwrap_or_default(),
                     midi: r.get::<_, Option<i64>>(10)?.unwrap_or_default(),
                     midi_sysex: r.get::<_, Option<i64>>(11)?.unwrap_or_default(),
+                    user_agent: r.get::<_, Option<String>>(12)?.unwrap_or_default(),
                 })
             },
         )
@@ -78,7 +83,7 @@ const COLUMNS: &[(&str, &str)] = &[
     ("midiSysex", "kite_midi_sysex"),
 ];
 
-const TEXT_COLUMNS: &[(&str, &str)] = &[("css", "kite_css"), ("js", "kite_js")];
+const TEXT_COLUMNS: &[(&str, &str)] = &[("css", "kite_css"), ("js", "kite_js"), ("userAgent", "kite_ua")];
 
 pub fn set(db: &Connection, host: &str, key: &str, value: i64) -> anyhow::Result<()> {
     let col = COLUMNS.iter().find(|(k, _)| *k == key).map(|(_, c)| *c).ok_or_else(|| anyhow::anyhow!("unknown site setting {key}"))?;
@@ -101,7 +106,8 @@ pub fn store(db: &Connection, host: &str, s: &SiteSettings) -> anyhow::Result<()
         set(db, host, key, value)?;
     }
     set_text(db, host, "css", &s.css)?;
-    set_text(db, host, "js", &s.js)
+    set_text(db, host, "js", &s.js)?;
+    set_text(db, host, "userAgent", &s.user_agent)
 }
 
 pub fn all(db: &Connection) -> anyhow::Result<Vec<(String, SiteSettings)>> {
@@ -115,8 +121,8 @@ pub fn clear(db: &Connection, host: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Back to the defaults, except for custom CSS and JavaScript and fingerprint
-/// protection (chosen by the user, not picked up while browsing).
+/// Back to the defaults, except for custom CSS and JavaScript, fingerprint
+/// protection and the user agent (chosen by the user, not picked up while browsing).
 pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
     let s = get(db, host)?;
     clear(db, host)?;
@@ -129,7 +135,17 @@ pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
     if s.fingerprint != 0 {
         set(db, host, "fingerprint", s.fingerprint)?;
     }
+    if !s.user_agent.is_empty() {
+        set_text(db, host, "userAgent", &s.user_agent)?;
+    }
     Ok(())
+}
+
+/// The sites with a user agent of their own: host → what was chosen.
+pub fn user_agents(db: &Connection) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut stmt = db.prepare("SELECT server, kite_ua FROM site_settings WHERE kite_ua IS NOT NULL AND kite_ua != ''")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 #[cfg(test)]
@@ -151,6 +167,26 @@ mod tests {
         reset(&db, "a.org").unwrap();
         let s = get(&db, "a.org").unwrap();
         assert_eq!((s.midi, s.midi_sysex), (0, 0), "cleared with the other permissions");
+    }
+
+    #[test]
+    fn user_agent_is_kept_through_reset_and_import() {
+        let db = crate::db::open_in_memory().unwrap();
+        assert!(user_agents(&db).unwrap().is_empty());
+        set_text(&db, "a.org", "userAgent", "Test/1.0").unwrap();
+        set(&db, "a.org", "zoom", 150).unwrap();
+        set(&db, "b.org", "zoom", 120).unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!(s.user_agent, "Test/1.0");
+        assert!(!s.is_empty());
+        assert_eq!(user_agents(&db).unwrap().into_iter().collect::<Vec<_>>(), vec![("a.org".to_string(), "Test/1.0".to_string())], "only sites with one");
+        reset(&db, "a.org").unwrap();
+        let s = get(&db, "a.org").unwrap();
+        assert_eq!((s.zoom, s.user_agent.as_str()), (-1, "Test/1.0"), "chosen by the user, so kept");
+        store(&db, "c.org", &s).unwrap();
+        assert_eq!(get(&db, "c.org").unwrap().user_agent, "Test/1.0");
+        set_text(&db, "a.org", "userAgent", "").unwrap();
+        assert_eq!(user_agents(&db).unwrap().len(), 1, "cleared");
     }
 
     #[test]

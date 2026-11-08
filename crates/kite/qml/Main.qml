@@ -346,7 +346,11 @@ QtObject {
     }
 
     function configureProfile(p) {
-        if (defaultUserAgent === "") defaultUserAgent = p.httpUserAgent
+        if (defaultUserAgent === "") {
+            defaultUserAgent = p.httpUserAgent
+            // What a site's "Kite, naming QtWebEngine" user agent stands for.
+            Browser.setQtWebEngineUserAgent(defaultUserAgent)
+        }
         applyProfileSettings(p)
         p.downloadRequested.connect(d => {
             if (p === privateProfile) _privateDownloads.push(d)
@@ -680,6 +684,11 @@ QtObject {
             // frames; the noise differs per site and per session.
             if (e.settings.fingerprint === 1 && setting("privacy.antiFingerprinting"))
                 out.push({name: "kite:site-fp:" + e.host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + Browser.fingerprintScript(fingerprintSeed(e.host))})
+            // A user agent of its own: its pages see the one its server is sent
+            // (the request interceptor), in all its frames, before their scripts.
+            const identity = e.settings.user_agent ? Browser.siteIdentityScript(e.host) : ""
+            if (identity)
+                out.push({name: "kite:site-ua:" + e.host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + identity})
         }
         return out
     }
