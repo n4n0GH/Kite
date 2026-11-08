@@ -332,7 +332,11 @@ impl Manifest {
 
     /// Human readable permission warnings, shown before install (like Firefox).
     pub fn permission_warnings(&self) -> Vec<String> {
-        permission_warnings(&self.permissions, &self.host_permissions)
+        // Content scripts reach the pages they match as much as host
+        // permissions do (Firefox warns for both).
+        let mut hosts = self.host_permissions.clone();
+        hosts.extend(self.content_scripts.iter().flat_map(|c| c.matches.iter().cloned()));
+        permission_warnings(&self.permissions, &hosts)
     }
 }
 

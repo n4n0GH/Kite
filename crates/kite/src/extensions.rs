@@ -548,7 +548,11 @@ impl qobject::Extensions {
             let result = (|| -> anyhow::Result<(Vec<u8>, String, String)> {
                 if let Some(url) = direct_url {
                     let bytes = amo::download(&url, "")?;
-                    return Ok((bytes, "amo".into(), String::new()));
+                    // Only Mozilla's site counts as AMO: any other is a website
+                    // offering a file nobody has reviewed.
+                    let from_amo = url::Url::parse(&url).is_ok_and(|u| u.scheme() == "https" && u.host_str() == Some("addons.mozilla.org"));
+                    let source = if from_amo { "amo".to_owned() } else { format!("web:{}", kite_core::util::host_of(&url)) };
+                    return Ok((bytes, source, String::new()));
                 }
                 let id = amo::slug_from_url(&what).unwrap_or(what.clone());
                 let d = amo::details(&id)?;
@@ -577,7 +581,15 @@ impl qobject::Extensions {
             }
         };
         let id = manifest.gecko_id.clone().unwrap_or_else(|| kite_core::webext::registry::fallback_id(&manifest.name));
-        let existing = app().runtime().registry.get(&id).map(|e| e.manifest.version.clone());
+        let (existing, existing_source) = app().runtime().registry.get(&id).map(|e| (Some(e.manifest.version.clone()), e.info.source.clone())).unwrap_or_default();
+        // A website's file can't replace an add-on from addons.mozilla.org:
+        // without signatures, its id is only a claim, and a fake "update"
+        // would take over the real add-on (its data, its native apps).
+        let site = source.strip_prefix("web:").map(str::to_owned);
+        if site.is_some() && existing_source == "amo" {
+            self.install_status(q(json!({"state": "error", "message": format!("{} offered a file claiming to be an update of an add-on you installed from addons.mozilla.org. Kite didn't install it: update it from Add-ons instead.", site.unwrap_or_default())}).to_string()));
+            return;
+        }
         // Localized name for the prompt.
         let name = {
             let dir = std::env::temp_dir().join(format!("kite-inspect-{}", std::process::id()));
@@ -596,12 +608,13 @@ impl qobject::Extensions {
             let mut r = self.as_mut().rust_mut();
             r.next_request += 1;
             let req = r.next_request;
-            r.pending.insert(req, PendingInstall { bytes, source, slug });
+            r.pending.insert(req, PendingInstall { bytes, source: source.clone(), slug });
             req
         };
         let info = json!({
             "id": id, "name": name, "version": manifest.version, "warnings": manifest.permission_warnings(),
             "update": existing.is_some(), "previousVersion": existing, "manifestVersion": manifest.manifest_version,
+            "source": if source == "amo" { "amo" } else if site.is_some() { "web" } else { "file" }, "site": site,
         });
         self.install_prompt(req, js(&info));
     }

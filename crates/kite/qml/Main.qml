@@ -920,6 +920,11 @@ QtObject {
         }
         case "tabs.runInWorld": {
             const t = tabOrThrow(a.tabId)
+            // The permission was checked against this page: not into another
+            // one that has loaded since (an extension could navigate the tab
+            // and inject straight after).
+            const origin = u => { const m = String(u).match(/^[a-z][a-z0-9+.-]*:(\/\/[^\/?#]*)?/i); return m ? m[0].toLowerCase() : "" }
+            if (a.checkedUrl !== undefined && origin(t.view.url) !== origin(a.checkedUrl)) throw new Error("Missing host permission for the tab")
             t.view.runJavaScript(a.code, a.world, r => {
                 if (a.scripting) reply(true, [{frameId: 0, result: r === undefined ? null : r}])
                 else reply(true, a.wrapResult ? [r === undefined ? null : r] : [])
@@ -1082,7 +1087,10 @@ QtObject {
     function onDownloadRequested(download) {
         const url = download.url.toString()
         // Firefox add-ons: install instead of saving.
-        if (url.endsWith(".xpi") || download.mimeType === "application/x-xpinstall") {
+        // (From a site other than addons.mozilla.org only if the setting lets
+        // sites offer add-ons; otherwise the file downloads like any other.)
+        if ((url.endsWith(".xpi") || download.mimeType === "application/x-xpinstall") &&
+            (/^https:\/\/addons\.mozilla\.org\//.test(url) || setting("extensions.siteInstalls"))) {
             download.cancel()
             Extensions.installFromUrl(url)
             return

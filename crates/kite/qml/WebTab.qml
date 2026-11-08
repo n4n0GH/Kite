@@ -591,7 +591,7 @@ Item {
                 visible: true
                 type: Kirigami.MessageType.Information
                 icon.name: "dialog-question"
-                text: "<b>" + modelData.origin + "</b> wants to " + wt.permissionText(modelData.permission.permissionType)
+                text: "<b>" + wt.escapeHtml(modelData.origin) + "</b> wants to " + wt.permissionText(modelData.permission.permissionType)
                 actions: [
                     Kirigami.Action { text: "Allow"; icon.name: "dialog-ok-apply"; onTriggered: { modelData.permission.grant(); wt.dropPermission(index) } },
                     Kirigami.Action { text: "Block"; icon.name: "dialog-cancel"; onTriggered: { modelData.permission.deny(); wt.dropPermission(index) } }
@@ -629,8 +629,8 @@ Item {
             type: Kirigami.MessageType.Information
             icon.name: "dialog-password"
             text: !wt.savePrompt ? "" : (wt.savePrompt.action === "update"
-                ? "Update the saved password for <b>" + wt.savePrompt.username + "</b> on " + wt.savePrompt.host + "?"
-                : "Save the login" + (wt.savePrompt.username ? " for <b>" + wt.savePrompt.username + "</b>" : "") + " on " + wt.savePrompt.host + "?")
+                ? "Update the saved password for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b> on " + wt.escapeHtml(wt.savePrompt.host) + "?"
+                : "Save the login" + (wt.savePrompt.username ? " for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b>" : "") + " on " + wt.escapeHtml(wt.savePrompt.host) + "?")
             actions: [
                 Kirigami.Action { text: wt.savePrompt && wt.savePrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerSavePrompt("save") },
                 Kirigami.Action { text: "Never for This Site"; icon.name: "dialog-cancel"; visible: !wt.savePrompt || wt.savePrompt.action === "save"; onTriggered: wt.answerSavePrompt("never") },
@@ -885,7 +885,19 @@ Item {
                     wt.certError = error
                 }
 
-                onRegisterProtocolHandlerRequested: request => request.accept()
+                // A site asking to open links of a kind (mailto:, magnet:, web+…):
+                // asked in the permission bar, never granted unasked, as the
+                // site would then get every such link, from any page.
+                onRegisterProtocolHandlerRequested: request => {
+                    if (wt.window.privateMode || !wt.app.setting("privacy.protocolHandlers")) { request.reject(); return }
+                    const site = Browser.hostOf(request.origin.toString()) || request.origin.toString()
+                    if (wt.pendingPermissions.some(p => p.protocolHandler === request.scheme)) { request.reject(); return }
+                    wt.pendingPermissions = wt.pendingPermissions.concat([{origin: site, protocolHandler: request.scheme, permission: {
+                        permissionType: "protocolHandler:" + request.scheme,
+                        grant: () => request.accept(),
+                        deny: () => request.reject(),
+                    }}])
+                }
 
                 onAuthenticationDialogRequested: request => {
                     request.accepted = true
@@ -1031,8 +1043,11 @@ Item {
 
     property string _lastCommitted: ""
 
+    function escapeHtml(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+
     function permissionText(type) {
         if (type === "wakeLock") return "keep your screen on"
+        if (String(type).startsWith("protocolHandler:")) return "open all " + String(type).slice(16).replace(/[^a-z0-9+.-]/gi, "") + ": links, from any site"
         if (type === "midi") return "use your MIDI devices"
         if (type === "midiSysex") return "fully control your MIDI devices, which can change their settings and firmware (SysEx)"
         const names = {}
@@ -1066,6 +1081,7 @@ Item {
         for (const id of ids) bridge.wakeLockAnswer(id, granted)
     }
     function requestWakeLock(id) {
+        if (!secureHere()) { answerWakeLock([id], false); return }
         const site = Browser.hostOf(web.url.toString()) || web.url.toString()
         const key = (window.privateMode ? "private:" : "") + site
         const decided = app.wakeLockSites[key]
@@ -1086,6 +1102,13 @@ Item {
     property bool midiSysex: false
     property var midiPorts: []
     function midiSiteNow() { return Browser.hostOf(web.url.toString()) || web.url.toString() }
+    // MIDI and wake locks are for secure pages only. The page's own script checks
+    // too, but a page can skip that; and as answers are kept per host, an http page
+    // would otherwise get what was allowed for the https site of the same name.
+    function secureHere() {
+        const u = web.url.toString()
+        return /^(https|file):/i.test(u) || /^http:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(u)
+    }
     // 0 = ask, 1 = allow, 2 = block; of plain access, or with SysEx too.
     function midiChoice(site, sysex) {
         const s = window.privateMode ? (app.midiPrivateSites[site] || {}) : JSON.parse(Browser.siteSettings(site))
@@ -1140,6 +1163,7 @@ Item {
         if (!Number.isInteger(r.id)) return
         const sysex = r.sysex === true
         const request = {id: r.id, sysex: sysex}
+        if (!secureHere()) { answerMidi([request], false); return }
         const site = midiSiteNow()
         const choice = midiChoice(site, sysex)
         if (choice !== 0) { answerMidi([request], choice === 1); return }
@@ -1157,12 +1181,12 @@ Item {
         let r
         try { r = JSON.parse(json) } catch (e) { return }
         if (!Number.isInteger(r.id)) return
-        bridge.midiToPage("kite-midi-state", JSON.stringify({id: r.id, state: ["prompt", "granted", "denied"][midiChoice(midiSiteNow(), r.sysex === true)]}))
+        bridge.midiToPage("kite-midi-state", JSON.stringify({id: r.id, state: secureHere() ? ["prompt", "granted", "denied"][midiChoice(midiSiteNow(), r.sysex === true)] : "denied"}))
     }
     function midiOp(json) {
         if (midiSite === "") return
         // (It got here from a page of the site the session is for, or it ends.)
-        if (midiSiteNow() !== midiSite) { stopMidi(); return }
+        if (midiSiteNow() !== midiSite || !secureHere()) { stopMidi(); return }
         let r
         try { r = JSON.parse(json) } catch (e) { return }
         if (r.op === "stop") stopMidi()

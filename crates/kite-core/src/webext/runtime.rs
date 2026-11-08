@@ -14,7 +14,7 @@
 use super::native::NativeOp;
 use super::blocking::BlockingHub;
 use super::dnr::{self, RuleSet};
-use super::matchpattern::MatchSet;
+use super::matchpattern::{MatchPattern, MatchSet};
 use super::registry::{Extension, Registry};
 use super::storage::Storage;
 use crate::shared::Shared;
@@ -189,6 +189,10 @@ pub struct Runtime {
     pub dnr: HashMap<String, RuleSet>,
     dnr_disabled: HashMap<String, Vec<String>>,
     dynamic_scripts: HashMap<String, Vec<Value>>,
+    /// activeTab: (extension, tab) → the origin the user invoked the
+    /// extension on (its button, a menu entry, a shortcut). It lasts until
+    /// the tab shows another origin.
+    active_grants: HashMap<(String, i64), String>,
     pending_startup: HashMap<String, Value>,
     uninstall_urls: HashMap<String, String>,
     notifications: HashMap<String, Vec<String>>,
@@ -276,6 +280,7 @@ impl Runtime {
             dnr: HashMap::new(),
             dnr_disabled: HashMap::new(),
             dynamic_scripts: HashMap::new(),
+            active_grants: HashMap::new(),
             pending_startup: HashMap::new(),
             uninstall_urls: HashMap::new(),
             notifications: HashMap::new(),
@@ -569,10 +574,28 @@ impl Runtime {
         ext.has_permission("tabs") || MatchSet::parse(ext.host_patterns().iter().map(String::as_str)).matches(url)
     }
 
+    /// Record an activeTab grant: the user just invoked `ext` on `tab_id`.
+    fn grant_active_tab(&mut self, ext: &str, tab_id: i64) {
+        let has = self.registry.get(ext).is_some_and(|e| e.has_permission("activeTab"));
+        let url = self.tabs.get(&tab_id).or_else(|| self.private_tabs.get(&tab_id)).and_then(|t| t["url"].as_str()).unwrap_or_default();
+        match origin_of(url) {
+            Some(o) if has => {
+                self.active_grants.insert((ext.to_owned(), tab_id), o);
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether `ext` holds an activeTab grant for `tab_id` while it shows `url`.
+    fn active_granted(&self, ext: &Extension, tab_id: i64, url: &str) -> bool {
+        ext.has_permission("activeTab") && self.active_grants.get(&(ext.info.id.clone(), tab_id)).is_some_and(|o| Some(o) == origin_of(url).as_ref())
+    }
+
     fn tab_for(&self, ext: &Extension, tab: &Value) -> Value {
         let mut t = tab.clone();
         let url = tab.get("url").and_then(Value::as_str).unwrap_or_default();
-        if !self.can_see_tab_details(ext, url) {
+        let granted = tab.get("id").and_then(Value::as_i64).is_some_and(|id| self.active_granted(ext, id, url));
+        if !granted && !self.can_see_tab_details(ext, url) {
             if let Some(o) = t.as_object_mut() {
                 o.remove("url");
                 o.remove("title");
@@ -649,8 +672,10 @@ impl Runtime {
                         "index" => t["index"] == *v,
                         "status" => t["status"] == *v,
                         "windowType" => v == "normal",
-                        "url" => url_set.as_ref().map(|s| s.matches(t["url"].as_str().unwrap_or(""))).unwrap_or(true),
-                        "title" => title_re.as_ref().map(|r| r.is_match(t["title"].as_str().unwrap_or(""))).unwrap_or(true),
+                        // Only over tabs it may see the address of: otherwise
+                        // the filter answers what tabs.get leaves out.
+                        "url" => self.can_see_tab_details(ext, t["url"].as_str().unwrap_or("")) && url_set.as_ref().map(|s| s.matches(t["url"].as_str().unwrap_or(""))).unwrap_or(true),
+                        "title" => self.can_see_tab_details(ext, t["url"].as_str().unwrap_or("")) && title_re.as_ref().map(|r| r.is_match(t["title"].as_str().unwrap_or(""))).unwrap_or(true),
                         "incognito" => t["incognito"].as_bool().unwrap_or(false) == v.as_bool().unwrap_or(false),
                         _ => true,
                     };
@@ -1141,6 +1166,7 @@ impl Runtime {
     }
 
     fn action_clicked_inner(&mut self, ext: &str, kind: &str, tab_id: i64) -> Vec<Effect> {
+        self.grant_active_tab(ext, tab_id);
         let Some(tab) = self.tabs.get(&tab_id).cloned() else { return vec![] };
         let Some(e) = self.registry.get(ext) else { return vec![] };
         let t = self.tab_for(e, &tab);
@@ -1210,6 +1236,7 @@ impl Runtime {
     }
 
     fn menu_clicked_inner(&mut self, ext: &str, item: &str, info: &Value, tab_id: i64) -> Vec<Effect> {
+        self.grant_active_tab(ext, tab_id);
         let Some(m) = self.menus.iter_mut().find(|m| m.ext == ext && m.id == item) else { return vec![] };
         let mut was_checked = None;
         if m.kind == "checkbox" {
@@ -1252,6 +1279,7 @@ impl Runtime {
         if self.private_tab_hidden_from(ext, tab_id) {
             return vec![];
         }
+        self.grant_active_tab(ext, tab_id);
         let tab = self.tabs.get(&tab_id).or_else(|| self.private_tabs.get(&tab_id).filter(|_| self.runs_in_private(ext))).cloned().unwrap_or(Value::Null);
         self.fire(ext, "commands.onCommand", json!([name, tab]), false)
     }
@@ -1282,8 +1310,13 @@ impl Runtime {
         dnr::combine(
             self.dnr
                 .iter()
-                .filter(|(id, _)| self.registry.get(id).is_some_and(|e| e.info.enabled && (!in_private || e.runs_in_private())))
-                .map(|(_, set)| set.evaluate(&req)),
+                .filter_map(|(id, set)| Some((self.registry.get(id).filter(|e| e.info.enabled && (!in_private || e.runs_in_private()) && has_dnr_permission(e))?, set)))
+                .map(|(e, set)| match set.evaluate(&req) {
+                    // Blocking and upgrading need no more; redirecting or
+                    // changing headers needs the request's host (Chrome's rule).
+                    o @ (dnr::Outcome::Redirect(_) | dnr::Outcome::Headers(_)) if !dnr_may_modify(e, url, &o) => dnr::Outcome::None,
+                    o => o,
+                }),
         )
     }
 
@@ -1721,7 +1754,7 @@ impl Runtime {
                 let mut p = arg(args, 0);
                 if let Some(u) = p["url"].as_str() {
                     let abs = if u.contains(':') { u.to_owned() } else { e.url(u) };
-                    if abs.starts_with("javascript:") || abs.starts_with("data:text/html") && false {
+                    if !tab_url_allowed(e, &abs) {
                         return now!(Err("Illegal URL".into()));
                     }
                     p["url"] = abs.into();
@@ -1735,9 +1768,11 @@ impl Runtime {
                     Err(err) => return now!(Err(err)),
                 };
                 if let Some(u) = props["url"].as_str() {
-                    if !u.contains(':') {
-                        props["url"] = e.url(u).into();
+                    let abs = if u.contains(':') { u.to_owned() } else { e.url(u) };
+                    if !tab_url_allowed(e, &abs) {
+                        return now!(Err("Illegal URL".into()));
                     }
+                    props["url"] = abs.into();
                 }
                 self.ui(origin, ctx, call_id, ext_id, "tabs.update", json!({"tabId": tab, "props": props}))
             }
@@ -1787,6 +1822,10 @@ impl Runtime {
             ("tabs", "captureVisibleTab") | ("tabs", "captureTab") => {
                 let tab = if name == "captureTab" { arg_i64(args, 0) } else { None };
                 match self.resolve_tab(origin, ctx, tab) {
+                    // Firefox: <all_urls>, or activeTab on the tab.
+                    Ok(t) if !(e.host_patterns().iter().any(|p| p == "<all_urls>") || self.active_granted(e, t, self.tabs.get(&t).and_then(|x| x["url"].as_str()).unwrap_or_default())) => {
+                        now!(Err("Missing activeTab permission".into()))
+                    }
                     Ok(t) => {
                         let opts = if name == "captureTab" { arg(args, 1) } else { args.iter().find(|a| a.is_object()).cloned().unwrap_or(Value::Null) };
                         self.ui(origin, ctx, call_id, ext_id, "tabs.capture", json!({"tabId": t, "options": opts}))
@@ -1802,7 +1841,7 @@ impl Runtime {
                     Err(err) => return now!(Err(err)),
                 };
                 let url = self.tabs.get(&tab).and_then(|t| t["url"].as_str()).unwrap_or_default().to_owned();
-                if !self.can_inject(e, &url) {
+                if !self.can_inject(e, tab, &url) {
                     return now!(Err(format!("Missing host permission for the tab")));
                 }
                 let src = if let Some(f) = details["file"].as_str() {
@@ -1816,14 +1855,14 @@ impl Runtime {
                 // uBO's scriptlets must run in the page's world (see compat).
                 if name == "executeScript" {
                     if let Some(inj) = super::compat::split_main_world_injector(&src) {
-                        return self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": 0, "code": inj.main, "wrapResult": true, "allFrames": details["allFrames"]}));
+                        return self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": 0, "code": inj.main, "wrapResult": true, "allFrames": details["allFrames"], "checkedUrl": url}));
                     }
                 }
                 let code = match name {
                     "executeScript" => self.world_code(e, &src),
                     _ => Self::css_code(&src, &src, name == "removeCSS"),
                 };
-                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": self.world_of(ext_id), "code": code, "wrapResult": name == "executeScript", "allFrames": details["allFrames"]}))
+                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": self.world_of(ext_id), "code": code, "wrapResult": name == "executeScript", "allFrames": details["allFrames"], "checkedUrl": url}))
             }
 
             // ---------------- scripting (MV3) ----------------
@@ -1834,7 +1873,7 @@ impl Runtime {
                 if !self.tabs.contains_key(&tab) {
                     return now!(Err(format!("Invalid tab ID: {tab}")));
                 }
-                if !self.can_inject(e, &url) {
+                if !self.can_inject(e, tab, &url) {
                     return now!(Err("Missing host permission for the tab".into()));
                 }
                 let files: Vec<Value> = d["files"].as_array().cloned().unwrap_or_default();
@@ -1857,10 +1896,23 @@ impl Runtime {
                     let css = d["css"].as_str().map(str::to_owned).unwrap_or(file_src);
                     (Self::css_code(&css, &css, name == "removeCSS"), self.world_of(ext_id))
                 };
-                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": world, "code": code, "wrapResult": name == "executeScript", "scripting": true, "allFrames": d["target"]["allFrames"]}))
+                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": world, "code": code, "wrapResult": name == "executeScript", "scripting": true, "allFrames": d["target"]["allFrames"], "checkedUrl": url}))
             }
             ("scripting", "registerContentScripts") | ("contentScripts", "register") => {
                 let list = if ns == "contentScripts" { vec![arg(args, 0)] } else { arg(args, 0).as_array().cloned().unwrap_or_default() };
+                if ns == "scripting" && !e.has_permission("scripting") {
+                    return now!(Err("Missing scripting permission".into()));
+                }
+                // Each page it matches must be one of its hosts.
+                let hosts: Vec<MatchPattern> = e.host_patterns().iter().filter_map(|p| MatchPattern::parse(p).ok()).collect();
+                for s in &list {
+                    for m in s["matches"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        let covered = MatchPattern::parse(m).is_ok_and(|p| hosts.iter().any(|h| h.covers(&p)));
+                        if !covered {
+                            return now!(Err(format!("Missing host permission for {m}")));
+                        }
+                    }
+                }
                 let entry = self.dynamic_scripts.entry(ext_id.into()).or_default();
                 let mut ids = vec![];
                 for mut s in list {
@@ -1938,7 +1990,29 @@ impl Runtime {
                 let populate = opts["populate"].as_bool().unwrap_or(false);
                 now!(self.windows.get(&id).or_else(|| self.windows.values().next()).map(|w| self.window_json(w, populate, e)).ok_or_else(|| format!("Invalid window ID: {id}")))
             }
-            ("windows", "create") | ("windows", "update") | ("windows", "remove") => self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args.to_vec())),
+            ("windows", "create") => {
+                let mut args = args.to_vec();
+                if let Some(d) = args.get_mut(0) {
+                    let urls: Vec<Value> = match &d["url"] {
+                        Value::String(u) => vec![u.as_str().into()],
+                        Value::Array(a) => a.clone(),
+                        _ => vec![],
+                    };
+                    let mut abs = vec![];
+                    for u in urls.iter().filter_map(Value::as_str) {
+                        let a = if u.contains(':') { u.to_owned() } else { e.url(u) };
+                        if !tab_url_allowed(e, &a) {
+                            return now!(Err("Illegal URL".into()));
+                        }
+                        abs.push(Value::String(a));
+                    }
+                    if !d["url"].is_null() {
+                        d["url"] = abs.into();
+                    }
+                }
+                self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args))
+            }
+            ("windows", "update") | ("windows", "remove") => self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args.to_vec())),
 
             // ---------------- browserAction / pageAction / sidebarAction ----------------
             ("browserAction" | "pageAction" | "sidebarAction", _) => {
@@ -2293,6 +2367,7 @@ impl Runtime {
             ("webRequest", "filterResponseData") | ("webRequest", "getSecurityInfo") => now!(Err(format!("webRequest.{name} is not supported"))),
 
             // ---------------- webNavigation ----------------
+            ("webNavigation", "getFrame" | "getAllFrames") if !e.has_permission("webNavigation") => now!(Err("Missing webNavigation permission".into())),
             ("webNavigation", "getFrame") => {
                 let d = arg(args, 0);
                 let t = d["tabId"].as_i64().and_then(|t| self.tabs.get(&t));
@@ -2305,6 +2380,7 @@ impl Runtime {
             }
 
             // ---------------- declarativeNetRequest ----------------
+            ("declarativeNetRequest", _) if !has_dnr_permission(e) => now!(Err("Missing declarativeNetRequest permission".into())),
             ("declarativeNetRequest", _) => self.dnr_call(ext_id, name, args),
 
             // ---------------- history ----------------
@@ -2461,14 +2537,14 @@ impl Runtime {
         }
     }
 
-    fn can_inject(&self, e: &Extension, url: &str) -> bool {
+    fn can_inject(&self, e: &Extension, tab_id: i64, url: &str) -> bool {
         if url.starts_with(&e.base_url()) {
             return true;
         }
-        if url.starts_with("kite:") || url.starts_with("about:") || url.starts_with("moz-extension:") || url.contains("addons.mozilla.org") {
+        if !(url.starts_with("http:") || url.starts_with("https:") || url.starts_with("file:") || url.starts_with("ftp:")) || is_restricted_host(url) {
             return false;
         }
-        e.has_permission("activeTab") || MatchSet::parse(e.host_patterns().iter().map(String::as_str)).matches(url)
+        self.active_granted(e, tab_id, url) || MatchSet::parse(e.host_patterns().iter().map(String::as_str)).matches(url)
     }
 
     fn ext_info(&self, x: &Extension) -> Value {
@@ -3134,3 +3210,31 @@ mod tests {
         assert!(reg.get("yes@x").unwrap().runs_in_private());
     }
 }
+
+/// Pages no extension may script (Firefox keeps the add-on site too).
+fn is_restricted_host(url: &str) -> bool {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).is_some_and(|h| h == "addons.mozilla.org" || h.ends_with(".addons.mozilla.org"))
+}
+
+/// Where an extension may send a tab or window: the web, its own pages, or
+/// about:blank. Not scripts, data: documents, local files or Kite's pages,
+/// which a load from the browser side would otherwise get into.
+fn tab_url_allowed(e: &Extension, url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    lower.starts_with("http:") || lower.starts_with("https:") || lower == "about:blank" || url.starts_with(&e.base_url())
+}
+
+fn has_dnr_permission(e: &Extension) -> bool {
+    e.has_permission("declarativeNetRequest") || e.has_permission("declarativeNetRequestWithHostAccess")
+}
+
+fn dnr_may_modify(e: &Extension, url: &str, outcome: &dnr::Outcome) -> bool {
+    if let dnr::Outcome::Redirect(to) = outcome {
+        // upgradeScheme: the same address over https.
+        if url.strip_prefix("http:").is_some_and(|rest| to.strip_prefix("https:") == Some(rest)) {
+            return true;
+        }
+    }
+    MatchSet::parse(e.host_patterns().iter().map(String::as_str)).matches(url)
+}
+

@@ -40,6 +40,8 @@ Kirigami.Dialog {
         QQC2.Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
+            // The realm is the site's own text: never markup.
+            textFormat: Text.PlainText
             text: dlg.request ? ((dlg.request.type === AuthenticationDialogRequest.AuthenticationTypeProxy ? "The proxy " + dlg.request.proxyHost : Browser.hostOf(dlg.site))
                                  + " requires a username and password." + (dlg.request.realm ? "\nThe site says: “" + dlg.request.realm + "”" : "")) : ""
         }

@@ -69,6 +69,28 @@ impl MatchPattern {
         self.regex.is_match(url)
     }
 
+    /// Does this host permission take in every page `other` can match? (A
+    /// host permission's path doesn't count, as in browsers.)
+    pub fn covers(&self, other: &MatchPattern) -> bool {
+        if self.source == "<all_urls>" {
+            return !other.source.starts_with("moz-extension:");
+        }
+        let split = |p: &str| -> Option<(String, String)> {
+            let (scheme, rest) = p.split_once("://")?;
+            let host = rest.split('/').next().unwrap_or("");
+            Some((scheme.to_owned(), host.to_ascii_lowercase()))
+        };
+        let (Some((ss, sh)), Some((os, oh))) = (split(&self.source), split(&other.source)) else { return false };
+        let scheme_ok = ss == os || (ss == "*" && ["http", "https", "ws", "wss"].contains(&os.as_str()));
+        let host_ok = sh == "*"
+            || sh == oh
+            || sh.strip_prefix("*.").is_some_and(|d| {
+                let o = oh.strip_prefix("*.").unwrap_or(&oh);
+                o == d || o.ends_with(&format!(".{d}"))
+            });
+        scheme_ok && host_ok
+    }
+
     /// Does the pattern cover a whole host (used for host permissions)?
     pub fn matches_host(&self, url: &str) -> bool {
         match url::Url::parse(url) {
@@ -114,6 +136,22 @@ pub fn is_host_pattern(p: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn host_permissions_cover_patterns() {
+        let c = |h: &str, p: &str| MatchPattern::parse(h).unwrap().covers(&MatchPattern::parse(p).unwrap());
+        assert!(c("<all_urls>", "https://a.b/*"));
+        assert!(c("*://*/*", "https://a.b/x/*"));
+        assert!(c("*://*.example.com/*", "https://example.com/*"));
+        assert!(c("*://*.example.com/*", "https://*.mail.example.com/*"));
+        assert!(c("https://a.b/only", "https://a.b/*"));
+        assert!(!c("https://a.b/*", "http://a.b/*"));
+        assert!(!c("*://*.example.com/*", "https://evilexample.com/*"));
+        assert!(!c("https://a.b/*", "https://*/*"));
+        assert!(!c("*://*/*", "<all_urls>"));
+        assert!(!c("*://*/*", "file:///*"));
+    }
+
     use super::*;
     #[test]
     fn patterns() {

@@ -48,6 +48,7 @@ const TOGGLES = [
     {page: "privacy", text: "Remove tracking parameters from addresses", key: "privacy.stripTrackingParams"},
     {page: "privacy", text: "Block link click pings", key: "privacy.blockPings"},
     {page: "privacy", text: "Tell sites which page linked to them (referrer)", key: "privacy.sendReferer"},
+    {page: "privacy", text: "Let sites ask to open links like mailto: and magnet:", key: "privacy.protocolHandlers"},
     {page: "privacy", text: "Use a common user agent", key: "privacy.genericUserAgent"},
     {page: "privacy", text: "Appear as Firefox when signing in to Google", key: "web.googleSignIn"},
     {page: "privacy", text: "Hide local network addresses from WebRTC", key: "privacy.webrtcPublicOnly"},
@@ -56,13 +57,14 @@ const TOGGLES = [
     {page: "privacy", text: "Look up the addresses of links in advance (DNS prefetching)", key: "web.dnsPrefetch"},
     {page: "privacy", text: "Use container tabs", key: "privacy.containers"},
     {page: "passwords", text: "Offer to save passwords", key: "passwords.save"},
-    {page: "passwords", text: "Fill in saved logins automatically", key: "passwords.autofill"},
+    {page: "passwords", text: "Fill logins automatically over https", key: "passwords.autofill"},
     {page: "passwords", text: "Suggest strong passwords on sign-up forms", key: "passwords.generator"},
     {page: "passwords", text: "Include symbols", key: "passwords.generatorSymbols"},
     {page: "adblock", text: "Block ads and trackers", key: "adblock.enabled"},
     {page: "downloads", text: "Always ask where to save files", key: "downloads.askWhereToSave"},
     {page: "extensions", text: "Enable WebExtensions", key: "extensions.enabled"},
     {page: "extensions", text: "Identify as Firefox on addons.mozilla.org", key: "extensions.amoSpoofFirefox"},
+    {page: "extensions", text: "Let other sites offer add-ons to install", key: "extensions.siteInstalls"},
 ]
 
 // Settings that take more than a switch: these open their page.

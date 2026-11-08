@@ -33,8 +33,19 @@ Window {
                 level: 3
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
+                // The name is the add-on's own text: never markup.
+                textFormat: Text.PlainText
                 text: dlg.info.update ? ("Update " + dlg.info.name + " to " + dlg.info.version + "?") : ("Add " + dlg.info.name + "?")
             }
+        }
+        // Where it comes from: only addons.mozilla.org's add-ons are reviewed.
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: dlg.info.source === "web" || dlg.info.source === "file"
+            type: Kirigami.MessageType.Warning
+            text: dlg.info.source === "web"
+                ? "Offered by " + dlg.info.site + ", not addons.mozilla.org: Mozilla hasn't reviewed it. Add it only if you trust this site."
+                : "From a file, not addons.mozilla.org: Mozilla hasn't reviewed it. Add it only if you trust where the file came from."
         }
         QQC2.Label {
             Layout.fillWidth: true
@@ -49,7 +60,7 @@ Window {
                 Layout.fillWidth: true
                 Layout.leftMargin: Kirigami.Units.largeSpacing
                 Kirigami.Icon { source: "emblem-important"; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
-                QQC2.Label { text: modelData; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                QQC2.Label { text: modelData; textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
         }
         QQC2.Label {

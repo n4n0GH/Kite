@@ -77,6 +77,7 @@ pub fn defaults() -> Map<String, Value> {
         "speeddial.showTiles": true,
         // In private windows, pages from the history: among the start page's
         // tiles, and among the address bar's suggestions.
+        "privacy.protocolHandlers": true,
         "privacy.privateHistoryTiles": false,
         "privacy.privateHistorySuggestions": false,
         "privacy.privateNotifications": false,  // from pages and downloads in private windows
@@ -151,6 +152,7 @@ pub fn defaults() -> Map<String, Value> {
         // Extensions
         "extensions.enabled": true,
         "extensions.amoSpoofFirefox": true,
+        "extensions.siteInstalls": true,
         "extensions.unpinned": [],
         // Window
         "window.width": 1280,

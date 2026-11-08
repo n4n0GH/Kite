@@ -211,6 +211,16 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     }
     if let Some(rest) = url.strip_prefix("kite:") {
         let page = rest.split(['?', '#']).next().unwrap_or("");
+        // Kite's pages are for Kite: the address bar, its own pages, and the
+        // tab itself (empty initiator). A web page (an opaque "null" one
+        // included) may only reach the dangerous-site warning, which the
+        // request interceptor sends its links to. Anything else let pages
+        // probe history (favicon), bounce through kite:search to file: and
+        // kite: addresses, or frame Kite's pages.
+        let from_kite = initiator.is_empty() || initiator.starts_with("kite:");
+        if !from_kite && page != "dangerous" {
+            return (403, "text/plain".into(), vec![]);
+        }
         return match page {
             "start" | "speeddial" | "newtab" | "home" => {
                 let (msg, undo) = crate::startpage::edit(url, initiator).unwrap_or_default();
@@ -229,6 +239,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                     let shown = target.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
                     let html = format!("<!DOCTYPE html><meta charset=utf-8><title>Open in Another App</title><p style=\"font:16px sans-serif;margin:3em\"><a href=\"{shown}\">Open {shown} in another app</a></p>");
                     return (200, "text/html".into(), html.into_bytes());
+                }
+                // From the start page's search box: a search or a web address
+                // (or another app's, above), never a kite: or file: one.
+                if !initiator.is_empty() && !(target.starts_with("https://") || target.starts_with("http://")) {
+                    return (403, "text/plain".into(), vec![]);
                 }
                 let html = format!("<!DOCTYPE html><meta http-equiv=\"refresh\" content=\"0;url={}\">", target.replace('"', "%22"));
                 (200, "text/html".into(), html.into_bytes())
@@ -263,7 +278,7 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             // A known phishing or malware site (dangerous-site protection).
             "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
             // Every setting. It holds what's needed to change them, so no web page gets it.
-            "config" if initiator.is_empty() || initiator.starts_with("kite:") => {
+            "config" if from_kite => {
                 (200, "text/html".into(), kite_core::config::page(&crate::browser::config_entries(), crate::state::config_token(), &kite_core::config::secret()).into_bytes())
             }
             "config" => (403, "text/plain".into(), vec![]),

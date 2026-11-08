@@ -334,6 +334,7 @@ QQC2.TextField {
                     QQC2.Label {
                         text: modelData.url ? Browser.displayUrl(modelData.url) : modelData.type === "go" ? Browser.isExternalUrl(modelData.title) && modelData.title.includes("://") ? "Open " + modelData.title + " in another app" : (Browser.resolveInput(modelData.title).startsWith("http") && !modelData.title.includes(" ") && modelData.title.includes(".") ? "Go to " + modelData.title : "Search for “" + modelData.title + "”")
                             : modelData.title
+                        textFormat: Text.PlainText
                         color: modelData.url ? Kirigami.Theme.linkColor : Kirigami.Theme.textColor
                         elide: modelData.url ? Text.ElideMiddle : Text.ElideRight
                         // Takes the rest of the row unless a title follows it (which
@@ -347,6 +348,7 @@ QQC2.TextField {
                         id: titleLabel
                         visible: modelData.url !== "" && !!modelData.title
                         text: "— " + modelData.title
+                        textFormat: Text.PlainText
                         opacity: 0.7
                         elide: Text.ElideRight
                         Layout.fillWidth: true

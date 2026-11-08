@@ -271,6 +271,8 @@ Item {
                 visible: !root.pinned
                 Layout.fillWidth: true
                 text: root.title
+                // A page's title is its own text: never markup.
+                textFormat: Text.PlainText
                 elide: Text.ElideRight
                 opacity: root.current ? 1 : root.unloaded ? 0.55 : 0.8
                 font.italic: root.unloaded && !root.current

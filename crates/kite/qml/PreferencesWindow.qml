@@ -863,6 +863,7 @@ ManagerWindow {
                 Hint { text: "Click and campaign identifiers such as fbclid, gclid and utm_… are removed before a page loads." }
                 Check { text: "Block link click pings"; key: "privacy.blockPings" }
                 Check { text: "Tell sites which page linked to them (referrer)"; key: "privacy.sendReferer" }
+                Check { text: "Let sites ask to open links like mailto: and magnet:"; key: "privacy.protocolHandlers" }
 
                 Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Fingerprinting" }
                 Check { Kirigami.FormData.label: "Identity:"; text: "Use a common user agent"; key: "privacy.genericUserAgent" }
@@ -1732,6 +1733,8 @@ ManagerWindow {
             QQC2.CheckBox { text: "Enable WebExtensions"; checked: w.get("extensions.enabled"); onToggled: { w.set("extensions.enabled", checked); w.app.installUserScripts(); w.app.backgroundHost.reload() } }
             QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
             QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
+            QQC2.CheckBox { text: "Let other sites offer add-ons to install"; checked: w.get("extensions.siteInstalls"); onToggled: w.set("extensions.siteInstalls", checked) }
+            QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "Kite always asks first, and says which site offered it. With this off, add-on files from sites other than addons.mozilla.org download like any other file." }
             QQC2.Button { text: "Manage Extensions…"; icon.name: "kite-extension"; onClicked: w.app.showAddons() }
         }
     }
