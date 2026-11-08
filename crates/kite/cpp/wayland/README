@@ -1,0 +1,9 @@
+Wayland protocols for pointer lock (../pointerlock.cpp), from wayland-protocols
+(https://gitlab.freedesktop.org/wayland/wayland-protocols, unstable/), MIT
+licensed (see each XML). The C code is generated, so building needs no
+wayland-scanner; after updating an XML, regenerate it:
+
+  for p in pointer-constraints relative-pointer; do
+    wayland-scanner client-header $p-unstable-v1.xml $p-unstable-v1-client-protocol.h
+    wayland-scanner private-code $p-unstable-v1.xml $p-unstable-v1-protocol.c
+  done

@@ -433,6 +433,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "wakeLockScript"]
         fn wake_lock_script(self: &Browser) -> QString;
+        /// Page-world script providing pointer lock, in every frame (js/pointerlock.js).
+        #[qinvokable]
+        #[cxx_name = "pointerLockScript"]
+        fn pointer_lock_script(self: &Browser) -> QString;
+        /// Its isolated-world relay to Kite (js/pointerlock_relay.js).
+        #[qinvokable]
+        #[cxx_name = "pointerLockRelayScript"]
+        fn pointer_lock_relay_script(self: &Browser) -> QString;
         /// Temporary storage for third-party frames that are refused it.
         #[qinvokable]
         #[cxx_name = "thirdPartyStorageScript"]
@@ -1406,6 +1414,12 @@ impl qobject::Browser {
 
     fn wake_lock_script(&self) -> QString {
         q(include_str!("js/wakelock.js"))
+    }
+    fn pointer_lock_script(&self) -> QString {
+        q(include_str!("js/pointerlock.js"))
+    }
+    fn pointer_lock_relay_script(&self) -> QString {
+        q(&include_str!("js/pointerlock_relay.js").replace("__KITE_FRAME_SECRET__", &FRAME_SECRET))
     }
     fn third_party_storage_script(&self) -> QString {
         q(include_str!("js/third_party_storage.js"))

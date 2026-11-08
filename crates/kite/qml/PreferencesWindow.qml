@@ -603,6 +603,7 @@ ManagerWindow {
             QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Enable JavaScript"; checked: w.get("web.javascript"); onToggled: w.set("web.javascript", checked) }
             QQC2.CheckBox { text: "Load images automatically"; checked: w.get("web.autoloadImages"); onToggled: w.set("web.autoloadImages", checked) }
             QQC2.CheckBox { text: "Allow local storage"; checked: w.get("web.localStorage"); onToggled: w.set("web.localStorage", checked) }
+            QQC2.CheckBox { text: "Let pages lock the mouse pointer when you click in them (games)"; checked: w.get("web.pointerLock"); onToggled: w.set("web.pointerLock", checked) }
             QQC2.CheckBox { text: "Open a page's file picker in the last folder used, until Kite closes"; checked: w.get("browsing.rememberFileFolder"); onToggled: w.set("browsing.rememberFileFolder", checked) }
             QQC2.CheckBox { text: "Enable plugins (PDF viewer is always on)"; checked: w.get("web.pluginsEnabled"); onToggled: w.set("web.pluginsEnabled", checked) }
             QQC2.CheckBox { text: "Smooth scrolling"; checked: w.get("web.smoothScrolling"); onToggled: w.set("web.smoothScrolling", checked) }

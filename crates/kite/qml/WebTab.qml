@@ -349,7 +349,7 @@ Item {
     // Shown tabs (the current one, both panes in split view) stay loaded.
     // (Whether a page looks like an article matters once it is seen.)
     onVisibleChanged: {
-        if (!visible) lastAccessed = Date.now()
+        if (!visible) { lastAccessed = Date.now(); releasePointerLock() }
         else if (!readerAvailable) readerProbe.restart()
     }
     // Why the tab must stay loaded ("" when it can be unloaded).
@@ -760,6 +760,7 @@ Item {
                         if (wt.pendingPermissions.some(p => p.wakeLock || (p.originUrl !== undefined && wt.originOf(p.originUrl) !== wt.originOf(u))))
                             wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock && (p.originUrl === undefined || wt.originOf(p.originUrl) === wt.originOf(u)))
                         wt.leftForMidi(u)
+                        wt.releasePointerLock()
                         if (elementPicker.visible) elementPicker.visible = false
                         wt.loginForm = false
                         wt.frameLoginForm = false
@@ -925,6 +926,7 @@ Item {
                     if (status !== WebEngineView.NormalTerminationStatus) wt.crashed = true
                     wt.setWakeLock(false)
                     wt.stopMidi()
+                    wt.releasePointerLock()
                 }
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.
@@ -948,6 +950,7 @@ Item {
                     if (message.startsWith(wt.app.frameSecret)) {
                         const text = message.substring(wt.app.frameSecret.length)
                         if (text.startsWith("ab:")) wt.adblockFound(text.substring(3))
+                        else if (text.startsWith("pl:")) wt.pointerLockMessage(text.substring(3))
                         else if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
                         else wt.frameMessage(text)
                         return
@@ -1118,6 +1121,75 @@ Item {
             deny: () => { app.rememberWakeLock(key, false); answerWakeLock(entry.ids, false) },
         }
         pendingPermissions = pendingPermissions.concat([entry])
+    }
+
+    // ---- Pointer lock (js/pointerlock.js and its relay, cpp/pointerlock.cpp) ----
+    // A page (or one of its frames) asks on a click; Kite has the compositor hold
+    // the pointer and passes on how the mouse moves. It lets go on Esc, when the
+    // window loses focus, the tab is hidden or the page goes elsewhere.
+    property var plFrame: null      // the frame holding (or asking for) the lock
+    property string plFrameId: ""   // its relay's id
+    property int plRequest: 0       // the request being answered
+    property bool plLocked: false
+    function plDown(frame, m, a) {
+        if (!frame || !frame.isValid) return
+        // (Qt's frames don't run it without a callback.)
+        frame.runJavaScript("globalThis.__kitePlDown && __kitePlDown(" + JSON.stringify(m) + ", " + JSON.stringify(a) + ")", 1, () => {})
+    }
+    // A frame by the id its relay chose (the top one too).
+    function withPlFrame(id, then) {
+        if (!web.mainFrame || unloaded) return
+        if (plFrame && plFrame.isValid && plFrameId === id) { then(plFrame); return }
+        for (const f of [web.mainFrame].concat(allFrames(web.mainFrame, []))) {
+            const frame = f
+            frame.runJavaScript("globalThis.__kitePlId", 1, r => { if (r === id) then(frame) })
+        }
+    }
+    function pointerLockMessage(text) {
+        let msg
+        try { msg = JSON.parse(text) } catch (e) { return }
+        if (msg.m === "unlock") {
+            if (PointerLock.owner === wt && plFrameId === msg.f) PointerLock.unlock()
+            return
+        }
+        if (msg.m !== "lock" || !msg.a || typeof msg.a.id !== "number") return
+        withPlFrame(msg.f, frame => {
+            let why = ""
+            if (!app.setting("web.pointerLock")) why = "Locking the mouse pointer is turned off in Kite's settings."
+            else if (!visible || !window.active) why = "The page isn't shown in the active window."
+            // (Ends a lock held before, which is told it's lost.)
+            else why = PointerLock.lock(window, wt, !!msg.a.unadjusted)
+            if (why) { plDown(frame, "answer", {id: msg.a.id, error: why}); return }
+            plFrame = frame
+            plFrameId = msg.f
+            plRequest = msg.a.id
+            plLocked = false
+        })
+    }
+    function releasePointerLock() { if (PointerLock.owner === wt) PointerLock.unlock() }
+    Connections {
+        target: PointerLock
+        function onLocked(owner) {
+            if (owner !== wt) return
+            wt.plLocked = true
+            wt.plDown(wt.plFrame, "answer", {id: wt.plRequest, error: ""})
+            wt.window.toast("Press Esc to get the mouse pointer back", "input-mouse", 3000)
+        }
+        function onUnlocked(owner, why) {
+            if (owner !== wt) return
+            if (wt.plLocked) wt.plDown(wt.plFrame, "lost", {})
+            else wt.plDown(wt.plFrame, "answer", {id: wt.plRequest, error: why || "The pointer lock request was cancelled."})
+            wt.plFrame = null
+            wt.plFrameId = ""
+            wt.plLocked = false
+        }
+        function onMoved(dx, dy) {
+            if (PointerLock.owner !== wt || !wt.plLocked) return
+            if (!wt.plFrame || !wt.plFrame.isValid) { PointerLock.unlock(); return }
+            // (In the page's CSS pixels.)
+            const zoom = web.zoomFactor || 1
+            wt.plDown(wt.plFrame, "move", [dx / zoom, dy / zoom])
+        }
     }
 
     // ---- Web MIDI (crates/kite/src/js/webmidi.js, kite_core::midi) ----

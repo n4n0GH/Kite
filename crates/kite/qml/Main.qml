@@ -706,6 +706,11 @@ QtObject {
             wanted.push({name: "kite:frameForms", sourceCode: Browser.frameFormsScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.wakeLock (QtWebEngine refuses wake locks itself).
             wanted.push({name: "kite:wakeLock", sourceCode: Browser.wakeLockScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
+            // element.requestPointerLock() (QtWebEngine refuses pointer lock itself):
+            // the page's part and its relay to Kite, in every frame (games are often
+            // in one).
+            wanted.push({name: "kite:pointerLock", sourceCode: Browser.pointerLockScript(), worldId: 0, runsOnSubFrames: true, injectionPoint: 0})
+            wanted.push({name: "kite:pointerLockRelay", sourceCode: Browser.pointerLockRelayScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.requestMIDIAccess (QtWebEngine refuses MIDI itself).
             wanted.push({name: "kite:webMidi", sourceCode: Browser.webMidiScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Third-party frames are refused storage along with cookies, which crashes

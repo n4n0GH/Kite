@@ -53,6 +53,7 @@ pub fn defaults() -> Map<String, Value> {
         "web.javascript": true,
         "web.autoloadImages": true,
         "web.localStorage": true,
+        "web.pointerLock": true,              // pages may lock the mouse pointer (games; cpp/pointerlock.cpp)
         "web.pluginsEnabled": false,
         "web.spatialNavigation": false,
         "web.smoothScrolling": true,

@@ -42,7 +42,26 @@ fn main() {
     // (icons/org.kde.kite.svg is a link to the application's icon.)
     println!("cargo::rerun-if-changed=../../data/org.kde.kite.svg");
 
-    CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml))
+    // Wayland's client headers (cpp/pointerlock.cpp), wherever pkg-config says.
+    let wayland_includes: Vec<String> = std::process::Command::new("pkg-config")
+        .args(["--cflags-only-I", "wayland-client"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().filter_map(|f| f.strip_prefix("-I")).map(str::to_owned).collect())
+        .unwrap_or_else(|| vec!["/usr/include/wayland".to_owned()]);
+    println!("cargo::rerun-if-changed=cpp/wayland");
+
+    let builder = CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml));
+    // SAFETY: only adds include directories.
+    let builder = unsafe {
+        builder.cc_builder(|cc| {
+            for dir in &wayland_includes {
+                cc.include(dir);
+            }
+        })
+    };
+    builder
         .qrc_resources(icons)
         .qt_module("Network")
         .qt_module("Widgets")
@@ -53,10 +72,15 @@ fn main() {
         .cpp_file("cpp/glue.cpp")
         .cpp_file("cpp/print.cpp")
         .cpp_file("cpp/profiles.cpp")
+        // (The header has the QML singleton PointerLock, for moc.)
+        .cpp_file("cpp/pointerlock.h")
+        .cpp_file("cpp/pointerlock.cpp")
         .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs"])
         .build();
 
     // QtWebEngineQuick::initialize() and QQuickWebEngineProfile — link the
     // runtime library directly since a -devel package may be absent.
     println!("cargo::rustc-link-arg=-l:libQt6WebEngineQuick.so.6");
+    // Pointer lock talks to the Wayland compositor itself (cpp/pointerlock.cpp).
+    println!("cargo::rustc-link-arg=-l:libwayland-client.so.0");
 }
