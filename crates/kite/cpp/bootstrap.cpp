@@ -52,6 +52,38 @@ extern "C" void kite_cpp_set_wheel_pixels(int px) { g_wheelPixels = px; }
 static int systemWheelPixels() { return QGuiApplication::styleHints()->wheelScrollLines() * 20; }
 extern "C" int kite_cpp_system_wheel_pixels() { return qApp ? systemWheelPixels() : 60; }
 
+// A window's scale can change after it's shown: on Wayland, a new window
+// learns its fractional scale from the compositor only once it's on screen.
+// Qt follows, but QtWebEngine re-renders pages at the new scale only when a
+// view's size changes, so a page drawn first stays stretched (blurry) until
+// the window is resized. The same nudge, too short to see: the content one
+// pixel shorter, then back.
+class KiteScaleFilter : public QObject {
+public:
+    using QObject::QObject;
+    bool eventFilter(QObject *obj, QEvent *e) override
+    {
+        if (e->type() == QEvent::DevicePixelRatioChange) {
+            if (auto *win = qobject_cast<QQuickWindow *>(obj)) {
+                QPointer<QQuickWindow> w(win);
+                QTimer::singleShot(0, win, [w] {
+                    if (!w || !w->contentItem()) return;
+                    QQuickItem *content = w->contentItem();
+                    const QSizeF size = content->size();
+                    if (size.height() < 2) return;
+                    content->setSize(QSizeF(size.width(), size.height() - 1));
+                    // Back after the layouts have passed it on (they do so
+                    // before the next frame), at whatever size the window is.
+                    QTimer::singleShot(100, w, [w] {
+                        if (w && w->contentItem()) w->contentItem()->setSize(QSizeF(w->width(), w->height()));
+                    });
+                });
+            }
+        }
+        return QObject::eventFilter(obj, e);
+    }
+};
+
 class KiteInputFilter : public QObject {
 public:
     using QObject::QObject;
@@ -490,6 +522,7 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     g_engine = &engine;
     kite_init_dns();
     app.installEventFilter(new KiteInputFilter(&app));
+    app.installEventFilter(new KiteScaleFilter(&app));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.
