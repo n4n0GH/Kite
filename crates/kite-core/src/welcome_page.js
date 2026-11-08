@@ -48,6 +48,7 @@
       key: 'low', name: 'Low',
       text: 'Everything is let through, for browsing without interruptions.',
       points: ['Ads and trackers aren\'t blocked', 'All cookies are allowed, from any site', 'Pages may load over unencrypted connections', 'Links keep their tracking parameters, and sites aren\'t asked not to track you', 'Private windows show your history and notifications'],
+      ack: 'I am aware that this setting is considered insecure and may endanger my system',
       warning: 'Low turns off Kite\'s privacy and security protections. Advertisers can follow you from site to site, and pages can load over connections that others on your network can read or change. Choose it only if you accept that risk.',
     },
     {
@@ -64,6 +65,7 @@
       key: 'extreme', name: 'Extreme',
       text: 'The safest, at the cost of many sites not working until you let them.',
       points: ['Nothing is remembered: no history, and cookies and cache are cleared when Kite closes', 'All cookies are blocked, unless you allow them for a site', 'Sites aren\'t told which page linked to them', 'Fingerprinting protection can be turned on for sites', 'Container tabs keep sites apart', 'Extensions are turned off', 'Everything from High as well'],
+      ack: 'I am aware that this setting will break most websites',
       warning: 'Sites you sign in to, shops and many others will not work until you allow their cookies, from the site menu in the address bar.',
     },
   ];
@@ -76,12 +78,20 @@
     $('level-warning').hidden = !l.warning;
     $('level-warning').textContent = l.warning || '';
     $('use-level').textContent = 'Use ' + l.name.replace(/ \(.*\)$/, '') + ' Level';
+    // Low and Extreme only once their cost is acknowledged, anew for each choice.
+    $('ack').hidden = !l.ack;
+    $('ack-text').textContent = l.ack || '';
+    $('ack-box').checked = false;
+    $('use-level').disabled = !!l.ack;
     $('level').setAttribute('aria-valuetext', l.name);
   }
   $('level').oninput = showLevel;
+  $('ack-box').onchange = () => { $('use-level').disabled = !$('ack-box').checked; };
   showLevel();
   $('skip-level').onclick = () => { level = 'high'; finish(); };
-  $('use-level').onclick = finish;
+  // Back to the import step, as it was left (the browser chosen stays chosen).
+  $('back').onclick = () => show('import');
+  $('use-level').onclick = () => { if (!$('use-level').disabled) finish(); };
 
   // ---- step 3: setting up ----
   let answered = false;

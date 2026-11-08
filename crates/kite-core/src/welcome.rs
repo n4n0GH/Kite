@@ -99,8 +99,9 @@ pub fn page(token: &str, nonce: &str, sources: &Value) -> String {
 <p id="level-text"></p>
 <ul id="level-points"></ul>
 <p id="level-warning" class="warning" hidden></p>
+<label id="ack" class="ack" hidden><input id="ack-box" type="checkbox"> <span id="ack-text"></span></label>
 </div>
-<footer><button id="skip-level">Skip</button><button id="use-level" class="primary">Use High Level</button></footer>
+<footer><button id="back" class="back">Back</button><button id="skip-level">Skip</button><button id="use-level" class="primary">Use High Level</button></footer>
 </section>
 
 <section id="ready" hidden>

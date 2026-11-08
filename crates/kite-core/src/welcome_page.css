@@ -3,8 +3,10 @@ html, body { height: 100%; }
 body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 0 1.5em; background: Canvas; color: CanvasText; }
 [hidden] { display: none !important; }
 main { max-width: 36em; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 2em 0; box-sizing: border-box; }
+/* Fades only: text moved by a transform is drawn on a layer of its own, which
+   fractional scaling (as on Wayland) leaves blurry. */
 section { display: flex; flex-direction: column; animation: enter .35s ease-out; }
-@keyframes enter { from { opacity: 0; transform: translateY(.6em); } }
+@keyframes enter { from { opacity: 0; } }
 h1 { font-size: 1.7em; font-weight: 600; margin: 0 0 .4em; }
 h2 { font-size: 1.15em; font-weight: 600; margin: 0 0 .3em; }
 .lead { margin: 0 0 1.4em; }
@@ -32,6 +34,8 @@ h2 { font-size: 1.15em; font-weight: 600; margin: 0 0 .3em; }
 #about p { margin: 0 0 .5em; }
 #about ul { margin: 0 0 .5em; padding-left: 1.3em; }
 #about li { margin: .1em 0; }
+.ack { display: flex; align-items: flex-start; gap: .55em; margin-top: .7em; cursor: pointer; }
+.ack input { margin: .25em 0 0; accent-color: var(--accent); flex: none; }
 .warning { border-left: 3px solid var(--warn); padding: .5em .8em; background: color-mix(in srgb, var(--warn) 12%, transparent); border-radius: 0 4px 4px 0; }
 
 footer { display: flex; justify-content: flex-end; gap: .6em; margin-top: 2em; padding-top: 1em; border-top: 1px solid var(--line); }
@@ -40,13 +44,14 @@ button:hover:not(:disabled) { background: #8882; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, black); }
 button:disabled { opacity: .45; cursor: default; }
+button.back { margin-right: auto; }
 button:focus-visible, #level:focus-visible, #sources input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 #ready { align-items: center; text-align: center; }
 #working, #done { display: flex; flex-direction: column; align-items: center; }
 #done { animation: enter .5s ease-out; }
 #working.leaving { animation: leave .4s ease-in forwards; }
-@keyframes leave { to { opacity: 0; transform: translateY(-.4em); } }
+@keyframes leave { to { opacity: 0; } }
 .kite { position: relative; width: 4.5em; height: 7em; margin-bottom: 1.5em; animation: fly 2.4s ease-in-out infinite; }
 .kite::before { content: ""; position: absolute; left: .75em; top: 0; width: 3em; height: 3em; background: var(--accent); transform: rotate(45deg) skew(8deg, 8deg); border-radius: 3px; }
 .kite span { position: absolute; left: 2.2em; top: 3.4em; width: 2px; height: 3.4em; background: linear-gradient(currentColor, transparent); opacity: .5; transform-origin: top; animation: tail 1.2s ease-in-out infinite alternate; }
