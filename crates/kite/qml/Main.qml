@@ -637,11 +637,14 @@ QtObject {
 
     // Settings with changes not applied asks before Kite goes; then `then`
     // carries on. Whether it's asking.
-    function askBeforeQuit(then) {
+    // Settings has changes not applied: asked about in `win` (the window being
+    // closed; else the active one), and `then` once answered. True if it asks.
+    function askBeforeQuit(then, win) {
         const prefs = _singletons["preferences"]
         if (!prefs || !prefs.hasUnsaved()) return false
-        prefs.show(); prefs.raise(); prefs.requestActivate()
-        if (!prefs.askingAboutUnsaved) prefs.leavePage(then)
+        const w = win || activeWindow
+        if (w && !prefs.askingAboutUnsaved) w.askAboutUnsavedSettings(prefs, then)
+        else { prefs.show(); prefs.raise(); prefs.requestActivate() }
         return true
     }
     function quit(sessionSaved) {

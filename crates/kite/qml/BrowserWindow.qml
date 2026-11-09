@@ -497,7 +497,7 @@ QQC2.ApplicationWindow {
     onActiveChanged: if (active) app.windowActivated(bw)
     onClosing: close => {
         // The last window takes Kite with it.
-        if (!app.quitting && app.windows.length === 1 && app.askBeforeQuit(() => bw.close())) {
+        if (!app.quitting && app.windows.length === 1 && app.askBeforeQuit(() => bw.close(), bw)) {
             close.accepted = false
             return
         }
@@ -546,6 +546,38 @@ QQC2.ApplicationWindow {
     Component { id: sessionDialogsPart; SessionDialogs { win: bw } }
     Component { id: customizePart; CustomizeToolbarDialog { win: bw; catalog: bw.toolbarCatalog } }
     Component { id: crashReportPart; CrashReportDialog { parent: bw.contentItem } }
+    // Closing the last window (or quitting) while Settings has changes not applied:
+    // asked here, in the window just clicked. (The Settings window may be behind
+    // others, and on Wayland Kite can't bring it to the front.)
+    function askAboutUnsavedSettings(prefs, then) {
+        const d = part(unsavedSettingsPart)
+        d.prefs = prefs
+        d.then = then
+        d.open()
+    }
+    Component {
+        id: unsavedSettingsPart
+        Kirigami.PromptDialog {
+            id: unsavedSettings
+            property var prefs
+            property var then
+            parent: bw.contentItem
+            title: "Apply Changes?"
+            subtitle: "Settings has changes you haven't applied. Apply them or discard them before Kite closes?"
+            standardButtons: Kirigami.Dialog.NoButton
+            function answer(apply) {
+                close()
+                const page = prefs && prefs.pageStack.currentItem
+                if (page) { if (apply) page.applyChanges(); else page.discardChanges() }
+                if (then) then()
+            }
+            customFooterActions: [
+                Kirigami.Action { text: "Apply"; icon.name: "dialog-ok-apply"; onTriggered: unsavedSettings.answer(true) },
+                Kirigami.Action { text: "Discard"; icon.name: "edit-delete"; onTriggered: unsavedSettings.answer(false) },
+                Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: unsavedSettings.close() }
+            ]
+        }
+    }
 
     // Menu bar shown briefly after tapping Alt while it's otherwise hidden.
     // The C++ input filter (bootstrap.cpp) calls altTapped(), and
