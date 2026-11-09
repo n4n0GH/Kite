@@ -442,10 +442,13 @@ extern "C" const char *kite_cpp_key_native(const char *sequence)
 
 // The provider answers from the first view in its list showing the icon, which
 // needn't be the tab asking: a view can have a page without the favicon helper
-// Qt only adds when the view is made (one woken from unloading, one a page
-// opened a window in), and reading that one's icon crashes Kite. So while
-// asking (the provider answers right away, on this thread), the asking tab's
-// view is the only one in the list; the others go back afterwards.
+// Qt only adds when the view is made (one woken from unloading), and reading
+// that one's icon crashes Kite. So while asking (the provider answers right
+// away, on this thread), the asking tab's view is the only one in the list;
+// the others go back afterwards, except unloaded ones. Those are taken out
+// again too: Qt puts a view back in the list by itself (a crash report showed
+// all of Kite's unloaded views in it), so being in g_faviconOut doesn't mean
+// being out.
 extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl, const char *viewName)
 {
     static const QString prefix = QStringLiteral("image://favicon/");
@@ -462,9 +465,8 @@ extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl, 
     for (QQuickItem *v : views) {
         if (v->objectName() == self) { found = true; continue; }
         QPointer<QQuickWebEngineView> view(static_cast<QQuickWebEngineView *>(v));
-        if (g_faviconOut.contains(view)) continue;
-        others.append(view);
         FaviconProviderHelper::instance()->detach(view);
+        if (!g_faviconOut.contains(view)) others.append(view);
     }
     // (Without the asking view in a window, there's no telling which would answer.)
     QQuickImageResponse *response = found ? provider->requestImageResponse(icon.mid(prefix.size()), QSize(64, 64)) : nullptr;

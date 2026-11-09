@@ -368,6 +368,10 @@ QtObject {
         const session = JSON.parse(Browser.lastSession())
         const crashed = Browser.crashedLastTime()
         Browser.setRunning(true)
+        // Nothing to wait for (no content-blocking extension still loading):
+        // the first pages load right away, not on the timer's first tick,
+        // which only comes once the windows are made and drawn.
+        if (!networkReady && Extensions.networkReady()) networkReady = true
         // A new profile: the welcome page, by itself (also after quitting it
         // halfway). Addresses to open, as from a link in another app, mean
         // browsing has started: then it's skipped, with the default level.
@@ -871,7 +875,7 @@ QtObject {
             if (result !== undefined) Extensions.uiReply(view, ctx, callId, true, JSON.stringify(result))
         }
         function onInstallPrompt(request, json) {
-            installDialog.show(request, JSON.parse(json))
+            dialog(_installComp).show(request, JSON.parse(json))
         }
         function onInstallStatus(json) {
             const s = JSON.parse(json)
@@ -1033,7 +1037,7 @@ QtObject {
             return a.id
         }
         case "permissions.request":
-            permissionDialog.ask(a, ok => {
+            dialog(_permissionComp).ask(a, ok => {
                 if (ok) Extensions.grantPermissions(ext, JSON.stringify(a.permissions))
                 reply(true, ok)
             })
@@ -1163,7 +1167,7 @@ QtObject {
         download.downloadDirectory = path.substring(0, path.lastIndexOf("/"))
         download.downloadFileName = path.substring(path.lastIndexOf("/") + 1)
         if (asked || setting("downloads.askWhereToSave")) {
-            saveDialog.ask(download)
+            dialog(_saveComp).ask(download)
             return
         }
         startDownload(download)
@@ -1246,13 +1250,21 @@ QtObject {
     }
 
     // ---- dialogs (shared) --------------------------------------------------------------
-    property InstallDialog installDialog: InstallDialog {}
-    property PermissionDialog permissionDialog: PermissionDialog {}
-    property MasterPasswordDialog masterPasswordDialog: MasterPasswordDialog {}
-    function unlockPasswords(cb) { masterPasswordDialog.ask(cb || (() => {})) }
+    // Made the first time they're needed, then kept (not at startup, which
+    // they'd slow for dialogs most sessions never show).
+    property var _dialogs: new Map()
+    function dialog(component) {
+        let o = _dialogs.get(component)
+        if (!o) { o = component.createObject(app); _dialogs.set(component, o) }
+        return o
+    }
+    property Component _installComp: Component { InstallDialog {} }
+    property Component _permissionComp: Component { PermissionDialog {} }
+    property Component _masterPasswordComp: Component { MasterPasswordDialog {} }
+    property Component _saveComp: Component { SaveDialog { onAccepted2: d => app.startDownload(d) } }
+    function unlockPasswords(cb) { dialog(_masterPasswordComp).ask(cb || (() => {})) }
     property var optionsDialog: null
     property Component _optionsComp: Component { ExtensionOptionsDialog {} }
-    property SaveDialog saveDialog: SaveDialog { onAccepted2: d => app.startDownload(d) }
     property var authFlow: null
     property Component _authComp: Component { AuthFlow {} }
 

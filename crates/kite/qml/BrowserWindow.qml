@@ -522,14 +522,30 @@ QQC2.ApplicationWindow {
     // The menu button toggles the menu: presses on it don't close the menu
     // (MainMenu's closePolicy), so they'd otherwise close and reopen it.
     function openMainMenu(item) {
-        if (mainMenu.opened && mainMenu.parent === item) mainMenu.close()
-        else mainMenu.popup(item, 0, item.height)
+        const menu = part(mainMenuPart)
+        if (menu.opened && menu.parent === item) menu.close()
+        else menu.popup(item, 0, item.height)
     }
-    function customizeToolbar() { customizeDialog.open() }
-    function showAbout() { mainMenu.aboutDialog.open() }
+    function customizeToolbar() { part(customizePart).open() }
+    function showAbout() { part(mainMenuPart).aboutDialog.open() }
     // The last crash's report; `expanded` shows its text right away.
-    function showCrashReport(expanded) { crashReportDialog.show(expanded) }
-    CrashReportDialog { id: crashReportDialog; parent: bw.contentItem }
+    function showCrashReport(expanded) { part(crashReportPart).show(expanded) }
+
+    // Parts of the window made the first time they're used, then kept: made
+    // with the window, they'd cost every new window, and Kite's startup, the
+    // time for menus and dialogs most windows never open.
+    property var _parts: new Map()
+    function part(component) {
+        let o = _parts.get(component)
+        if (!o) { o = component.createObject(bw); _parts.set(component, o) }
+        return o
+    }
+    Component { id: mainMenuPart; MainMenu { win: bw; app: bw.app } }
+    Component { id: tabSearchPart; TabSearch { win: bw } }
+    Component { id: commandPalettePart; CommandPalette { win: bw } }
+    Component { id: sessionDialogsPart; SessionDialogs { win: bw } }
+    Component { id: customizePart; CustomizeToolbarDialog { win: bw; catalog: bw.toolbarCatalog } }
+    Component { id: crashReportPart; CrashReportDialog { parent: bw.contentItem } }
 
     // Menu bar shown briefly after tapping Alt while it's otherwise hidden.
     // The C++ input filter (bootstrap.cpp) calls altTapped(), and
@@ -858,8 +874,8 @@ QQC2.ApplicationWindow {
         case "tabLast": setCurrentIndex(count - 1); break
         case "muteTab": if (t) t.view.audioMuted = !t.view.audioMuted; break
         case "tabToOtherPane": if (t) moveToOtherPane(t.tabId); break
-        case "tabSearch": tabSearch.toggle(); break
-        case "commandPalette": commandPalette.toggle(); break
+        case "tabSearch": toggleTabSearch(); break
+        case "commandPalette": toggleCommandPalette(); break
         case "saveSession": saveSessionAs(); break
         case "manageSessions": manageSessions(); break
         case "newWindow": app.newWindow(); break
@@ -1188,11 +1204,8 @@ QQC2.ApplicationWindow {
         }
     }
 
-    MainMenu { id: mainMenu; win: bw; app: bw.app }
-    TabSearch { id: tabSearch; win: bw }
-    CommandPalette { id: commandPalette; win: bw }
-    function toggleTabSearch() { tabSearch.toggle() }
-    function toggleCommandPalette() { commandPalette.toggle() }
+    function toggleTabSearch() { part(tabSearchPart).toggle() }
+    function toggleCommandPalette() { part(commandPalettePart).toggle() }
     // Mouse gestures (bootstrap.cpp): the button the input filter holds back on
     // pages (a Qt.MouseButton, 0 = none), and what the pointer does with it.
     // A click without moving never shows up here: it reaches the page as usual.
@@ -1262,9 +1275,8 @@ QQC2.ApplicationWindow {
         }
     }
 
-    SessionDialogs { id: sessionDialogs; win: bw }
-    function saveSessionAs() { sessionDialogs.save() }
-    function manageSessions() { sessionDialogs.manage() }
+    function saveSessionAs() { part(sessionDialogsPart).save() }
+    function manageSessions() { part(sessionDialogsPart).manage() }
 
     // A tab group's menu (its chip or header).
     QQC2.Menu {
@@ -1349,7 +1361,6 @@ QQC2.ApplicationWindow {
             }
         }
     }
-    CustomizeToolbarDialog { id: customizeDialog; win: bw; catalog: bw.toolbarCatalog }
 
     FileDialog {
         id: openDialog

@@ -731,6 +731,9 @@ Item {
                     if (!loading) Browser.updateTitle(url.toString(), title, wt.window.privateMode)
                 }
                 onIconChanged: {
+                    // Qt puts the view back in its favicon provider's list when its
+                    // icon changes; an unloaded one (no favicon helper) must stay out.
+                    if (wt.faviconOut) Browser.faviconTrack(web.objectName, false)
                     const s = wt.faviconOut ? icon.toString().replace(/^image:\/\/favicon\//, "") : icon.toString()
                     // (Reader view: a kite: page has none; the site's is kept.)
                     if (wt.isReader) { wt.showSiteIcon(); return }
