@@ -174,12 +174,12 @@ QQC2.TextField {
         QQC2.ToolButton {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
             padding: 2
-            visible: field.tab && (field.tab.readerAvailable || field.tab.isReader) && !field.editing
+            visible: field.win.app.readerViewAvailable && field.tab && (field.tab.readerAvailable || field.tab.isReader) && !field.editing
             icon.name: "view-readermode"
             icon.color: field.tab && field.tab.isReader ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
-            onClicked: field.tab.toggleReader()
+            onClicked: field.win.runAction("reader-view.toggle")
             QQC2.ToolTip.text: (field.tab && field.tab.isReader ? "Close reader view" : "Reader view")
-                + " (" + field.win.app.shortcutKeys("readerView").map(k => Browser.keySequenceDisplay(k)).join(", ") + ")"
+                + " (" + field.win.app.shortcutKeys("reader-view.toggle").map(k => Browser.keySequenceDisplay(k)).join(", ") + ")"
             QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
         // Picture-in-picture, for pages with a video (Main.qml startPip).

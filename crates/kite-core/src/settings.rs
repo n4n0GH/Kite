@@ -70,12 +70,6 @@ pub fn defaults() -> Map<String, Value> {
         "tabs.fillWidth": false,
         // Links open as children of their tab, in vertical tab lists.
         "tabs.tree": false,
-        // Reader view: text size (px), line length (em), "sans" | "serif",
-        // "auto" (the KDE colours) | "light" | "sepia" | "dark".
-        "reader.fontSize": 20,
-        "reader.width": 38,
-        "reader.font": "serif",
-        "reader.theme": "auto",
         // Speed dial: tiles the user added ([{url, title}], shown first) and
         // most-visited sites the user removed ([url]).
         "speeddial.showTiles": true,
@@ -102,6 +96,8 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.fileFolderPath": "",         // the "custom" folder
         "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
         "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
+        "web.unblockContextMenu": true,       // Kite's menu where a page cancels it without its own (js/context_menu.js)
+        "web.unblockSelection": true,         // selecting and copying text where a page stops it (js/text_unblock.js)
         "web.doNotTrack": true,
         "web.spellcheck": true,
         "web.spellcheckLanguages": ["en-US"],
@@ -186,10 +182,19 @@ fn migrate(values: &mut Map<String, Value>) {
             values.insert("tabs.switchToNewTabFromLink".into(), Value::Bool(true));
         }
     }
-    // Picture-in-picture became a plugin: its action has a new name.
+    // Picture-in-picture and reader view became plugins: their actions have new names.
     if let Some(Value::Object(keys)) = values.get_mut("shortcuts") {
         if let Some(mine) = keys.remove("pictureInPicture") {
             keys.insert("pip.toggle".into(), mine);
+        }
+        if let Some(mine) = keys.remove("readerView") {
+            keys.insert("reader-view.toggle".into(), mine);
+        }
+    }
+    // And reader view's settings are the plugin's.
+    for key in ["fontSize", "width", "font", "theme"] {
+        if let Some(v) = values.remove(&format!("reader.{key}")) {
+            values.entry(format!("{}{key}", crate::reader::PLUGIN_SETTINGS)).or_insert(v);
         }
     }
     // uBlock Origin's lists are in the defaults now, for profiles that chose their own lists too.
@@ -419,6 +424,13 @@ mod tests {
     fn remembering_the_file_folder_becomes_a_choice() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("settings.json");
+        // Reader view became a plugin: its settings and its shortcut are the plugin's.
+        std::fs::write(&p, r#"{"reader.fontSize": 26, "reader.theme": "sepia", "shortcuts": {"readerView": ["F9"]}}"#).unwrap();
+        let s = Settings::load(p.clone());
+        assert_eq!(s.get("plugins.reader-view.fontSize"), serde_json::json!(26));
+        assert_eq!(s.get("plugins.reader-view.theme"), serde_json::json!("sepia"));
+        assert_eq!(s.get("reader.fontSize"), Value::Null);
+        assert_eq!(s.get("shortcuts")["reader-view.toggle"], serde_json::json!(["F9"]));
         std::fs::write(&p, r#"{"browsing.rememberFileFolder": false}"#).unwrap();
         let s = Settings::load(p.clone());
         assert_eq!(s.get_str("browsing.fileFolder"), "home");

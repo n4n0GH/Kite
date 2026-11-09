@@ -154,6 +154,8 @@ QtObject {
     property var pipTab: null
     readonly property var pipPlugin: plugins.find(p => p.id === "pip")
     readonly property bool pipAvailable: pluginActions.some(a => a.id === "pip.toggle")
+    // Reader view (plugins/reader-view/; kite_core::reader shows its pages), while it's on.
+    readonly property bool readerViewAvailable: pluginActions.some(a => a.id === "reader-view.toggle")
     property PipWindow pipWindow: null
     property Component _pipComp: Component { PipWindow {} }
     // Show the video at (x, y) of the tab's page (CSS px; -1: its main video).
@@ -246,7 +248,6 @@ QtObject {
         {id: "saveSession", group: "Windows", name: "Save current session", keys: []},
         {id: "manageSessions", group: "Windows", name: "Manage sessions", keys: []},
         {id: "commandPalette", group: "Tools", name: "Command palette", keys: ["Ctrl+Shift+P", "Ctrl+Alt+I"]},
-        {id: "readerView", group: "Page", name: "Reader view", keys: ["Ctrl+Alt+R"]},
         {id: "bookmarkPage", group: "Bookmarks and history", name: "Bookmark this page", keys: ["Ctrl+D"]},
         {id: "bookmarkAllTabs", group: "Bookmarks and history", name: "Bookmark all tabs", keys: ["Ctrl+Shift+D"]},
         {id: "bookmarksSidebar", group: "Bookmarks and history", name: "Bookmarks sidebar", keys: ["Ctrl+B"]},
@@ -289,7 +290,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.tree", "reader.fontSize", "reader.width", "reader.font", "reader.theme", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
@@ -301,7 +302,7 @@ QtObject {
                 app.liveSettings = o
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
-            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent"].includes(key)) app.installUserScripts()
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent", "web.unblockContextMenu", "web.unblockSelection"].includes(key)) app.installUserScripts()
             // (As the switch in Settings does; the welcome page's levels change it too.)
             if (key === "extensions.enabled") { app.installUserScripts(); app.backgroundHost.reload() }
             if (key.startsWith("plugins.")) {
@@ -734,6 +735,11 @@ QtObject {
             // in one).
             wanted.push({name: "kite:pointerLock", sourceCode: Browser.pointerLockScript(), worldId: 0, runsOnSubFrames: true, injectionPoint: 0})
             wanted.push({name: "kite:pointerLockRelay", sourceCode: Browser.pointerLockRelayScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
+            // Kite's right-click menu on pages that keep it from the user.
+            wanted.push({name: "kite:contextMenu", sourceCode: Browser.contextMenuScript(!!setting("web.unblockContextMenu")), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
+            // And selecting and copying text.
+            if (setting("web.unblockSelection"))
+                wanted.push({name: "kite:textUnblock", sourceCode: Browser.textUnblockScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // navigator.requestMIDIAccess (QtWebEngine refuses MIDI itself).
             wanted.push({name: "kite:webMidi", sourceCode: Browser.webMidiScript(), worldId: 0, runsOnSubFrames: false, injectionPoint: 0})
             // Third-party frames are refused storage along with cookies, which crashes
@@ -969,7 +975,15 @@ QtObject {
         }
         case "tabs.print": { const t = tabOrThrow(a.tabId); t.window.printTab(t); return null }
         case "tabs.saveAsPDF": tabOrThrow(a.tabId).window.savePdf(); return "saved"
-        case "tabs.toggleReaderMode": throw new Error("Reader mode is not supported")
+        // (The reader-view plugin's; as in Firefox, only for a page that looks like an article.)
+        case "tabs.toggleReaderMode": {
+            const t = tabOrThrow(a.tabId)
+            const reader = t.window.pluginItem("reader-view")
+            if (!reader) throw new Error("Reader mode is not available: the Reader View plugin is off")
+            if (!t.isReader && (t.unloaded || !t.readerAvailable)) throw new Error("The specified tab cannot be placed into reader mode.")
+            reader.toggle(t)
+            return null
+        }
         case "tabs.capture": {
             const t = tabOrThrow(a.tabId)
             t.view.grabToImage(r => {

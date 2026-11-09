@@ -1,7 +1,8 @@
 
 // Reader view: appended to Readability.js, inside the function wrapping both
-// (Browser.readerScript), and run in an isolated world. Readability changes
-// the document it is given, hence the copy. Rust sanitises the result.
+// (ReaderViewWindow.qml), and run in a world of its own. Readability changes
+// the document it is given, hence the copy. Kite sanitises the result
+// (kite_core::reader).
 const article = new Readability(document.cloneNode(true)).parse();
 if (!article || !article.content) return "";
 return JSON.stringify({

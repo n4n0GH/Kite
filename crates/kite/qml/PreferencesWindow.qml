@@ -910,6 +910,10 @@ ManagerWindow {
             Check { text: "Load images automatically"; key: "web.autoloadImages" }
             Check { text: "Allow local storage"; key: "web.localStorage" }
             Check { text: "Let pages lock the mouse pointer when you click in them (games)"; key: "web.pointerLock" }
+            Check { text: "Don't let pages block the right-click menu"; key: "web.unblockContextMenu" }
+            Hint { text: "When a page stops the menu without showing one of its own, Kite opens its menu anyway, and finds pictures under see-through covers. Shift+right-click always opens Kite's menu." }
+            Check { text: "Don't let pages block selecting and copying text"; key: "web.unblockSelection" }
+            Hint { text: "Dragging across a page's text or double-clicking a word selects it, and copying it copies what you selected, even where the page tries to stop that or to change what's copied. Fields, editors and apps' own controls are left as they are." }
             // Where a page's file picker opens (upload buttons; Main.fileFolder).
             QQC2.ComboBox {
                 id: filePicker

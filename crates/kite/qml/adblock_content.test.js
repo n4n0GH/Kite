@@ -91,3 +91,58 @@ test('a selector CSS cannot read does not take the others with it', () => {
   load({ hide: ['.good', 'bad!', '.also-good', '.x:has-text(y)'] }, 'news.test', made);
   assert.strictEqual(made[0].textContent, '.good,\n.also-good { display: none !important; }\n');
 });
+
+// An element with just enough of a style declaration: `display` and its priority.
+function element(selectorMatched, display = '', priority = '') {
+  const decl = { display, priority };
+  return {
+    removed: false,
+    matches: () => selectorMatched,
+    remove() { this.removed = true; },
+    style: {
+      getPropertyValue: (p) => (p === 'display' ? decl.display : ''),
+      getPropertyPriority: (p) => (p === 'display' ? decl.priority : ''),
+      setProperty(p, v, prio = '') { if (p === 'display') { decl.display = v; decl.priority = prio; } },
+      removeProperty(p) { if (p === 'display') { decl.display = ''; decl.priority = ''; } },
+    },
+    decl,
+  };
+}
+
+test('an element insisting on being shown is held hidden, and again when it is taken back', () => {
+  const { recheck } = load({ hide: ['#fullscreen-ad-trap'] }).api;
+  // kaa.lt: `display: block !important` on the element itself, which the sheet can't overrule.
+  const trap = element(true, 'block', 'important');
+  recheck(trap);
+  assert.deepStrictEqual(trap.decl, { display: 'none', priority: 'important' });
+  trap.style.setProperty('display', 'block', 'important');
+  recheck(trap);
+  assert.deepStrictEqual(trap.decl, { display: 'none', priority: 'important' });
+});
+
+test('only what a rule names, and only while it names it', () => {
+  const { recheck } = load({ hide: ['.ad'] }).api;
+  const other = element(false, 'block', 'important');
+  recheck(other);
+  assert.strictEqual(other.decl.display, 'block');
+  // (No reason to touch an element the sheet already hides.)
+  const plainAd = element(true);
+  recheck(plainAd);
+  assert.strictEqual(plainAd.decl.display, '');
+  // Held, then its class changed: it's let go.
+  const was = element(true, 'flex', 'important');
+  recheck(was);
+  was.matches = () => false;
+  recheck(was);
+  assert.deepStrictEqual(was.decl, { display: '', priority: '' });
+});
+
+test('an element taken back over and over goes', () => {
+  const { recheck } = load({ hide: ['.fight'] }).api;
+  const el = element(true, 'block', 'important');
+  for (let i = 0; i < 25 && !el.removed; i++) {
+    recheck(el);
+    el.style.setProperty('display', 'block', 'important');
+  }
+  assert.ok(el.removed);
+});

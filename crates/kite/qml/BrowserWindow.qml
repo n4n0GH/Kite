@@ -573,7 +573,7 @@ QQC2.ApplicationWindow {
     Timer { id: dragOverTimer; interval: 250; onTriggered: bw.dragOver = false }
     function setTabPosition(p) { Browser.setSetting("tabs.position", JSON.stringify(p)) }
 
-    function registerTab(t) { tabItems[t.tabId] = t }
+    function registerTab(t) { tabItems[t.tabId] = t; tabOpened(t) }
     function unregisterTab(t) { delete tabItems[t.tabId] }
     function tabById(id) { return tabItems[id] || null }
     function tabAt(i) { return i >= 0 && i < tabModel.count ? tabById(tabModel.get(i).tabId) : null }
@@ -900,7 +900,6 @@ QQC2.ApplicationWindow {
         case "savePage": saveDialog.open(); break
         case "openFile": openDialog.open(); break
         case "devTools": if (t) t.toggleDevTools(); break
-        case "readerView": if (t) t.toggleReader(); break
         case "bookmarkPage": if (locationBar) locationBar.toggleBookmark(); break
         case "bookmarkAllTabs": bookmarkAllTabs(); break
         case "bookmarksSidebar": showSidebar("bookmarks"); break
@@ -1238,6 +1237,8 @@ QQC2.ApplicationWindow {
     // A plugin's page script told the window something: {plugin, m}.
     signal pluginMessage(var tab, var message)
     signal tabClosed(int tabId)
+    // (For plugins: a tab of this window, new or come from another one.)
+    signal tabOpened(var tab)
     // What plugins add to a page's context menu, for what it was opened on (`info`, as
     // extensions get it). A plugin's window item offers them with contextItems(info):
     // a list of {title, iconName, run} or {title, iconName, children}.
@@ -1248,6 +1249,14 @@ QQC2.ApplicationWindow {
             if (loader.item && loader.item.contextItems) items = items.concat(loader.item.contextItems(info))
         }
         return items
+    }
+    // A plugin's item in this window, while it's on (else null).
+    function pluginItem(pluginId) {
+        for (let i = 0; i < pluginWindows.count; ++i) {
+            const loader = pluginWindows.itemAt(i)
+            if (loader.modelData.id === pluginId) return loader.item || null
+        }
+        return null
     }
     function runPluginAction(id) {
         for (let i = 0; i < pluginWindows.count; ++i) {

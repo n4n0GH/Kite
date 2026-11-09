@@ -503,6 +503,20 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pointerLockRelayScript"]
         fn pointer_lock_relay_script(self: &Browser) -> QString;
+        /// Kite's right-click menu on pages that keep it from the user
+        /// (js/context_menu.js; `unblock`: "web.unblockContextMenu").
+        #[qinvokable]
+        #[cxx_name = "contextMenuScript"]
+        fn context_menu_script(self: &Browser, unblock: bool) -> QString;
+        /// Its request: the user's last right-click again, past the page.
+        #[qinvokable]
+        #[cxx_name = "replayContextClick"]
+        fn replay_context_click(self: &Browser);
+        /// Selecting and copying text on pages that keep it from the user
+        /// (js/text_unblock.js, "web.unblockSelection").
+        #[qinvokable]
+        #[cxx_name = "textUnblockScript"]
+        fn text_unblock_script(self: &Browser) -> QString;
         /// Temporary storage for third-party frames that are refused it.
         #[qinvokable]
         #[cxx_name = "thirdPartyStorageScript"]
@@ -576,16 +590,8 @@ pub mod qobject {
         #[cxx_name = "manageProfiles"]
         fn manage_profiles(self: &Browser);
 
-        /// Reader view: the script that extracts the page's article, for an
-        /// isolated world; it returns JSON, or "" without an article.
-        #[qinvokable]
-        #[cxx_name = "readerScript"]
-        fn reader_script(self: &Browser) -> QString;
-        /// Reader view: the script telling whether the page looks like an article.
-        #[qinvokable]
-        #[cxx_name = "readerProbeScript"]
-        fn reader_probe_script(self: &Browser) -> QString;
-        /// Keep an extracted article; the kite:reader address showing it, or "".
+        /// Reader view (the reader-view plugin extracts articles; kite_core::reader
+        /// shows them): keep an article; the kite:reader address showing it, or "".
         #[qinvokable]
         #[cxx_name = "readerOpen"]
         fn reader_open(self: &Browser, source: &QString, json: &QString, background: &QString, text: &QString, link: &QString) -> QString;
@@ -605,6 +611,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "saveFavicon"]
         fn save_favicon(self: &Browser, page_url: &QString, icon_url: &QString, view_name: &QString);
+        /// Cache a favicon a woken tab's page fetched itself (a PNG data: URL,
+        /// see WebTab.qml fetchIcon).
+        #[qinvokable]
+        #[cxx_name = "saveFetchedFavicon"]
+        fn save_fetched_favicon(self: &Browser, page_url: &QString, data_url: &QString);
         /// An unloaded tab's view leaves Qt's favicon provider (`track`
         /// false) until it is loaded again (see bootstrap.cpp).
         #[qinvokable]
@@ -1564,6 +1575,15 @@ impl qobject::Browser {
     fn pointer_lock_script(&self) -> QString {
         q(include_str!("js/pointerlock.js"))
     }
+    fn context_menu_script(&self, unblock: bool) -> QString {
+        q(&include_str!("js/context_menu.js").replace("__KITE_FRAME_SECRET__", &FRAME_SECRET).replace("__KITE_AUTO__", if unblock { "true" } else { "false" }))
+    }
+    fn replay_context_click(&self) {
+        crate::ffi::replay_context_click();
+    }
+    fn text_unblock_script(&self) -> QString {
+        q(include_str!("js/text_unblock.js"))
+    }
     fn pointer_lock_relay_script(&self) -> QString {
         q(&include_str!("js/pointerlock_relay.js").replace("__KITE_FRAME_SECRET__", &FRAME_SECRET))
     }
@@ -1649,13 +1669,7 @@ impl qobject::Browser {
         }
     }
 
-    fn reader_script(&self) -> QString {
-        q(concat!("(() => {", include_str!("js/readability/Readability.js"), include_str!("js/reader_extract.js"), "})()"))
-    }
 
-    fn reader_probe_script(&self) -> QString {
-        q(concat!("(() => {", include_str!("js/readability/Readability-readerable.js"), "\nreturn isProbablyReaderable(document);})()"))
-    }
 
     fn reader_open(&self, source: &QString, json: &QString, background: &QString, text: &QString, link: &QString) -> QString {
         let colors = kite_core::reader::Colors { background: background.to_string(), text: text.to_string(), link: link.to_string() };
@@ -1680,6 +1694,23 @@ impl qobject::Browser {
 
     fn save_favicon(&self, page_url: &QString, icon_url: &QString, view_name: &QString) {
         crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string(), &view_name.to_string());
+    }
+
+    fn save_fetched_favicon(&self, page_url: &QString, data_url: &QString) {
+        use base64::Engine;
+        let data_url = data_url.to_string();
+        let Some(b64) = data_url.strip_prefix("data:image/png;base64,") else { return };
+        // (Small: it was scaled to 64 px in the page.)
+        if b64.len() > 512 * 1024 {
+            return;
+        }
+        let Ok(png) = base64::engine::general_purpose::STANDARD.decode(b64) else { return };
+        if !png.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return;
+        }
+        if let Err(e) = kite_core::favicons::save(&app().shared.db(), &page_url.to_string(), &png) {
+            log::warn!("saving favicon for {page_url}: {e}");
+        }
     }
 
     fn favicon_track(&self, view_name: &QString, track: bool) {
@@ -2378,6 +2409,7 @@ fn builtin_plugins() -> Vec<kite_core::plugins::Plugin> {
         include_str!("../plugins/vim-keys/plugin.json"),
         include_str!("../plugins/pip/plugin.json"),
         include_str!("../plugins/plasma-integration/plugin.json"),
+        include_str!("../plugins/reader-view/plugin.json"),
     ])
     .expect("plugin.json");
     for p in &mut plugins {
@@ -2398,6 +2430,10 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
     ("plugins/plasma-integration/page-share-world.js", include_str!("../plugins/plasma-integration/page-share-world.js")),
     ("plugins/plasma-integration/page-share.js", include_str!("../plugins/plasma-integration/page-share.js")),
     ("plugins/plasma-integration/page.js", include_str!("../plugins/plasma-integration/page.js")),
+    // (Run in pages by its window item, when needed.)
+    ("plugins/reader-view/readability/Readability.js", include_str!("../plugins/reader-view/readability/Readability.js")),
+    ("plugins/reader-view/readability/Readability-readerable.js", include_str!("../plugins/reader-view/readability/Readability-readerable.js")),
+    ("plugins/reader-view/extract.js", include_str!("../plugins/reader-view/extract.js")),
 ];
 
 #[cfg(test)]
@@ -2418,6 +2454,15 @@ mod tests {
                 assert!(super::PLUGIN_FILES.iter().any(|(path, _)| path == f), "{}: {f} isn't in PLUGIN_FILES", p.id);
             }
         }
+        // Reader view's defaults are the same in its manifest and where Kite reads them.
+        let reader = plugins.iter().find(|p| p.id == "reader-view").unwrap();
+        // (Nothing stored: loading a file that isn't there doesn't make it.)
+        let none = std::env::temp_dir().join(format!("kite-test-{}-none/settings.json", std::process::id()));
+        let prefs = kite_core::reader::Prefs::from_settings(&kite_core::settings::Settings::load(none));
+        assert_eq!(reader.settings["fontSize"], prefs.font_size);
+        assert_eq!(reader.settings["width"], prefs.width);
+        assert_eq!(reader.settings["font"], prefs.font);
+        assert_eq!(reader.settings["theme"], prefs.theme);
         // Every folder is on the list.
         let folders = std::fs::read_dir(here.join("plugins")).unwrap().count();
         assert_eq!(folders, plugins.len());

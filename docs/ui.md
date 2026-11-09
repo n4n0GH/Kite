@@ -49,7 +49,7 @@ BrowserWindow.qml
 holds one strip per pane. The tab bar's place comes from the `tabs.position` setting.
 
 Each `WebTab.qml` holds the page's own overlays: the certificate warning, permission prompts,
-`ReaderControls.qml`, `AutofillPopup.qml`.
+`AutofillPopup.qml`. Plugins put theirs in its `pageArea` (Reader View's controls).
 
 ## Menus
 
@@ -103,7 +103,7 @@ Matching and ranking are in `fuzzy.js` and `CommandBar.refresh`. A setting's sco
 | An extension's popup | `ExtensionPopup.qml` |
 | Sidebar: bookmarks, history, an extension's panel | `Sidebar.qml` |
 | Find in page | `FindBar.qml` |
-| Reader view controls | `ReaderControls.qml` |
+| Reader view controls | `plugins/reader-view/ReaderViewControls.qml` |
 | Form and password suggestions | `AutofillPopup.qml` |
 
 ## Dialogs

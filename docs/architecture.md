@@ -40,7 +40,7 @@ interface and the state that belongs to it, such as which tabs a window has.
 | `crates/kite-core/src/webext/js/` | The `browser.*` API and the scripts injected into pages |
 | `crates/kite-core/examples/` | Developer tools: `amo-install`, `dnr-check`, `kwallet-check` |
 | `crates/kite/src/` | The QML singletons and the C ABI |
-| `crates/kite/src/js/` | Page scripts: reader extraction, fingerprint protection, wake lock, Web MIDI, scrollbars, Google sign-in identity |
+| `crates/kite/src/js/` | Page scripts: fingerprint protection, wake lock, Web MIDI, scrollbars, Google sign-in identity |
 | `crates/kite/cpp/` | The C++ layer |
 | `crates/kite/qml/` | The interface, see [ui.md](ui.md) |
 | `crates/kite/plugins/` | Plugins that ship with Kite, see [plugins.md](plugins.md) |
@@ -128,7 +128,7 @@ instead (`qml/ExtBridge.qml`).
 | `adblock`, `safebrowsing` | The built-in content blocker: filter lists, uBO's scriptlets (`resources/`), and what each page gets (`page_plan`), which `WebTab.prepareAdblock` puts in the view's scripts before the page exists; dangerous-site protection |
 | `passwords`, `kwallet`, `formfill` | Saved logins and their backends; saved addresses |
 | `certs`, `certview` | Accepted certificate exceptions; the `kite:certificate` page |
-| `reader`, `startpage`, `standin` | Reader view pages; custom start pages; generated stand-in files |
+| `reader`, `startpage`, `standin` | Reader view pages (the reader-view plugin extracts the articles); custom start pages; generated stand-in files |
 | `backup`, `browser_import` | The settings file; importing bookmarks from other browsers |
 | `plugins` | Parses and checks plugin manifests; installs, lists and removes plugin files |
 | `midi` | MIDI devices for Web MIDI, through ALSA's sequencer, loaded when needed |

@@ -220,16 +220,63 @@
     return els;
   }
 
-  const done = new WeakSet();
+  // ---- holding hidden elements hidden ----
+  // The sheet below is of the page's own kind (QtWebEngine has no user stylesheets, which
+  // uBO gets from Chromium's extension API), so a page wins against it with
+  // `display: … !important` set on the element itself, or with an !important rule of its own
+  // that's more specific or comes later. (kaa.lt's "adblock trap", a see-through link over
+  // the whole page, does the first.) An element a rule names that is still shown gets
+  // `display: none !important` on itself, and again whenever the page takes that back.
+  // Elements and why they're held: 'css' (by the sheet's selectors, so only while one still
+  // names them) or 'procedural' (for good).
+  const held = new WeakMap();
+  const inlineHidden = (el) => el.style.getPropertyValue('display') === 'none' && el.style.getPropertyPriority('display') === 'important';
+  // How often the page took it back: one that keeps at it would have this script and the
+  // page answering each other for good, so after a while the element goes.
+  const takenBack = new WeakMap();
+  function hold(el, why) {
+    if (!held.has(el)) held.set(el, why);
+    if (inlineHidden(el)) return;
+    const n = (takenBack.get(el) || 0) + 1;
+    takenBack.set(el, n);
+    if (n > 20) { el.remove(); return; }
+    el.style.setProperty('display', 'none', 'important');
+  }
+  function release(el) {
+    held.delete(el);
+    if (inlineHidden(el)) el.style.removeProperty('display');
+  }
+  // Every selector of the sheet as one, for matching (each was checked to be readable).
+  let hideSelector = '';
+  const named = (el) => {
+    if (!hideSelector) return false;
+    try { return el.matches(hideSelector); } catch (e) { return false; }
+  };
+  // Showing itself the way the sheet can't overrule: by its own style attribute.
+  const insists = (el) => el.style && el.style.getPropertyPriority('display') === 'important' && el.style.getPropertyValue('display') !== 'none';
+  // An element added or restyled: settled at once (observers run before the page is drawn
+  // again or takes a click), so what a rule names never shows.
+  function recheck(el) {
+    const why = held.get(el);
+    if (why === 'procedural') hold(el, why);
+    else if (why === 'css') { if (named(el)) hold(el, why); else release(el); }
+    else if (insists(el) && named(el)) hold(el, 'css');
+  }
+  // Now and then all of them, for the rest (a page's own !important rules).
+  function holdAll() {
+    if (!hideSelector) return;
+    let els;
+    try { els = document.querySelectorAll(hideSelector); } catch (e) { return; }
+    for (const el of els) if (!held.has(el) && getComputedStyle(el).display !== 'none') hold(el, 'css');
+  }
+
+  const styled = new WeakSet();
   function apply(parsed, el) {
     const action = parsed.action;
-    if (!action) {
-      if (!done.has(el)) { done.add(el); el.style.setProperty('display', 'none', 'important'); }
-      return;
-    }
+    if (!action) { hold(el, 'procedural'); return; }
     switch (action.type) {
       case 'remove': el.remove(); break;
-      case 'style': if (!done.has(el)) { done.add(el); el.style.cssText += ';' + (action.arg || ''); } break;
+      case 'style': if (!styled.has(el)) { styled.add(el); el.style.cssText += ';' + (action.arg || ''); } break;
       case 'remove-attr': el.removeAttribute(action.arg); break;
       case 'remove-class': el.classList.remove(action.arg); break;
     }
@@ -252,6 +299,7 @@
     (document.head || document.documentElement).appendChild(sheet);
   }
   sheet.textContent = hide.length ? rule(hide) : '';
+  hideSelector = hide.join(',');
 
   // ---- generic rules, by the classes and ids found ----
   const asked = new Set();
@@ -277,25 +325,26 @@
   }
   globalThis.__kiteAbFill = (to, selectors) => {
     if (to !== frame || !selectors.length) return;
-    sheet.textContent += rule(selectors.filter((s) => CSS.supports('selector(' + s + ')')));
+    const readable = selectors.filter((s) => CSS.supports('selector(' + s + ')'));
+    if (!readable.length) return;
+    sheet.textContent += rule(readable);
+    hideSelector += (hideSelector ? ',' : '') + readable.join(',');
     keepSheet();
+    holdAll();
   };
 
   // ---- watching ----
-  let lastProcedural = 0;
   let timer = 0;
-  function runProcedural() {
-    lastProcedural = performance.now();
-    for (const p of procedural) { for (const el of select(p)) apply(p, el); }
-    // (A page that changes all the time shouldn't take all the time.)
-    lastCost = performance.now() - lastProcedural;
-  }
   let lastCost = 0;
   function tick() {
     timer = 0;
+    const started = performance.now();
     keepSheet();
     ask();
-    if (procedural.length) runProcedural();
+    for (const p of procedural) { for (const el of select(p)) apply(p, el); }
+    holdAll();
+    // (A page that changes all the time shouldn't take all the time.)
+    lastCost = performance.now() - started;
   }
   function soon() {
     if (timer) return;
@@ -309,18 +358,29 @@
     if (!document.documentElement) return false;
     keepSheet();
     new MutationObserver((records) => {
+      let changed = false;
       for (const r of records) {
-        if (r.type === 'attributes') { if (!plan.generichide) note(r.target); continue; }
+        if (r.type === 'attributes') {
+          // (Style changes come often, from animations: only held or insisting elements count.)
+          if (r.attributeName === 'style') { if (r.target.style) recheck(r.target); continue; }
+          changed = true;
+          if (!plan.generichide) note(r.target);
+          if (r.target.style) recheck(r.target);
+          continue;
+        }
+        changed = true;
         for (const n of r.addedNodes) {
           if (n.nodeType !== 1) continue;
           if (!plan.generichide) {
             note(n);
             if (n.firstElementChild) for (const el of n.querySelectorAll('[id],[class]')) note(el);
           }
+          if (n.style) recheck(n);
+          if (n.firstElementChild) for (const el of n.querySelectorAll('[style]')) recheck(el);
         }
       }
-      soon();
-    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'id'] });
+      if (changed) soon();
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'id', 'style'] });
     surveyAll();
     return true;
   }
@@ -330,5 +390,5 @@
   }
   document.addEventListener('DOMContentLoaded', surveyAll, { once: true });
 
-  if (KITE_AB.test) KITE_AB.test({ parseProcedural, fromEngine, select });
+  if (KITE_AB.test) KITE_AB.test({ parseProcedural, fromEngine, select, recheck, held });
 })();

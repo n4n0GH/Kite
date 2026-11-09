@@ -269,43 +269,34 @@ Item {
     // on one asks first. (Pages doing it without a click get nowhere.)
     property string externalPrompt: ""
 
-    // ---- reader view (kite_core::reader) ----
-    // The article is extracted in a world of its own, shown at a kite:reader
-    // address (one step in the tab's history: Back returns to the page).
-    readonly property int readerWorld: 250
+    // ---- reader view (the reader-view plugin; kite_core::reader shows its pages) ----
+    // An article at a kite:reader address is one step in the tab's history (Back
+    // returns to the page). Everything but the view itself sees the page it came from.
     readonly property bool isReader: web.url.toString().startsWith("kite:reader?")
-    // Whether the page looks like an article (the address bar offers it).
+    // Where plugins put what they show over the page (the view and Kite's own overlays are in it).
+    readonly property alias pageArea: viewHolder
+    // Whether the page looks like an article (the plugin tells; the address bar offers it).
     property bool readerAvailable: false
     function sourceOf(u) { return u.startsWith("kite:reader?") ? (Browser.readerSource(u) || u) : u }
     function canRead() { return isReader || /^https?:/i.test(url) }
     function showSiteIcon() { window.setTabProperty(tabId, "icon", Browser.cachedFavicon(sourceOf(web.url.toString()))) }
-    function toggleReader() {
-        if (isReader) {
-            if (web.canGoBack) web.goBack()
-            else load(url)
-            return
-        }
-        if (!canRead()) return
-        const source = url
-        web.runJavaScript(Browser.readerScript(), readerWorld, json => {
-            if (wt.url !== source) return   // gone elsewhere meanwhile
-            const t = Kirigami.Theme
-            const reader = json ? Browser.readerOpen(source, json, t.backgroundColor.toString(), t.textColor.toString(), t.linkColor.toString()) : ""
-            if (reader === "") wt.window.toast("Kite found no article on this page", "dialog-information")
-            else web.url = reader
+
+    // ---- same-document navigations (pushState / fragment) ----
+    // Recorded once it's sure: a page asked for (a typed address, a link Kite opens)
+    // changes the address before loading starts, and would be recorded with the title of
+    // the page before (and keep it, if it redirects). So the document itself is asked:
+    // while another page is only on its way, it is still at its own address. Nor may a
+    // load have started meanwhile: that page is recorded when it's loaded.
+    property int loadsStarted: 0
+    function sameDocumentNavigated(u) {
+        if (web.loading || web.url.toString() !== u) return
+        const loads = loadsStarted
+        web.runJavaScript("location.href", 1, href => {
+            if (href !== u || loads !== loadsStarted || web.loading || web.url.toString() !== u) return
+            navEvent(u.split("#")[0] === _lastCommitted.split("#")[0] ? "onReferenceFragmentUpdated" : "onHistoryStateUpdated", {transitionType: "link", transitionQualifiers: []})
+            Browser.recordVisit(u, web.title, window.privateMode)
         })
     }
-    function probeReader() {
-        if (!visible || isReader || discarded || !/^https?:/i.test(web.url.toString())) return
-        const page = web.url.toString()
-        web.runJavaScript(Browser.readerProbeScript(), readerWorld, ok => { if (web.url.toString() === page) wt.readerAvailable = ok === true })
-    }
-    // Twice: pages often fill in only after loading.
-    Timer { id: readerProbe; interval: 300; onTriggered: { wt.probeReader(); readerProbeLate.restart() } }
-    Timer { id: readerProbeLate; interval: 2500; onTriggered: if (!wt.readerAvailable) wt.probeReader() }
-    // The settings reach open reader pages at once.
-    readonly property string readerLook: ["reader.fontSize", "reader.width", "reader.font", "reader.theme"].map(k => app.liveSettings[k]).join("|")
-    onReaderLookChanged: if (isReader) web.runJavaScript(Browser.readerApplyScript(), readerWorld)
 
     // ---- picture-in-picture (Main.qml startPip) ----
     // The page has a video to offer (plugins/pip/), and the page is in the
@@ -334,24 +325,62 @@ Item {
     }
     // Out of Qt's favicon provider for good, once unloaded: the page it gets when it
     // wakes up has no favicon helper (Qt only makes one with the view), and reading
-    // its icon crashes. It doesn't report new icons either, so after each load its
-    // tab gets the page's icon by its address.
+    // its icon crashes. It doesn't report new icons either, so after each load the
+    // page fetches its icon for the tab (iconFromPage).
     property bool faviconOut: false
+    property var fetchedIcon: ({page: "", png: ""})
+    // The tab shows the icon Kite saved for the site when there is one: the
+    // tab strip doesn't load an icon from the web by its address.
+    function outIcon(address) {
+        if (fetchedIcon.page === url && fetchedIcon.png !== "") return fetchedIcon.png
+        const saved = /^https?:/.test(url) ? Browser.cachedFavicon(url) : ""
+        return saved !== "" ? saved : address
+    }
+    // After each load, the page itself fetches its icon (through Chromium: the
+    // proxy, secure DNS and cache settings hold) in Kite's script world, and
+    // hands it over as a 64 px PNG to show and keep. (An icon on another site
+    // that doesn't allow that leaves the saved one, if any.)
+    readonly property string fetchIconScript: `(() => { const w = window; w.__kiteIcon = null;
+        const link = [...document.querySelectorAll('link[rel~=\"icon\"]')].find(l => l.href) || [...document.querySelectorAll('link[rel=\"apple-touch-icon\"]')].find(l => l.href);
+        const href = link ? link.href : location.origin + '/favicon.ico';
+        const done = v => { w.__kiteIcon = v || ''; };
+        const draw = img => { const c = document.createElement('canvas'); c.width = c.height = 64; c.getContext('2d').drawImage(img, 0, 0, 64, 64); return c.toDataURL('image/png'); };
+        if (!/^(https?:|data:image\\/)/.test(href)) return done('');
+        fetch(href, {cache: 'force-cache', credentials: 'same-origin'}).then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
+            if (b.size > 1048576) return done('');
+            return createImageBitmap(b).then(draw, () => new Promise(ok => { const u = URL.createObjectURL(b), i = new Image();
+                i.onload = () => { URL.revokeObjectURL(u); try { ok(draw(i)) } catch (e) { ok('') } }; i.onerror = () => { URL.revokeObjectURL(u); ok('') }; i.src = u; })).then(done);
+        }).catch(() => done(''));
+    })()`
     function iconFromPage() {
         const page = web.url.toString()
-        web.runJavaScript("(document.querySelector('link[rel~=\"icon\"]') || {}).href || location.origin + '/favicon.ico'", 1, href => {
-            if (web.url.toString() !== page || isReader) return
-            window.setTabProperty(tabId, "icon", /^https?:/.test(page) && /^(https?:|data:image\/)/.test(String(href)) ? href : "")
-        })
+        if (isReader || !/^https?:/.test(page)) return
+        web.runJavaScript(fetchIconScript, 1)
+        iconPoll.page = page
+        iconPoll.tries = 0
+        iconPoll.restart()
+    }
+    Timer {
+        id: iconPoll
+        property string page
+        property int tries
+        interval: 250; repeat: true
+        onTriggered: {
+            if (web.url.toString() !== page || ++tries > 40) { stop(); return }
+            web.runJavaScript("window.__kiteIcon", 1, v => {
+                if (v === null || v === undefined || web.url.toString() !== iconPoll.page || !iconPoll.running) return
+                iconPoll.stop()
+                const png = /^data:image\/png;base64,/.test(String(v)) ? String(v) : ""
+                if (png !== "") wt.fetchedIcon = {page: wt.url, png: png}
+                if (png !== "" && !window.privateMode) Browser.saveFetchedFavicon(iconPoll.page, png)
+                window.setTabProperty(tabId, "icon", png !== "" ? png : outIcon(""))
+            })
+        }
     }
     // Text typed into the page that wasn't submitted (it would be lost).
     property bool formDirty: false
     // Shown tabs (the current one, both panes in split view) stay loaded.
-    // (Whether a page looks like an article matters once it is seen.)
-    onVisibleChanged: {
-        if (!visible) { lastAccessed = Date.now(); releasePointerLock() }
-        else if (!readerAvailable) readerProbe.restart()
-    }
+    onVisibleChanged: if (!visible) { lastAccessed = Date.now(); releasePointerLock() }
     // Why the tab must stay loaded ("" when it can be unloaded).
     function keepLoadedReason() {
         if (visible || inPip) return "shown"
@@ -720,13 +749,9 @@ Item {
                         wt.lastHost = host
                         wt.applySiteSettings()
                     }
-                    if (!loading) {
-                        // same-document navigation (pushState / fragment)
-                        wt.navEvent(u.split("#")[0] === wt._lastCommitted.split("#")[0] ? "onReferenceFragmentUpdated" : "onHistoryStateUpdated", {transitionType: "link", transitionQualifiers: []})
-                        Browser.recordVisit(u, title, wt.window.privateMode)
-                    }
+                    // (A same-document navigation, perhaps: wt.sameDocumentNavigated.)
+                    if (!loading) Qt.callLater(wt.sameDocumentNavigated, u)
                     wt.sendUpdate({url: wt.sourceOf(u)})
-                    if (!loading) readerProbe.restart()
                     // (The icon may have gone before the address changed.)
                     if (u.startsWith("kite:reader?")) wt.showSiteIcon()
                 }
@@ -741,7 +766,7 @@ Item {
                     const s = wt.faviconOut ? icon.toString().replace(/^image:\/\/favicon\//, "") : icon.toString()
                     // (Reader view: a kite: page has none; the site's is kept.)
                     if (wt.isReader) { wt.showSiteIcon(); return }
-                    wt.window.setTabProperty(wt.tabId, "icon", s)
+                    wt.window.setTabProperty(wt.tabId, "icon", wt.faviconOut ? wt.outIcon(s) : s)
                     wt.sendUpdate({favIconUrl: s.startsWith("image://favicon/") ? s.substring(16) : s})
                     // Remember it for the speed dial (not from private windows).
                     if (s.startsWith("image://favicon/") && !wt.window.privateMode && /^https?:/.test(url.toString())) Browser.saveFavicon(url.toString(), s, web.objectName)
@@ -755,6 +780,7 @@ Item {
                     if (info.status === WebEngineView.LoadSucceededStatus) wt.redirectHops = 0
                     switch (info.status) {
                     case WebEngineView.LoadStartedStatus:
+                        wt.loadsStarted++
                         wt.crashed = false
                         wt.readerAvailable = false
                         // (A link it was asked about comes through here too.)
@@ -786,7 +812,6 @@ Item {
                         Browser.recordVisit(u, title, wt.window.privateMode)
                         wt.sendUpdate({status: "complete"})
                         wt.focusPageAfterLoad()
-                        readerProbe.restart()
                         break
                     case WebEngineView.LoadFailedStatus:
                         wt.navEvent("onErrorOccurred", {url: u, error: info.errorString})
@@ -962,19 +987,14 @@ Item {
                         const text = message.substring(wt.app.frameSecret.length)
                         if (text.startsWith("ab:")) wt.adblockFound(text.substring(3))
                         else if (text.startsWith("pl:")) wt.pointerLockMessage(text.substring(3))
+                        // (js/context_menu.js; only for the tab being looked at.)
+                        else if (text === "cm:") { if (wt.visible) Browser.replayContextClick() }
                         else if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
                         else wt.frameMessage(text)
                         return
                     }
                     wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line, wt.window.privateMode)
                 }
-            }
-
-            ReaderControls {
-                tab: wt
-                visible: wt.isReader && !wt.inPip
-                z: 1
-                anchors { top: parent.top; right: parent.right; margins: Kirigami.Units.largeSpacing * 2 }
             }
 
             // Certificate error interstitial

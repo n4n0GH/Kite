@@ -45,6 +45,9 @@ QQC2.Pane {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            QQC2.ScrollBar.vertical: QQC2.ScrollBar { id: listBar }
+            // Rows stop short of the scrollbar while there is one (their hover and × beside it).
+            readonly property real rowWidth: width - (listBar.size < 1 ? listBar.width : 0)
             property var rows: []
             property string folder: ""
             model: rows
@@ -71,7 +74,7 @@ QQC2.Pane {
                 id: row
                 required property var modelData
                 readonly property bool deletable: root.mode === "history" && modelData.id !== undefined
-                width: ListView.view.width
+                width: list.rowWidth
                 visible: modelData.type !== "separator"
                 height: visible ? implicitHeight : 0
                 icon.name: modelData.type === "folder" ? "folder-bookmark" : modelData.type === "up" ? "go-up" : root.mode === "history" ? "view-history" : "text-html"
@@ -129,6 +132,8 @@ QQC2.Pane {
             Layout.fillWidth: true
             Layout.fillHeight: true
             active: root.mode.startsWith("ext:")
+            // (Hidden, it would still take half the height from the list above.)
+            visible: active
             sourceComponent: WebEngineView {
                 // A local file may not read other local files (Chrome's default; Qt's is on).
                 settings.localContentCanAccessFileUrls: false

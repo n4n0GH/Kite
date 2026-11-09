@@ -1,0 +1,18 @@
+{
+    "id": "reader-view",
+    "name": "Reader View",
+    "description": "A page's article on its own, without what's around it, in the text size, line length, font and colours you choose. From the address bar on pages that look like articles, or Ctrl+Alt+R.",
+    "icon": "view-readermode",
+    "defaultEnabled": true,
+    "window": "plugins/reader-view/ReaderViewWindow.qml",
+    "settingsPage": "plugins/reader-view/ReaderViewSettings.qml",
+    "actions": [
+        {"id": "reader-view.toggle", "group": "Page", "name": "Reader view", "keys": ["Ctrl+Alt+R"], "icon": "view-readermode"}
+    ],
+    "settings": {
+        "fontSize": 20,
+        "width": 38,
+        "font": "serif",
+        "theme": "auto"
+    }
+}

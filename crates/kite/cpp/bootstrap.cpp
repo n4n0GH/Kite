@@ -84,9 +84,30 @@ public:
     }
 };
 
+class KiteInputFilter;
+static KiteInputFilter *g_inputFilter = nullptr;
+
 class KiteInputFilter : public QObject {
 public:
-    using QObject::QObject;
+    explicit KiteInputFilter(QObject *parent) : QObject(parent) { g_inputFilter = this; }
+    ~KiteInputFilter() override { if (g_inputFilter == this) g_inputFilter = nullptr; }
+    // The user's last right-click again (js/context_menu.js: a page cancelled Kite's
+    // menu without showing its own, and lets this one pass). Only a recent one, and
+    // not while one of Kite's own menus is open.
+    void replayContextClick()
+    {
+        if (!m_lastRight.window || !m_lastRight.when.isValid() || m_lastRight.when.elapsed() > 3000) return;
+        QQuickWindow *win = m_lastRight.window;
+        if (popupOpen(win)) return;
+        const auto &r = m_lastRight;
+        QMouseEvent press(QEvent::MouseButtonPress, r.local, r.scene, r.global, Qt::RightButton, Qt::RightButton, r.modifiers, r.device);
+        QMouseEvent release(QEvent::MouseButtonRelease, r.local, r.scene, r.global, Qt::RightButton, Qt::NoButton, r.modifiers, r.device);
+        m_lastRight.when.invalidate();
+        m_replaying = true;
+        QCoreApplication::sendEvent(win, &press);
+        if (m_lastRight.window) QCoreApplication::sendEvent(win, &release);
+        m_replaying = false;
+    }
 protected:
     bool eventFilter(QObject *obj, QEvent *e) override
     {
@@ -114,6 +135,10 @@ protected:
             m_altAlone = false;
             if (!m_replaying) {
                 auto *m = static_cast<QMouseEvent *>(e);
+                if (m->button() == Qt::RightButton) {
+                    m_lastRight = {win, m->position(), m->scenePosition(), m->globalPosition(), m->modifiers(), m->pointingDevice(), {}};
+                    m_lastRight.when.start();
+                }
                 if (m->button() == m_swallowRelease) m_swallowRelease = Qt::NoButton;
                 if (m_held) {
                     // Another button ends it. The page never saw this one go down.
@@ -259,6 +284,13 @@ private:
         }
         return false;
     }
+    struct RightClick {
+        QPointer<QQuickWindow> window;
+        QPointF local, scene, global;
+        Qt::KeyboardModifiers modifiers;
+        const QPointingDevice *device = nullptr;
+        QElapsedTimer when;
+    } m_lastRight;
     bool m_replaying = false;
     bool m_held = false;
     bool m_gesturing = false;
@@ -399,6 +431,12 @@ static QQuickItem *findItem(QQuickItem *in, const QString &name)
         if (QQuickItem *f = findItem(c, name)) return f;
     }
     return nullptr;
+}
+
+extern "C" void kite_cpp_replay_context_click()
+{
+    // (Not from inside the page's message being handled.)
+    if (g_inputFilter) QTimer::singleShot(0, g_inputFilter, [] { if (g_inputFilter) g_inputFilter->replayContextClick(); });
 }
 
 extern "C" void kite_cpp_favicon_track(const char *viewName, bool track)

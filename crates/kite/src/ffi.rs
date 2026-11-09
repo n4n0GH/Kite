@@ -65,6 +65,7 @@ extern "C" {
     fn kite_cpp_key_text(key: std::ffi::c_int, modifiers: std::ffi::c_int) -> *const c_char;
     fn kite_cpp_key_native(sequence: *const c_char) -> *const c_char;
     fn kite_cpp_set_wheel_pixels(px: std::ffi::c_int);
+    fn kite_cpp_replay_context_click();
     fn kite_cpp_system_wheel_pixels() -> std::ffi::c_int;
 }
 
@@ -94,6 +95,11 @@ pub fn key_native(sequence: &str) -> String {
 }
 
 /// Scroll distance per mouse wheel notch on pages, 0 for the system's.
+/// The user's last right-click again, past the page (js/context_menu.js).
+pub fn replay_context_click() {
+    unsafe { kite_cpp_replay_context_click() }
+}
+
 pub fn set_wheel_pixels(px: i64) {
     unsafe { kite_cpp_set_wheel_pixels(px.clamp(0, 2000) as std::ffi::c_int) }
 }

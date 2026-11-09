@@ -1,5 +1,5 @@
-//! Reader view: articles extracted from pages (Readability, in the tab) and
-//! the `kite:reader` page showing them.
+//! Reader view: the `kite:reader` page showing articles extracted from pages
+//! (by the reader-view plugin, with Readability, in the tab).
 //!
 //! An article's HTML comes from the web page, and `kite:` is a privileged
 //! origin (its pages can change the speed dial, for one). So it is sanitised
@@ -17,6 +17,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, LazyLock, Mutex};
 
 const PREFIX: &str = "kite:reader?id=";
+/// Where the plugin's settings are.
+pub const PLUGIN_SETTINGS: &str = "plugins.reader-view.";
 /// Articles kept for going back to them, the oldest forgotten first.
 const MAX_ARTICLES: usize = 32;
 /// Reading speed for the "N min read" estimate, in characters per minute.
@@ -129,7 +131,8 @@ fn is_hex_color(c: &str) -> bool {
     c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit())
 }
 
-/// The reader settings, limited to values safe to put in the page.
+/// The reader settings (the plugin's, "plugins.reader-view.*"), limited to values
+/// safe to put in the page.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prefs {
     pub font_size: i64,
@@ -140,11 +143,14 @@ pub struct Prefs {
 
 impl Prefs {
     pub fn from_settings(s: &Settings) -> Self {
+        // Those the user hasn't set are the plugin's defaults (its plugin.json).
+        let int = |key: &str, default: i64| s.get(&format!("{PLUGIN_SETTINGS}{key}")).as_i64().unwrap_or(default);
+        let text = |key: &str| s.get(&format!("{PLUGIN_SETTINGS}{key}")).as_str().unwrap_or_default().to_owned();
         Self {
-            font_size: s.get_i64("reader.fontSize").clamp(12, 40),
-            width: s.get_i64("reader.width").clamp(24, 70),
-            font: if s.get_str("reader.font") == "sans" { "sans" } else { "serif" },
-            theme: match s.get_str("reader.theme").as_str() {
+            font_size: int("fontSize", 20).clamp(12, 40),
+            width: int("width", 38).clamp(24, 70),
+            font: if text("font") == "sans" { "sans" } else { "serif" },
+            theme: match text("theme").as_str() {
                 "light" => "light",
                 "sepia" => "sepia",
                 "dark" => "dark",
@@ -342,9 +348,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Settings::load(dir.path().join("settings.json"));
         assert_eq!(Prefs::from_settings(&s), prefs());
-        s.set("reader.fontSize", 9000.into()).unwrap();
-        s.set("reader.font", "x\"><script>".into()).unwrap();
-        s.set("reader.theme", "x\"><script>".into()).unwrap();
+        s.set("plugins.reader-view.fontSize", 9000.into()).unwrap();
+        s.set("plugins.reader-view.font", "x\"><script>".into()).unwrap();
+        s.set("plugins.reader-view.theme", "x\"><script>".into()).unwrap();
         let p = Prefs::from_settings(&s);
         assert_eq!((p.font_size, p.font, p.theme), (40, "serif", "auto"));
         assert!(p.apply_script().contains("\"40px\""));

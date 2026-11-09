@@ -48,7 +48,8 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   button, the video's context menu or Ctrl+Shift+]); QtWebEngine has none, so the page
   moves into the window and shows only the video.
 * **Reader view:** an article without the rest of the page (address bar button, the View menu
-  or Ctrl+Alt+R), with its own text size, line length, font and colours; see below.
+  or Ctrl+Alt+R), with its own text size, line length, font and colours; a plugin, on by
+  default; see below.
 * **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
   Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
   unsent form input or keeping the screen on stay loaded. Also from the tab menu and
@@ -257,7 +258,7 @@ content blocker exceptions.
 ## Reader view
 
 The page's article is extracted with Mozilla's
-[Readability](https://github.com/mozilla/readability) (`crates/kite/src/js/readability/`,
+[Readability](https://github.com/mozilla/readability) (`crates/kite/plugins/reader-view/readability/`,
 Apache-2.0) in an isolated world, and shown at a `kite:reader` address, one step in the tab's
 history. The address bar, bookmarks, the saved session and extensions go on seeing the page's
 own address; a restored session reopens the page itself.

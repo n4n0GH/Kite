@@ -69,7 +69,7 @@ QQC2.MenuBar {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "&Full Screen"; icon.name: "view-fullscreen"; checkable: true; checked: menuBar.win.visibility === Window.FullScreen; onTriggered: checked ? menuBar.win.showFullScreen() : menuBar.win.showNormal() }
         QQC2.MenuItem { text: "S&plit View"; icon.name: "view-split-left-right"; checkable: true; checked: menuBar.win.split; onTriggered: menuBar.win.toggleSplit() }
-        QQC2.MenuItem { text: "R&eader View"; icon.name: "view-readermode"; enabled: menuBar.tab && menuBar.tab.canRead(); onTriggered: menuBar.tab.toggleReader() }
+        QQC2.MenuItem { visible: menuBar.app.readerViewAvailable; height: visible ? implicitHeight : 0; text: "R&eader View"; icon.name: "view-readermode"; enabled: menuBar.tab && menuBar.tab.canRead(); onTriggered: menuBar.win.runAction("reader-view.toggle") }
         QQC2.MenuItem { text: "Page So&urce"; icon.name: "text-html"; onTriggered: menuBar.win.openTab("view-source:" + menuBar.tab.url, {background: false, afterCurrent: true}) }
     }
     BarMenu {

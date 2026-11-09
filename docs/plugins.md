@@ -1,7 +1,7 @@
 # Native plugins
 
 Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys,
-Picture-in-Picture and Plasma Integration are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
+Picture-in-Picture, Plasma Integration and Reader View are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
 hand it out as a file, and users install it with **Settings → Plugins & Extensions → Install Plugin
 from File…**. Users switch plugins on and off there. The toolbar's extensions panel lists those that are on, with a button to their settings.
 
@@ -45,7 +45,7 @@ crates/kite/plugins/<id>/
     helpers.js         optional: plain logic, ideally with helpers.test.js beside it
 ```
 
-A plugin can use any of these, and all three existing plugins use most of them. You only need
+A plugin can use any of these, and the shipped plugins use most of them. You only need
 what your feature needs: a manifest alone is valid, although it doesn't do anything.
 
 ## The manifest
@@ -108,7 +108,8 @@ To add to a page's context menu, give it a `contextItems(info)` function. `info`
 opened on (`linkUrl`, `srcUrl`, `mediaType`, `selectionText`, `editable`, `pageUrl`), and it returns a list
 of `{title, iconName, run}` or `{title, iconName, children}`.
 
-`win.tabClosed(tabId)` tells it when a tab closes.
+`win.tabOpened(tab)` tells it when a tab is added (those already open are in `win.tabItems`), and
+`win.tabClosed(tabId)` when one closes. What it shows over a tab's page goes in `tab.pageArea`.
 
 ### The settings page
 
@@ -335,6 +336,7 @@ The existing plugins are the best reference:
 | `plugins/gestures/` | The window item using a hook in `bootstrap.cpp`, tested logic in `strokes.js`, and a large settings page |
 | `plugins/vim-keys/` | Frames, updating already open tabs, its own `VimBar.qml`, and a page script built from several files |
 | `plugins/plasma-integration/` | A page script in the page's own world beside one in Kite's, context menu items, and talking to the desktop (`kite_core::plasma`) |
+| `plugins/reader-view/` | A part in every tab (`win.tabOpened`, `tab.pageArea`), scripts run in pages only when needed (`Browser.pluginFile`), a settings page sharing its controls with the page's, and a service Kite keeps for it (`kite:reader`, `kite_core::reader`) |
 
 If a plugin needs something Kite doesn't offer, add it to Kite (a hook in `BrowserWindow.qml`, say) and
 use it from the plugin. For a plugin shipped with Kite, put the feature's logic in the plugin's folder, so

@@ -29,6 +29,8 @@ const TOGGLES = [
     {page: "browsing", text: "Load images automatically", key: "web.autoloadImages"},
     {page: "browsing", text: "Allow local storage", key: "web.localStorage"},
     {page: "browsing", text: "Let pages lock the mouse pointer when you click in them (games)", key: "web.pointerLock"},
+    {page: "browsing", text: "Don't let pages block the right-click menu", key: "web.unblockContextMenu"},
+    {page: "browsing", text: "Don't let pages block selecting and copying text", key: "web.unblockSelection"},
     {page: "browsing", text: "Smooth scrolling", key: "web.smoothScrolling"},
     {page: "browsing", text: "Spatial navigation (arrow keys between links)", key: "web.spatialNavigation"},
     {page: "browsing", text: "Print backgrounds", key: "web.printBackgrounds"},
@@ -114,6 +116,6 @@ const ACTION_ICONS = {
     focusAddress: "go-jump-locationbar", searchWeb: "search", back: "go-previous", forward: "go-next", home: "go-home", reload: "view-refresh",
     reloadBypass: "view-refresh", find: "edit-find", findNext: "go-down-search", findPrevious: "go-up-search", zoomIn: "zoom-in", zoomOut: "zoom-out",
     zoomReset: "zoom-original", viewSource: "text-html", print: "document-print", savePage: "document-save-as", openFile: "document-open", devTools: "utilities-terminal",
-    readerView: "view-readermode", bookmarkPage: "bookmark-new", bookmarkAllTabs: "bookmarks", bookmarksSidebar: "view-sidetree",
+    bookmarkPage: "bookmark-new", bookmarkAllTabs: "bookmarks", bookmarksSidebar: "view-sidetree",
     historySidebar: "view-sidetree", bookmarksLibrary: "bookmarks-organize", historyLibrary: "view-history", downloads: "download", addons: "kite-extension", settings: "settings-configure",
 }
