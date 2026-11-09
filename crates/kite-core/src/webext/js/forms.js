@@ -47,13 +47,17 @@
     lastSent = key;
     withKite((k) => k.formSubmitted(JSON.stringify(d)));
   }
-  document.addEventListener('submit', (e) => submitted(e.target), true);
+  // Only what the user did (trusted events): a page's own synthetic clicks
+  // and keys aren't logins, and looking through the form on each of them
+  // slows pages that make many (web apps, tests, benchmarks).
+  document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
   // Script-driven logins: submit-like button clicks and Enter in a password field.
   document.addEventListener('click', (e) => {
+    if (!e.isTrusted) return;
     const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=button], [role=button]');
     if (b) submitted(scopeOf(b));
   }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.type === 'password') submitted(scopeOf(e.target)); }, true);
+  document.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') submitted(scopeOf(e.target)); }, true);
 
   // Setting values the way a user would, so frameworks (React, Vue) notice.
   function setValue(input, value) {
@@ -306,7 +310,8 @@
     lastSent = key;
     withKite((k) => k.autofillSubmit(key));
   }
-  document.addEventListener('submit', (e) => submitted(e.target), true);
+  // (Trusted events only, as for logins.)
+  document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
   // Typed, unsent text: the browser keeps such tabs loaded.
   let dirty = false;
   const setDirty = (d) => { if (d !== dirty) { dirty = d; withKite((k) => k.formDirty(d)); } };
@@ -318,6 +323,7 @@
   }, true);
   document.addEventListener('submit', () => setDirty(false), true);
   document.addEventListener('click', (e) => {
+    if (!e.isTrusted) return;
     const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
     if (b && (b.type === 'submit' || /continue|next|save|submit|order|checkout|weiter|bestellen|speichern|register|sign.?up|pay/i.test(b.textContent + ' ' + (b.value || '')))) submitted(scopeOf(b));
   }, true);
