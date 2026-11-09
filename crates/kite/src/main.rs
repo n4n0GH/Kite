@@ -70,6 +70,8 @@ Options:
                          extensions stay)
       --no-plugins       Run no plugins this time, for troubleshooting (they stay
                          listed in Settings, where they can be removed)
+      --debug            Show tools for looking into Kite: the lists Dangerous
+                         Sites checks against (Settings → Browsing)
   -h, --help             Show this help
   -v, --version          Show version
   --                     What follows are URLs or files, even if they start with -
@@ -134,6 +136,7 @@ fn main() {
             "--private" => private = true,
             "--factory" => factory = true,
             "--no-plugins" => state::NO_PLUGINS.store(true, std::sync::atomic::Ordering::Relaxed),
+            "--debug" => state::DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
             s if s.starts_with("--profile=") => {
                 profile = s["--profile=".len()..].to_owned();
                 chosen = true;
@@ -166,7 +169,8 @@ fn main() {
         factory_reset(&profile, private);
     }
     if !private {
-        let instance = claim_profile(&profile, &urls, qt_args.len() > 1 || state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed));
+        let options = state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed) || state::DEBUG.load(std::sync::atomic::Ordering::Relaxed);
+        let instance = claim_profile(&profile, &urls, qt_args.len() > 1 || options);
         *state::INSTANCE.lock().unwrap_or_else(|e| e.into_inner()) = instance;
     }
     crash::start(&profile, private);
@@ -195,6 +199,13 @@ fn main() {
             flags.push(user);
         }
         std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags.join(" "));
+    }
+    // Spelling dictionaries: QtWebEngine looks beside its own Qt, which in an
+    // AppImage has none; the system's are found (util.rs) and named to it.
+    if std::env::var_os("QTWEBENGINE_DICTIONARIES_PATH").is_none() {
+        if let Some(dir) = kite_core::util::spell_dictionary_dir() {
+            std::env::set_var("QTWEBENGINE_DICTIONARIES_PATH", dir);
+        }
     }
 
     let args: Vec<CString> = qt_args.into_iter().map(|a| CString::new(a).unwrap_or_default()).collect();

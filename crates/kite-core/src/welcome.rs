@@ -50,9 +50,8 @@ pub fn settings_for(level: Level) -> Vec<(&'static str, Value)> {
         ("privacy.stripTrackingParams", json!(at(High))),
         ("privacy.blockPings", json!(at(High))),
         ("privacy.sendReferer", json!(!extreme)),
-        // Hides that this is QtWebEngine at every level: telling it would only
-        // make Kite's users easier to pick out.
-        ("privacy.genericUserAgent", json!(true)),
+        // (No user agent: at every level Kite's default, which hides that this is
+        // QtWebEngine, as telling it would only make Kite's users easier to pick out.)
         ("web.googleSignIn", json!(!extreme)),
         ("privacy.webrtcPublicOnly", json!(at(High))),
         ("privacy.antiFingerprinting", json!(extreme)),
@@ -153,6 +152,5 @@ mod tests {
         assert!(low.contains(&("adblock.enabled", json!(false))) && low.contains(&("privacy.httpsOnly", json!(false))));
         let extreme = settings_for(Level::Extreme);
         assert!(extreme.contains(&("privacy.cookies", json!("none"))) && extreme.contains(&("extensions.enabled", json!(false))));
-        assert!(extreme.contains(&("privacy.genericUserAgent", json!(true))));
     }
 }

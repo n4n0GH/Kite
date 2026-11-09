@@ -458,12 +458,17 @@ Item {
         if (i < 0) i = steps.length - 1
         setZoom(steps[Math.max(0, Math.min(steps.length - 1, i + dir))])
     }
+    // Back to the default zoom (Settings → Appearance), which is no site's own.
+    function resetZoom() { setZoom(app.setting("appearance.defaultZoom") / 100) }
     function setZoom(z) {
         web.zoomFactor = z
         // (Private windows don't store it: it stays with this tab and page.)
         const host = window.privateMode ? "" : Browser.hostOf(url)
         if (host) {
-            Browser.setSiteSetting(host, "zoom", Math.round(z * 100))
+            // The default zoom isn't stored as the site's: none is (and a site
+            // with nothing else of its own is forgotten, browser.rs).
+            const percent = Math.round(z * 100)
+            Browser.setSiteSetting(host, "zoom", percent === app.setting("appearance.defaultZoom") ? -1 : percent)
             // Other tabs of the site follow; the address bar updates.
             app.siteSettingsEdited(host)
         }
@@ -689,7 +694,6 @@ Item {
                 settings.javascriptEnabled: wt.app.liveSettings["web.javascript"]
                 settings.autoLoadImages: wt.app.liveSettings["web.autoloadImages"]
                 settings.localStorageEnabled: wt.app.liveSettings["web.localStorage"]
-                settings.pluginsEnabled: wt.app.liveSettings["web.pluginsEnabled"]
                 settings.spatialNavigationEnabled: wt.app.liveSettings["web.spatialNavigation"]
                 // Animated (smooth) scrolling with the mouse wheel and keys.
                 settings.scrollAnimatorEnabled: wt.app.liveSettings["web.smoothScrolling"]

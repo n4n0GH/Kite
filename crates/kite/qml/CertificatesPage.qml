@@ -15,7 +15,14 @@ Kirigami.ScrollablePage {
         Kirigami.Action { text: "Add Site…"; icon.name: "list-add"; onTriggered: { siteField.text = ""; addSite.bad = false; addSite.open() } }
     ]
 
+    // The column of every settings page (PreferencesWindow's columnWidthIn): in an
+    // item of its own, as the page stretches what it holds; room for a scrollbar kept.
+    Item {
+    implicitHeight: column.implicitHeight
     ColumnLayout {
+        id: column
+        width: Math.min(page.width - page.leftPadding * 2 - Kirigami.Units.gridUnit * 1.5, Kirigami.Units.gridUnit * 36)
+        x: (page.width - page.leftPadding * 2 - Kirigami.Units.gridUnit * 1.5 - width) / 2
         spacing: Kirigami.Units.largeSpacing
         QQC2.Label {
             Layout.fillWidth: true
@@ -71,6 +78,7 @@ Kirigami.ScrollablePage {
                 }
             }
         }
+    }
     }
 
     Kirigami.Dialog {

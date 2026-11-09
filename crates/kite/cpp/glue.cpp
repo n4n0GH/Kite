@@ -312,9 +312,14 @@ public:
             QByteArray ua = takeBuf(kite_user_agent_for(url.constData()));
             if (!ua.isEmpty()) {
                 info.setHttpHeader("User-Agent", ua);
-                // The browser it says it is has none of Chromium's client hints.
-                for (const char *hint : {"Sec-CH-UA", "Sec-CH-UA-Mobile", "Sec-CH-UA-Platform", "Sec-CH-UA-Platform-Version", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Model", "Sec-CH-UA-WoW64"})
-                    info.setHttpHeader(hint, QByteArray());
+                // The browser it says it is has none of Chromium's client hints. Qt can't
+                // take a header out, only empty it, so only those Chromium added are
+                // emptied (by default three; more for a site that asked for them), not
+                // every possible one, which no browser sends. (The flag that turned them
+                // off, --disable-features=UserAgentClientHint, is gone from Chromium.)
+                const auto headers = info.httpHeaders();
+                for (auto it = headers.cbegin(); it != headers.cend(); ++it)
+                    if (it.key().toLower().startsWith("sec-ch-ua")) info.setHttpHeader(it.key(), QByteArray());
             }
         }
         const QByteArray verdict = takeBuf(kite_intercept(url.constData(), fp.constData(), ini.constData(),

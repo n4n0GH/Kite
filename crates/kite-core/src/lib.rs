@@ -16,6 +16,7 @@ pub mod config;
 pub mod crashlog;
 pub mod db;
 pub mod downloads;
+pub mod external;
 pub mod favicons;
 pub mod history;
 pub mod instance;

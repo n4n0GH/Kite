@@ -63,6 +63,10 @@ pub static STARTUP_NOTICE: Mutex<String> = Mutex::new(String::new());
 /// about them stays as it is.
 pub static NO_PLUGINS: AtomicBool = AtomicBool::new(false);
 
+/// `--debug`: tools for looking into Kite (Settings → Browsing → Dangerous
+/// Sites: the lists checked against).
+pub static DEBUG: AtomicBool = AtomicBool::new(false);
+
 /// KNotification needs an event description file to show desktop notifications.
 fn install_notifyrc() {
     let Some(base) = directories::BaseDirs::new() else { return };
@@ -108,6 +112,12 @@ fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     let privacy = Privacy::default();
     for key in Privacy::KEYS {
         privacy.apply(key, &shared.settings().get(key));
+    }
+    // Zooms stored as a site's own though equal to the default (resetting used
+    // to store them) aren't one.
+    {
+        let default_zoom = shared.settings().get_i64("appearance.defaultZoom");
+        let _ = kite_core::sitesettings::forget_default_zoom(&shared.db(), default_zoom);
     }
     privacy.load_site_rules(&shared);
     let safe_browsing = Arc::new(kite_core::safebrowsing::SafeBrowsing::new(profile.path("safebrowsing")));

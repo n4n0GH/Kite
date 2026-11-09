@@ -89,7 +89,7 @@ QQC2.Menu {
         icon.name: "view-visible"
         QQC2.MenuItem { text: "Zoom In"; icon.name: "zoom-in"; onTriggered: win.currentTab.zoomStep(1) }
         QQC2.MenuItem { text: "Zoom Out"; icon.name: "zoom-out"; onTriggered: win.currentTab.zoomStep(-1) }
-        QQC2.MenuItem { text: "Reset Zoom"; icon.name: "zoom-original"; onTriggered: win.currentTab.setZoom(1.0) }
+        QQC2.MenuItem { text: "Reset Zoom"; icon.name: "zoom-original"; onTriggered: win.currentTab.resetZoom() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Full Screen"; icon.name: "view-fullscreen"; checkable: true; checked: win.visibility === Window.FullScreen; onTriggered: checked ? win.showFullScreen() : win.showNormal() }
         QQC2.MenuItem { text: "Split View"; icon.name: "view-split-left-right"; checkable: true; checked: win.split; onTriggered: win.toggleSplit() }

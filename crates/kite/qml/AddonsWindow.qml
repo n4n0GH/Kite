@@ -57,7 +57,7 @@ ManagerWindow {
             Connections { target: Extensions; function onChanged(what) { if (what === "extensions") ip.exts = JSON.parse(Extensions.list()) } }
             actions: [
                 Kirigami.Action { text: "Check for Updates"; icon.name: "view-refresh"; onTriggered: Extensions.checkUpdates() },
-                Kirigami.Action { text: "Install Extension From File…"; icon.name: "document-open"; onTriggered: xpiDialog.open() },
+                Kirigami.Action { text: "Install Extension…"; icon.name: "document-open"; onTriggered: xpiDialog.open() },
                 Kirigami.Action { text: "Load Temporary Extension…"; icon.name: "run-build"; onTriggered: tempDialog.open() }
             ]
             FileDialog { id: xpiDialog; title: "Install Extension From File"; nameFilters: ["Extension packages (*.xpi *.zip)"]; onAccepted: Extensions.installFromFile(selectedFile.toString()) }

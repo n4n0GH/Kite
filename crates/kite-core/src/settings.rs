@@ -55,7 +55,6 @@ pub fn defaults() -> Map<String, Value> {
         "web.autoloadImages": true,
         "web.localStorage": true,
         "web.pointerLock": true,              // pages may lock the mouse pointer (games; cpp/pointerlock.cpp)
-        "web.pluginsEnabled": false,
         "web.spatialNavigation": false,
         "web.smoothScrolling": true,
         "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
@@ -99,7 +98,8 @@ pub fn defaults() -> Map<String, Value> {
         "tabs.unloadAfterMinutes": 10,
         "tabs.unloadKeepPinned": true,
         "browsing.formFillSave": true,
-        "browsing.rememberFileFolder": true,   // file pickers for pages reopen where the last one ended
+        "browsing.fileFolder": "last",         // where a page's file picker opens: "home" | "last" | "custom"
+        "browsing.fileFolderPath": "",         // the "custom" folder
         "browsing.safeBrowsing": "off",        // "off" | "google" | "open" (safebrowsing.rs)
         "browsing.safeBrowsingKey": "",        // Google Safe Browsing API key
         "web.doNotTrack": true,
@@ -115,7 +115,6 @@ pub fn defaults() -> Map<String, Value> {
         "privacy.stripTrackingParams": true,   // fbclid, gclid, utm_* … removed from page URLs
         "privacy.blockPings": true,            // <a ping> click beacons
         "privacy.httpsOnly": true,             // upgrade page loads to https
-        "privacy.genericUserAgent": true,      // no "QtWebEngine/x.y" in the user agent
         "privacy.webrtcPublicOnly": true,      // WebRTC doesn't reveal local network addresses
         "privacy.dnsOverHttps": "off",         // "off" | "auto" (fall back to system DNS) | "secure"
         "privacy.dnsServer": "https://cloudflare-dns.com/dns-query",
@@ -141,6 +140,11 @@ pub fn defaults() -> Map<String, Value> {
         // Downloads
         "downloads.directory": downloads,
         "downloads.askWhereToSave": false,
+        "downloads.notifications": true,       // "Download complete" (and Plasma's download jobs)
+        "downloads.notificationTimeout": 0,    // seconds a notification stays; 0 = the desktop's default
+        "downloads.external": false,           // hand downloads to another program (external.rs)
+        "downloads.externalProgram": "",
+        "downloads.externalArguments": "%d",   // %d the address, %f the file's name
         // Content blocking
         "adblock.enabled": true,
         "adblock.subscriptions": [
@@ -201,9 +205,23 @@ fn migrate(values: &mut Map<String, Value>) {
         }
         values.insert(UBLOCK_LISTS_KNOWN.into(), Value::Bool(true));
     }
-    // Settings nothing reads.
-    for old in ["tabs.showCloseButtons", "downloads.closeManagerOnFinish"] {
+    // Settings nothing reads (web.pluginsEnabled: Pepper plugins, gone from Chromium).
+    for old in ["tabs.showCloseButtons", "downloads.closeManagerOnFinish", "web.pluginsEnabled"] {
         values.remove(old);
+    }
+    // "Use a common user agent" (privacy.genericUserAgent) became the user agent
+    // choice's default: off, it was Kite naming QtWebEngine, which is a choice there.
+    if let Some(generic) = values.remove("privacy.genericUserAgent") {
+        let own = values.get("web.userAgent").and_then(Value::as_str).is_some_and(|ua| !ua.trim().is_empty());
+        if generic == Value::Bool(false) && !own {
+            values.insert("web.userAgent".into(), Value::String(crate::util::QTWEBENGINE_USER_AGENT.into()));
+        }
+    }
+    // "Open a page's file picker in the last folder used" became a choice of folder.
+    if let Some(Value::Bool(remember)) = values.remove("browsing.rememberFileFolder") {
+        if !remember {
+            values.insert("browsing.fileFolder".into(), Value::String("home".into()));
+        }
     }
     // "Show home button" became the home item of the customizable toolbar.
     if let Some(Value::Bool(show)) = values.remove("appearance.showHomeButton") {
@@ -381,6 +399,32 @@ mod tests {
         std::fs::write(&p, r#"{"tabs.openNewTabsInBackground": true}"#).unwrap();
         assert!(!Settings::load(p).get_bool("tabs.switchToNewTabFromLink"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_common_user_agent_switch_becomes_the_user_agent_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        std::fs::write(&p, r#"{"privacy.genericUserAgent": false}"#).unwrap();
+        let s = Settings::load(p.clone());
+        assert_eq!(s.get_str("web.userAgent"), "kite:qtwebengine", "off meant Kite naming QtWebEngine");
+        assert_eq!(s.get("privacy.genericUserAgent"), Value::Null);
+        std::fs::write(&p, r#"{"privacy.genericUserAgent": false, "web.userAgent": "Test/1.0"}"#).unwrap();
+        assert_eq!(Settings::load(p.clone()).get_str("web.userAgent"), "Test/1.0", "a chosen one stays");
+        std::fs::write(&p, r#"{"privacy.genericUserAgent": true}"#).unwrap();
+        assert_eq!(Settings::load(p).get_str("web.userAgent"), "", "on was the default");
+    }
+
+    #[test]
+    fn remembering_the_file_folder_becomes_a_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.json");
+        std::fs::write(&p, r#"{"browsing.rememberFileFolder": false}"#).unwrap();
+        let s = Settings::load(p.clone());
+        assert_eq!(s.get_str("browsing.fileFolder"), "home");
+        assert_eq!(s.get("browsing.rememberFileFolder"), Value::Null);
+        std::fs::write(&p, r#"{"browsing.rememberFileFolder": true}"#).unwrap();
+        assert_eq!(Settings::load(p).get_str("browsing.fileFolder"), "last", "on was the default");
     }
 
     #[test]

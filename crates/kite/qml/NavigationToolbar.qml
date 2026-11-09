@@ -169,7 +169,7 @@ QQC2.ToolBar {
             Button { icon.name: "zoom-out"; tip: "Zoom Out"; onClicked: toolbar.tab.zoomStep(-1) }
             QQC2.ToolButton {
                 text: toolbar.tab ? Math.round(toolbar.tab.view.zoomFactor * 100) + "%" : "100%"
-                onClicked: toolbar.tab.setZoom(1.0)
+                onClicked: toolbar.tab.resetZoom()
                 QQC2.ToolTip.text: "Reset Zoom"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
             Button { icon.name: "zoom-in"; tip: "Zoom In"; onClicked: toolbar.tab.zoomStep(1) }

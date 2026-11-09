@@ -287,10 +287,10 @@ QtObject {
     // (e.g. liveSettings["web.javascript"]) and profile settings are
     // re-applied, so a change in Preferences reaches open tabs and windows
     // right away.
-    readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage", "web.pluginsEnabled",
+    readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
         "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.tree", "reader.fontSize", "reader.width", "reader.font", "reader.theme", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
-    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory", "privacy.genericUserAgent"]
+    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
         target: Browser
@@ -301,7 +301,7 @@ QtObject {
                 app.liveSettings = o
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
-            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage"].includes(key)) app.installUserScripts()
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent"].includes(key)) app.installUserScripts()
             // (As the switch in Settings does; the welcome page's levels change it too.)
             if (key === "extensions.enabled") { app.installUserScripts(); app.backgroundHost.reload() }
             if (key.startsWith("plugins.")) {
@@ -335,14 +335,16 @@ QtObject {
     // Qt's own user agent, restored when the setting is cleared.
     property string defaultUserAgent: ""
     function applyProfileSettings(p) {
-        // A user agent of the user's own, or QtWebEngine's; that one names
-        // "QtWebEngine/6.x", which few browsers send and so helps identify
-        // the user: without it, it reads like Chrome ("privacy.genericUserAgent").
+        // The user agent (Settings → Browsing): Kite's default leaves out the
+        // "QtWebEngine/6.x" QtWebEngine names, which few browsers send and so
+        // would help identify the user: without it, it reads like Chrome.
+        // "kite:qtwebengine" keeps it; anything else is another browser's.
         const ua = setting("web.userAgent")
-        p.httpUserAgent = ua ? ua : setting("privacy.genericUserAgent") ? defaultUserAgent.replace(/ ?QtWebEngine\/[\d.]+/, "") : defaultUserAgent
+        p.httpUserAgent = ua === "kite:qtwebengine" ? defaultUserAgent : ua ? ua : defaultUserAgent.replace(/ ?QtWebEngine\/[\d.]+/, "")
         p.downloadPath = setting("downloads.directory")
         p.spellCheckEnabled = setting("web.spellcheck")
-        p.spellCheckLanguages = setting("web.spellcheckLanguages")
+        // (As the dictionaries are named, e.g. en_US for "en-US"; util.rs.)
+        p.spellCheckLanguages = JSON.parse(Browser.spellCheckLanguages())
     }
 
     function configureProfile(p) {
@@ -756,6 +758,10 @@ QtObject {
             if (setting("privacy.blockPings"))
                 wanted.push({name: "kite:noPings", worldId: 1, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "for (const t of ['click', 'auxclick']) document.addEventListener(t, e => { const a = e.target instanceof Element && e.target.closest('a[ping], area[ping]'); if (a) a.removeAttribute('ping'); }, true);"})
+            // Another browser's user agent chosen for all sites: pages see it too, in
+            // all their frames, before their scripts (a site's own comes after it, so wins).
+            const identity = Browser.globalIdentityScript()
+            if (identity) wanted.push({name: "kite:ua", worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: identity})
             for (const s of sites) wanted.push(s)
             for (const s of fromPlugins) wanted.push(s)
             if (setting("web.googleSignIn"))
@@ -951,7 +957,7 @@ QtObject {
         case "tabs.goForward": tabOrThrow(a.tabId).view.goForward(); return null
         case "tabs.duplicate": { const t = tabOrThrow(a.tabId); return t.window.openTab(t.url, {background: false, index: t.index + 1}).extInfo() }
         case "tabs.getZoom": return tabOrThrow(a.tabId).view.zoomFactor
-        case "tabs.setZoom": { const t = tabOrThrow(a.tabId); t.setZoom(a.zoom > 0 ? a.zoom : 1.0); return null }
+        case "tabs.setZoom": { const t = tabOrThrow(a.tabId); if (a.zoom > 0) t.setZoom(a.zoom); else t.resetZoom(); return null }
         case "tabs.move": {
             const out = []
             for (const id of a.tabIds) {
@@ -1103,12 +1109,19 @@ QtObject {
         }
     }
 
-    // Where a page's next file picker opens: the last one's folder until Kite closes
-    // ("browsing.rememberFileFolder"), else home. Private windows don't leave theirs behind.
+    // Where a page's next file picker opens ("browsing.fileFolder"): the home
+    // folder, the last one's folder until Kite closes, or a folder of the user's
+    // ("browsing.fileFolderPath"); home when that one's gone. Private windows
+    // don't leave theirs behind.
     property string _lastFileFolder: ""
     function fileFolder() {
         const home = StandardPaths.writableLocation(StandardPaths.HomeLocation).toString()
-        return setting("browsing.rememberFileFolder") && _lastFileFolder !== "" && Browser.folderExists(_lastFileFolder) ? _lastFileFolder : home
+        const mode = setting("browsing.fileFolder")
+        if (mode === "last") return _lastFileFolder !== "" && Browser.folderExists(_lastFileFolder) ? _lastFileFolder : home
+        const own = setting("browsing.fileFolderPath")
+        // (A path in the setting; folderExists takes a file: URL.)
+        if (mode === "custom" && own && Browser.folderExists(fileUrl(own))) return fileUrl(own)
+        return home
     }
     function rememberFileFolder(folder, inPrivate) { if (!inPrivate) _lastFileFolder = folder }
 
@@ -1134,11 +1147,12 @@ QtObject {
     // `nameless`: from a private window, whose file names stay out of the desktop's
     // notification history. (What the buttons open isn't told to it.)
     function notifyDownloadComplete(path, nameless) {
+        if (!setting("downloads.notifications")) return
         const open = () => Qt.openUrlExternally(fileUrl(path))
         showNotification("Download complete", nameless ? "" : path.substring(path.lastIndexOf("/") + 1), "", open, null, [
             {label: "Open", run: open},
             {label: "Open Folder", run: () => Qt.openUrlExternally(fileUrl(path.substring(0, path.lastIndexOf("/")) || "/"))},
-        ])
+        ], setting("downloads.notificationTimeout"))
     }
     function onDownloadRequested(download) {
         const url = download.url.toString()
@@ -1157,6 +1171,20 @@ QtObject {
             download.cancel()
             if (activeWindow) activeWindow.toast("Download blocked: " + Browser.hostOf(url) + " is listed for " + (threat === "phishing" ? "phishing" : threat === "unwanted" ? "unwanted software" : "malware"), "dialog-warning")
             return
+        }
+        // An external download manager ("downloads.external", like Falkon's): it
+        // gets the address, Kite lets the download go. Not for what only Kite can
+        // fetch (a saved page, blob: and data: addresses), nor from private
+        // windows, as the program would keep its own record of the files.
+        if (setting("downloads.external") && /^https?:/i.test(url) && !download.isSavePageDownload && !_privateDownloads.includes(download)) {
+            const handed = JSON.parse(Browser.startExternalDownload(url, download.suggestedFileName || download.downloadFileName))
+            if (handed.name) {
+                download.cancel()
+                if (activeWindow) activeWindow.toast("Download sent to " + handed.name, "download")
+                return
+            }
+            // (It couldn't start: Kite downloads the file itself.)
+            if (activeWindow) activeWindow.toast("The external download manager couldn't take it: " + handed.error + ". Downloading in Kite instead.", "dialog-warning", 10000)
         }
         const asked = Date.now() < askUntil
         askUntil = 0
@@ -1227,9 +1255,19 @@ QtObject {
         }
     }
     property Component notificationActionComponent: Component { NotificationAction {} }
-    // `buttons`: a list of {label, run}.
-    function showNotification(title, text, iconUrl, onClick, onClose, buttons) {
+    // Closes a notification after a while (one sent as Persistent: the desktop
+    // takes no timeout from a notification, only "close as usual" or "stay").
+    property Component notificationCloserComponent: Component {
+        Timer { property var notification; running: true; onTriggered: if (notification) notification.close() }
+    }
+    // `buttons`: a list of {label, run}. `timeoutSeconds`: how long it stays
+    // (0 or none: as the desktop's settings say).
+    function showNotification(title, text, iconUrl, onClick, onClose, buttons, timeoutSeconds) {
         const n = notificationComponent.createObject(app, {title: title, text: text})
+        if (timeoutSeconds > 0) {
+            n.flags = Notification.Persistent
+            notificationCloserComponent.createObject(n, {notification: n, interval: timeoutSeconds * 1000})
+        }
         if (onClick) {
             const action = notificationActionComponent.createObject(n, {label: "Open"})
             action.activated.connect(onClick)

@@ -4,7 +4,6 @@
 
 use serde_json::Value;
 use std::io::{Read, Write};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{channel, Sender};
@@ -116,48 +115,16 @@ pub fn read_frame(r: &mut impl Read) -> Result<Option<Value>, String> {
     serde_json::from_slice(&body).map(Some).map_err(|e| format!("the host sent something other than JSON: {e}"))
 }
 
-/// What Kite set for itself, not for the programs it starts. The AppImage's
-/// library and Qt paths in particular would break a program using its own Qt.
+/// The host's command: its manifest and the extension as arguments, run in
+/// its own folder, with Kite's environment and files kept from it (external.rs).
 fn command(host: &Host, ext: &str) -> Command {
-    let mut c = Command::new(&host.path);
+    let mut c = crate::external::command(&host.path);
     c.arg(&host.manifest_path).arg(ext);
     if let Some(dir) = host.path.parent() {
         c.current_dir(dir);
     }
-    for var in ["QTWEBENGINE_CHROMIUM_FLAGS", "QT_PLUGIN_PATH", "QML_IMPORT_PATH", "QML2_IMPORT_PATH", "QTWEBENGINEPROCESS_PATH", "QTWEBENGINE_RESOURCES_PATH", "QTWEBENGINE_LOCALES_PATH", "KITE_DATA_DIR"] {
-        c.env_remove(var);
-    }
-    if std::env::var_os("APPIMAGE").is_some() {
-        for var in ["LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE", "ARGV0", "OWD"] {
-            c.env_remove(var);
-        }
-    }
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
-    // Nor is what Kite has open theirs, such as the profile's files: Chromium doesn't
-    // mark all of it to close when a program starts. (Marked rather than closed
-    // here: that a program failed to start comes back through one of them.)
-    unsafe {
-        c.pre_exec(|| {
-            mark_close_on_exec();
-            Ok(())
-        });
-    }
     c
-}
-
-/// Runs between fork and exec, so only async-signal-safe calls.
-fn mark_close_on_exec() {
-    const CLOSE_RANGE_CLOEXEC: libc::c_uint = 1 << 2;
-    unsafe {
-        if libc::syscall(libc::SYS_close_range, 3 as libc::c_uint, libc::c_uint::MAX, CLOSE_RANGE_CLOEXEC) == 0 {
-            return;
-        }
-        // (Kernels before 5.11.)
-        let max = libc::sysconf(libc::_SC_OPEN_MAX);
-        for fd in 3..(if max > 0 { max.min(65536) } else { 1024 }) as libc::c_int {
-            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
-        }
-    }
 }
 
 /// A running host.

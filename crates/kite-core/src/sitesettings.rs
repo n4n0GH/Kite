@@ -141,6 +141,31 @@ pub fn reset(db: &Connection, host: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Forget a site that has nothing of its own left (all back to the defaults),
+/// so it isn't listed, or marked in the address bar, for nothing.
+pub fn clear_if_empty(db: &Connection, host: &str) -> anyhow::Result<()> {
+    if get(db, host)?.is_empty() {
+        clear(db, host)?;
+    }
+    Ok(())
+}
+
+/// A zoom equal to the default zoom (percent) isn't a site's own: such ones,
+/// stored before resetting stopped storing them, are forgotten, and with them
+/// sites with nothing else of their own. How many sites changed.
+pub fn forget_default_zoom(db: &Connection, default_zoom: i64) -> anyhow::Result<usize> {
+    let hosts: Vec<String> = {
+        let mut stmt = db.prepare("SELECT server FROM site_settings WHERE zoom_level = ?1")?;
+        let rows = stmt.query_map([default_zoom], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for host in &hosts {
+        set(db, host, "zoom", -1)?;
+        clear_if_empty(db, host)?;
+    }
+    Ok(hosts.len())
+}
+
 /// The sites with a user agent of their own: host → what was chosen.
 pub fn user_agents(db: &Connection) -> anyhow::Result<std::collections::HashMap<String, String>> {
     let mut stmt = db.prepare("SELECT server, kite_ua FROM site_settings WHERE kite_ua IS NOT NULL AND kite_ua != ''")?;
@@ -167,6 +192,25 @@ mod tests {
         reset(&db, "a.org").unwrap();
         let s = get(&db, "a.org").unwrap();
         assert_eq!((s.midi, s.midi_sysex), (0, 0), "cleared with the other permissions");
+    }
+
+    #[test]
+    fn a_zoom_back_at_the_default_is_no_setting() {
+        let db = crate::db::open_in_memory().unwrap();
+        set(&db, "a.org", "zoom", 110).unwrap();
+        set(&db, "b.org", "zoom", 100).unwrap();
+        set(&db, "c.org", "zoom", 100).unwrap();
+        set(&db, "c.org", "darkMode", 1).unwrap();
+        assert_eq!(forget_default_zoom(&db, 100).unwrap(), 2);
+        let hosts: Vec<String> = all(&db).unwrap().into_iter().map(|(h, _)| h).collect();
+        assert_eq!(hosts, ["a.org", "c.org"], "b.org had nothing else");
+        assert_eq!(get(&db, "c.org").unwrap().zoom, -1, "its dark mode stays");
+        assert_eq!(get(&db, "a.org").unwrap().zoom, 110);
+        set(&db, "a.org", "zoom", -1).unwrap();
+        clear_if_empty(&db, "a.org").unwrap();
+        assert_eq!(all(&db).unwrap().len(), 1);
+        clear_if_empty(&db, "c.org").unwrap();
+        assert_eq!(all(&db).unwrap().len(), 1, "not empty, kept");
     }
 
     #[test]

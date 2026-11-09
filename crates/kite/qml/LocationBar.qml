@@ -40,12 +40,12 @@ QQC2.TextField {
     Connections { target: Browser; function onBookmarksChanged() { field.refreshBookmark() } }
 
     // The page's site, and whether it has settings of its own (Site
-    // Settings: zoom, dark mode, CSS, JavaScript).
+    // Settings: zoom, dark mode, cookies, fingerprinting, user agent, CSS, JavaScript).
     readonly property string siteHost: tab && /^https?:/i.test(tab.url) ? Browser.hostOf(tab.url) : ""
     property bool siteHasSettings: false
     function refreshSite() {
         const s = siteHost ? JSON.parse(Browser.siteSettings(siteHost)) : null
-        siteHasSettings = !!s && (s.zoom > 0 || s.dark_mode > 0 || s.css !== "" || s.js !== "")
+        siteHasSettings = !!s && (s.zoom > 0 || s.dark_mode > 0 || s.cookies > 0 || s.fingerprint > 0 || s.user_agent !== "" || s.css !== "" || s.js !== "")
     }
     onSiteHostChanged: refreshSite()
     Connections { target: field.win ? field.win.app : null; ignoreUnknownSignals: true; function onSiteSettingsEdited(host) { if (host === field.siteHost) field.refreshSite() } }
@@ -259,10 +259,11 @@ QQC2.TextField {
             }
         }
         QQC2.Label {
-            visible: field.tab && Math.abs(field.tab.view.zoomFactor - 1.0) > 0.01
+            // (Shown when it's not the default zoom, Settings → Appearance.)
+            visible: field.tab && Math.abs(field.tab.view.zoomFactor * 100 - field.win.app.setting("appearance.defaultZoom")) > 0.5
             text: field.tab ? Math.round(field.tab.view.zoomFactor * 100) + "%" : ""
             font: Kirigami.Theme.smallFont
-            TapHandler { onTapped: field.tab.setZoom(1.0) }
+            TapHandler { onTapped: field.tab.resetZoom() }
         }
         // Site Settings of this site (adds them if it has none yet).
         QQC2.ToolButton {

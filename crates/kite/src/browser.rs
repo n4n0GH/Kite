@@ -144,6 +144,11 @@ pub mod qobject {
         #[cxx_name = "crashedLastTime"]
         fn crashed_last_time(self: &Browser) -> bool;
         /// The last crash's report (crash.rs), or "".
+        /// Hand a download to the external download manager (Settings →
+        /// Downloads): {"name": the program} or {"error": why not}.
+        #[qinvokable]
+        #[cxx_name = "startExternalDownload"]
+        fn start_external_download(self: &Browser, url: &QString, file_name: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "crashReport"]
         fn crash_report(self: &Browser) -> QString;
@@ -283,6 +288,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "safeBrowsingStatus"]
         fn safe_browsing_status(self: &Browser) -> QString;
+        /// Started with --debug (state.rs).
+        #[qinvokable]
+        #[cxx_name = "debugMode"]
+        fn debug_mode(self: &Browser) -> bool;
+        /// Dangerous Sites' stored entries, for --debug: {total, entries: [{list, entry, threat}]}.
+        #[qinvokable]
+        #[cxx_name = "safeBrowsingEntries"]
+        fn safe_browsing_entries(self: &Browser, filter: &QString, offset: i32, limit: i32) -> QString;
+        /// How Dangerous Sites would check an address, from what's stored (--debug).
+        #[qinvokable]
+        #[cxx_name = "safeBrowsingExplain"]
+        fn safe_browsing_explain(self: &Browser, url: &QString) -> QString;
         /// Text settings: "css" or "js".
         #[qinvokable]
         #[cxx_name = "setSiteText"]
@@ -300,6 +317,23 @@ pub mod qobject {
         #[cxx_name = "setQtWebEngineUserAgent"]
         fn set_qtwebengine_user_agent(self: &Browser, ua: &QString);
         /// The page script making a site's pages see its chosen user agent ("" = none).
+        /// The installed spelling dictionaries' languages (as a JSON list).
+        #[qinvokable]
+        #[cxx_name = "spellDictionaries"]
+        fn spell_dictionaries(self: &Browser) -> QString;
+        /// Languages (a JSON list) as the installed dictionaries name them.
+        #[qinvokable]
+        #[cxx_name = "resolveSpellLanguages"]
+        fn resolve_spell_languages(self: &Browser, languages: &QString) -> QString;
+        /// "web.spellcheckLanguages", resolved so (for the profiles).
+        #[qinvokable]
+        #[cxx_name = "spellCheckLanguages"]
+        fn spell_check_languages(self: &Browser) -> QString;
+        /// The page script making all pages see the user agent chosen for all
+        /// sites, when it's another browser's ("" = none).
+        #[qinvokable]
+        #[cxx_name = "globalIdentityScript"]
+        fn global_identity_script(self: &Browser) -> QString;
         #[qinvokable]
         #[cxx_name = "siteIdentityScript"]
         fn site_identity_script(self: &Browser, host: &QString) -> QString;
@@ -1174,6 +1208,19 @@ impl qobject::Browser {
     fn crashed_last_time(&self) -> bool {
         app().shared.session().crashed_last_time()
     }
+    fn start_external_download(&self, url: &QString, file_name: &QString) -> QString {
+        let (program, arguments) = {
+            let s = app().shared.settings();
+            (s.get_str("downloads.externalProgram"), s.get_str("downloads.externalArguments"))
+        };
+        js(&match kite_core::external::start_download_manager(&program, &arguments, &url.to_string(), &file_name.to_string()) {
+            Ok(name) => json!({"name": name}),
+            Err(e) => {
+                log::warn!("external download manager: {e}");
+                json!({"error": e})
+            }
+        })
+    }
     fn crash_report(&self) -> QString {
         q(crate::crash::report().unwrap_or_default())
     }
@@ -1318,7 +1365,11 @@ impl qobject::Browser {
         if a.private && key.to_string() == "zoom" {
             return;
         }
-        let _ = kite_core::sitesettings::set(&a.shared.db(), &host.to_string(), &key.to_string(), value as i64);
+        let db = a.shared.db();
+        let _ = kite_core::sitesettings::set(&db, &host.to_string(), &key.to_string(), value as i64);
+        // (A site left with nothing of its own isn't one with settings.)
+        let _ = kite_core::sitesettings::clear_if_empty(&db, &host.to_string());
+        drop(db);
         app().privacy.load_site_rules(&app().shared);
     }
     fn all_site_settings(&self) -> QString {
@@ -1394,8 +1445,28 @@ impl qobject::Browser {
     fn safe_browsing_status(&self) -> QString {
         q(&app().safe_browsing.status())
     }
+    fn debug_mode(&self) -> bool {
+        crate::state::DEBUG.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    fn safe_browsing_entries(&self, filter: &QString, offset: i32, limit: i32) -> QString {
+        if !self.debug_mode() {
+            return q("{}");
+        }
+        let (total, page) = app().safe_browsing.debug_entries(&filter.to_string(), offset.max(0) as usize, limit.clamp(0, 5000) as usize);
+        js(&json!({"total": total, "entries": page.into_iter().map(|(list, entry, threat)| json!({"list": list, "entry": entry, "threat": threat})).collect::<Vec<_>>()}))
+    }
+    fn safe_browsing_explain(&self, url: &QString) -> QString {
+        if !self.debug_mode() {
+            return q("{}");
+        }
+        js(&app().safe_browsing.debug_explain(&url.to_string()))
+    }
     fn set_site_text(self: Pin<&mut Self>, host: &QString, key: &QString, value: &QString) {
-        let _ = kite_core::sitesettings::set_text(&app().shared.db(), &host.to_string(), &key.to_string(), &value.to_string());
+        {
+            let db = app().shared.db();
+            let _ = kite_core::sitesettings::set_text(&db, &host.to_string(), &key.to_string(), &value.to_string());
+            let _ = kite_core::sitesettings::clear_if_empty(&db, &host.to_string());
+        }
         app().privacy.load_site_rules(&app().shared);
     }
     fn user_agent_presets(&self) -> QString {
@@ -1405,6 +1476,21 @@ impl qobject::Browser {
     }
     fn set_qtwebengine_user_agent(&self, ua: &QString) {
         *app().privacy.qtwebengine_user_agent.write().unwrap() = ua.to_string();
+    }
+    fn spell_dictionaries(&self) -> QString {
+        js(&json!(kite_core::util::spell_dictionary_dir().map(|d| kite_core::util::spell_dictionaries(&d)).unwrap_or_default()))
+    }
+    fn resolve_spell_languages(&self, languages: &QString) -> QString {
+        let wanted: Vec<String> = serde_json::from_str(&languages.to_string()).unwrap_or_default();
+        let available = kite_core::util::spell_dictionary_dir().map(|d| kite_core::util::spell_dictionaries(&d)).unwrap_or_default();
+        js(&json!(kite_core::util::resolve_spell_languages(&wanted, &available)))
+    }
+    fn spell_check_languages(&self) -> QString {
+        let wanted: Vec<String> = serde_json::from_value(app().shared.settings().get("web.spellcheckLanguages")).unwrap_or_default();
+        self.resolve_spell_languages(&q(serde_json::to_string(&wanted).unwrap_or_default()))
+    }
+    fn global_identity_script(&self) -> QString {
+        crate::ffi::global_user_agent().map(|ua| identity_script(&ua)).unwrap_or_default()
     }
     fn site_identity_script(&self, host: &QString) -> QString {
         match app().privacy.site_user_agent(&host.to_string()) {

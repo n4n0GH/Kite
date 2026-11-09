@@ -65,7 +65,7 @@ QQC2.MenuBar {
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Zoom &In"; icon.name: "zoom-in"; onTriggered: menuBar.tab.zoomStep(1) }
         QQC2.MenuItem { text: "Zoom &Out"; icon.name: "zoom-out"; onTriggered: menuBar.tab.zoomStep(-1) }
-        QQC2.MenuItem { text: "&Reset Zoom"; icon.name: "zoom-original"; onTriggered: menuBar.tab.setZoom(1.0) }
+        QQC2.MenuItem { text: "&Reset Zoom"; icon.name: "zoom-original"; onTriggered: menuBar.tab.resetZoom() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "&Full Screen"; icon.name: "view-fullscreen"; checkable: true; checked: menuBar.win.visibility === Window.FullScreen; onTriggered: checked ? menuBar.win.showFullScreen() : menuBar.win.showNormal() }
         QQC2.MenuItem { text: "S&plit View"; icon.name: "view-split-left-right"; checkable: true; checked: menuBar.win.split; onTriggered: menuBar.win.toggleSplit() }

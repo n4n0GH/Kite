@@ -894,7 +894,7 @@ QQC2.ApplicationWindow {
         case "findPrevious": findBar.find(true); break
         case "zoomIn": if (t) t.zoomStep(1); break
         case "zoomOut": if (t) t.zoomStep(-1); break
-        case "zoomReset": if (t) t.setZoom(app.setting("appearance.defaultZoom") / 100); break
+        case "zoomReset": if (t) t.resetZoom(); break
         case "viewSource": if (t) openTab("view-source:" + t.url, {background: false, afterCurrent: true}); break
         case "print": printTab(); break
         case "savePage": saveDialog.open(); break

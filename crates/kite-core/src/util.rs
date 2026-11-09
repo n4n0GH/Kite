@@ -82,11 +82,63 @@ pub fn local_time(t: std::time::SystemTime) -> String {
     local_time_fmt(t, true, false)
 }
 
+/// Where QtWebEngine finds spelling dictionaries (`.bdic` files): the folder
+/// QTWEBENGINE_DICTIONARIES_PATH names, else the first of the usual system
+/// ones that exists (as packaged by distributions, also for an AppImage's Qt).
+pub fn spell_dictionary_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("QTWEBENGINE_DICTIONARIES_PATH").filter(|d| !d.is_empty()) {
+        return Some(d.into());
+    }
+    [
+        "/usr/share/qt6/qtwebengine_dictionaries",
+        "/usr/lib/qt6/qtwebengine_dictionaries",
+        "/usr/lib64/qt6/qtwebengine_dictionaries",
+        "/usr/lib/x86_64-linux-gnu/qt6/qtwebengine_dictionaries",
+        "/usr/lib/aarch64-linux-gnu/qt6/qtwebengine_dictionaries",
+        "/usr/share/qt/qtwebengine_dictionaries",
+        "/usr/share/qt5/qtwebengine_dictionaries",
+        "/usr/lib/x86_64-linux-gnu/qt5/qtwebengine_dictionaries",
+    ]
+    .into_iter()
+    .map(std::path::PathBuf::from)
+    .find(|d| d.is_dir())
+}
+
+/// The languages a dictionary folder has (its `.bdic` files' names), sorted.
+pub fn spell_dictionaries(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().and_then(|n| n.strip_suffix(".bdic")).map(str::to_owned))
+        .collect();
+    names.sort();
+    names
+}
+
+/// Spelling languages as QtWebEngine needs them: the dictionary's own name.
+/// It looks dictionaries up by file name, and distributions write "en_US"
+/// where people (and Kite's default) write "en-US". Ones with no dictionary
+/// are left out, as they'd do nothing.
+pub fn resolve_spell_languages(wanted: &[String], available: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for lang in wanted {
+        let lang = lang.trim();
+        let found = [lang.to_owned(), lang.replace('-', "_"), lang.replace('_', "-")].into_iter().find(|n| available.contains(n));
+        if let Some(n) = found {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
 /// A current Firefox's user agent, for the sites that only work for known browsers.
 pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
 /// A site's user agent (Site Settings) meaning Kite's own, naming
-/// "QtWebEngine/x.y" (what "privacy.genericUserAgent" leaves out). Some sites
+/// "QtWebEngine/x.y" (which Kite's default leaves out, so it reads like Chrome). Some sites
 /// refuse anything that claims to be Chrome but isn't, like invent.kde.org.
 pub const QTWEBENGINE_USER_AGENT: &str = "kite:qtwebengine";
 
@@ -156,6 +208,30 @@ mod google_tests {
         for other in ["http://accounts.google.com/", "https://accounts.google.com.evil.org/", "https://evil.org/accounts.google.com/", "https://mail.google.com/", "https://evil.org/?https://accounts.google.com/"] {
             assert!(!super::is_google_sign_in(other), "{other}");
         }
+    }
+}
+
+#[cfg(test)]
+mod spell_tests {
+    use super::*;
+
+    #[test]
+    fn languages_find_their_dictionaries_whatever_the_dash() {
+        let available = vec!["de_DE".to_owned(), "en_US".to_owned(), "pt-BR".to_owned()];
+        let wanted = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(resolve_spell_languages(&wanted(&["en-US"]), &available), ["en_US"], "Kite's default finds openSUSE's en_US.bdic");
+        assert_eq!(resolve_spell_languages(&wanted(&["pt_BR", "de_DE", "en-US", "en_US"]), &available), ["pt-BR", "de_DE", "en_US"]);
+        assert!(resolve_spell_languages(&wanted(&["fr-FR"]), &available).is_empty(), "none without a dictionary");
+    }
+
+    #[test]
+    fn a_folder_lists_its_dictionaries() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["en_US.bdic", "de_DE.bdic", "README", "en_US.aff"] {
+            std::fs::write(dir.path().join(f), "").unwrap();
+        }
+        assert_eq!(spell_dictionaries(dir.path()), ["de_DE", "en_US"]);
+        assert!(spell_dictionaries(&dir.path().join("missing")).is_empty());
     }
 }
 

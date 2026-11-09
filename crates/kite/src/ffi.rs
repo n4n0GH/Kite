@@ -717,7 +717,9 @@ pub extern "C" fn kite_cookie_policy() -> std::ffi::c_int {
 
 /// Should this user agent override apply: the one chosen for the site (Site
 /// Settings), else AMO sees Kite as Firefox so it offers "Add to Firefox"
-/// buttons that lead to .xpi files.
+/// buttons that lead to .xpi files (and Google's sign-in), else another
+/// browser's chosen for all sites (Settings → Browsing). Kite's own, with or
+/// without "QtWebEngine", is the profile's and needs none.
 #[no_mangle]
 pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
     let url = s(url);
@@ -733,7 +735,19 @@ pub unsafe extern "C" fn kite_user_agent_for(url: *const c_char) -> KiteBuf {
     if kite_core::util::is_google_sign_in(url) && app().shared.settings().get_bool("web.googleSignIn") {
         return KiteBuf::from_vec(kite_core::util::FIREFOX_USER_AGENT.as_bytes().to_vec());
     }
+    if url.starts_with("http") {
+        if let Some(ua) = global_user_agent() {
+            return KiteBuf::from_vec(ua.into_bytes());
+        }
+    }
     KiteBuf::empty()
+}
+
+/// Another browser's user agent chosen for all sites ("web.userAgent"), if one is.
+pub fn global_user_agent() -> Option<String> {
+    let ua = app().shared.settings().get_str("web.userAgent");
+    let ua = ua.trim();
+    (!ua.is_empty() && ua != kite_core::util::QTWEBENGINE_USER_AGENT).then(|| ua.to_owned())
 }
 
 fn query_param(url: &str, name: &str) -> String {

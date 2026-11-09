@@ -87,6 +87,9 @@ impl OpenLists {
             if line.is_empty() || line.starts_with('!') || line.starts_with('#') {
                 continue;
             }
+            // (The phishing list has addresses with "&amp;" for "&", as taken
+            // from web pages: an address never has it, so they'd never match.)
+            let line = line.replace("&amp;", "&");
             let entry = line.trim_start_matches("||");
             let entry = entry.split('$').next().unwrap_or("").trim_end_matches('^');
             if entry.is_empty() {
@@ -110,12 +113,17 @@ impl OpenLists {
     }
 
     pub fn check(&self, url: &url::Url) -> Option<Threat> {
+        self.matching_entry(url).map(|(_, t)| t)
+    }
+
+    /// The entry an address matches (as listed: `host` or `host/path`).
+    pub fn matching_entry(&self, url: &url::Url) -> Option<(String, Threat)> {
         let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
         // The host and its parent domains.
         let mut h = host.as_str();
         loop {
             if let Some(t) = self.hosts.get(h) {
-                return Some(*t);
+                return Some((h.to_owned(), *t));
             }
             match h.split_once('.') {
                 Some((_, parent)) if parent.contains('.') => h = parent,
@@ -126,7 +134,17 @@ impl OpenLists {
             Some(q) => format!("{}?{q}", url.path()),
             None => url.path().to_owned(),
         };
-        self.paths.get(&host)?.iter().find(|(p, _)| rest.starts_with(p.as_str())).map(|(_, t)| *t)
+        self.paths.get(&host)?.iter().find(|(p, _)| rest.starts_with(p.as_str())).map(|(p, t)| (format!("{host}{p}"), *t))
+    }
+
+    /// All entries, sorted (for debugging, `kite --debug`).
+    pub fn entries(&self) -> Vec<(String, Threat)> {
+        let mut out: Vec<(String, Threat)> = self.hosts.iter().map(|(h, t)| (h.clone(), *t)).collect();
+        for (host, paths) in &self.paths {
+            out.extend(paths.iter().map(|(p, t)| (format!("{host}{p}"), *t)));
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
     }
 }
 
@@ -489,6 +507,87 @@ impl SafeBrowsing {
         }
     }
 
+    /// What the active mode checks against, for debugging (`kite --debug`):
+    /// entries containing `filter` (no case), `limit` of them from `offset`, and
+    /// how many there are. Each is (list, entry, threat if the list says):
+    /// open lists' hosts and addresses, Google's hash prefixes in hex.
+    pub fn debug_entries(&self, filter: &str, offset: usize, limit: usize) -> (usize, Vec<(String, String, String)>) {
+        let filter = filter.trim().to_ascii_lowercase();
+        let mut total = 0;
+        let mut page = vec![];
+        let mut take = |list: &str, entry: String, threat: &str| {
+            if total >= offset && page.len() < limit {
+                page.push((list.to_owned(), entry, threat.to_owned()));
+            }
+            total += 1;
+        };
+        match self.mode() {
+            Mode::Off => {}
+            Mode::Open => {
+                for (entry, threat) in self.open.read().unwrap().entries() {
+                    if filter.is_empty() || entry.contains(&filter) {
+                        take("open lists", entry, threat.as_str());
+                    }
+                }
+            }
+            Mode::Google => {
+                let db = self.google.lock().unwrap();
+                let mut names: Vec<&String> = db.lists.keys().collect();
+                names.sort();
+                for name in names {
+                    let threat = Threat::from_google(name).map(|t| t.as_str()).unwrap_or("");
+                    for p in &db.lists[name].prefixes {
+                        let hex: String = p.iter().map(|b| format!("{b:02x}")).collect();
+                        if filter.is_empty() || hex.contains(&filter) {
+                            take(name, hex, threat);
+                        }
+                    }
+                }
+            }
+        }
+        (total, page)
+    }
+
+    /// How an address would be checked, from what's stored here only (Google
+    /// isn't asked): for debugging, `kite --debug`.
+    pub fn debug_explain(&self, url: &str) -> Value {
+        let parsed = url::Url::parse(url.trim()).ok().filter(|u| matches!(u.scheme(), "http" | "https"));
+        let Some(parsed) = parsed else { return json!({"error": "not an http(s) address"}) };
+        let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
+        let allowed = self.allowed.lock().unwrap().contains(&host);
+        match self.mode() {
+            Mode::Off => json!({"mode": "off"}),
+            Mode::Open => {
+                let found = self.open.read().unwrap().matching_entry(&parsed);
+                json!({"mode": "open", "allowed": allowed, "entry": found.as_ref().map(|(e, _)| e), "threat": found.map(|(_, t)| t.as_str())})
+            }
+            Mode::Google => {
+                let db = self.google.lock().unwrap();
+                let cache = self.cache.lock().unwrap();
+                let now = Instant::now();
+                let hex = |b: &[u8]| b.iter().map(|b| format!("{b:02x}")).collect::<String>();
+                let exprs: Vec<Value> = expressions(url.trim())
+                    .into_iter()
+                    .map(|e| {
+                        let h = sha256(e.as_bytes());
+                        let mut matches = vec![];
+                        let mut names: Vec<&String> = db.lists.keys().collect();
+                        names.sort();
+                        for name in names {
+                            for p in db.lists[name].matching(&h) {
+                                let clean = cache.negative.get(&p).is_some_and(|until| *until > now);
+                                matches.push(json!({"list": name, "prefix": hex(&p), "knownClean": clean}));
+                            }
+                        }
+                        let confirmed = cache.positive.get(&h).filter(|(_, until)| *until > now).map(|(t, _)| t.as_str());
+                        json!({"expression": e, "hash": hex(&h), "matches": matches, "confirmed": confirmed})
+                    })
+                    .collect();
+                json!({"mode": "google", "allowed": allowed, "expressions": exprs})
+            }
+        }
+    }
+
     fn check_google(&self, url: &str) -> Option<Threat> {
         let hashes: Vec<[u8; 32]> = expressions(url).iter().map(|e| sha256(e.as_bytes())).collect();
         // Local prefix matches, and what the cache already knows.
@@ -585,6 +684,49 @@ fn post(url: &str, body: &Value, timeout: Duration) -> anyhow::Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escaped_ampersands_in_a_list_match_real_addresses() {
+        let mut l = OpenLists::default();
+        l.add("||0.gravatar.example/avatar/abc?s=96&amp;d=identicon&amp;r=G^$all\n", Threat::Phishing);
+        let u = url::Url::parse("https://0.gravatar.example/avatar/abc?s=96&d=identicon&r=G").unwrap();
+        assert_eq!(l.check(&u), Some(Threat::Phishing));
+    }
+
+    #[test]
+    fn debugging_lists_entries_and_explains_a_check() {
+        let sb = SafeBrowsing::new(std::env::temp_dir());
+        assert_eq!(sb.debug_entries("", 0, 10).0, 0, "off: nothing");
+        sb.mode.store(2, Relaxed);
+        sb.open.write().unwrap().add("evil.example
+files.example.org/bad/tool.exe
+phish.test
+", Threat::Malware);
+        let (total, page) = sb.debug_entries("", 0, 2);
+        assert_eq!(total, 3);
+        assert_eq!(page.iter().map(|e| e.1.as_str()).collect::<Vec<_>>(), ["evil.example", "files.example.org/bad/tool.exe"], "sorted, paged");
+        assert_eq!(sb.debug_entries("PHISH", 0, 10).1[0].1, "phish.test", "filtered, any case");
+        assert_eq!(sb.debug_entries("", 2, 10).1.len(), 1, "from an offset");
+        let e = sb.debug_explain("https://www.evil.example/login");
+        assert_eq!((e["entry"].as_str(), e["threat"].as_str()), (Some("evil.example"), Some("malware")));
+        assert_eq!(sb.debug_explain("https://files.example.org/bad/tool.exe?x")["entry"], "files.example.org/bad/tool.exe");
+        assert!(sb.debug_explain("https://fine.example/")["entry"].is_null());
+        assert!(sb.debug_explain("ftp://x")["error"].is_string());
+
+        sb.mode.store(1, Relaxed);
+        let h = sha256(b"evil.example/");
+        // (Kept sorted, as updates leave them.)
+        let mut prefixes = vec![h[..4].to_vec(), vec![0, 1, 2, 3]];
+        prefixes.sort();
+        sb.google.lock().unwrap().lists.insert("MALWARE".into(), PrefixList { state: String::new(), prefixes });
+        let (total, page) = sb.debug_entries("", 0, 10);
+        assert_eq!(total, 2);
+        assert_eq!(page[0], ("MALWARE".to_owned(), "00010203".to_owned(), "malware".to_owned()));
+        let e = sb.debug_explain("https://evil.example/");
+        let hit = e["expressions"].as_array().unwrap().iter().find(|x| x["expression"] == "evil.example/").unwrap();
+        assert_eq!(hit["matches"][0]["list"], "MALWARE");
+        assert_eq!(hit["matches"][0]["prefix"].as_str().unwrap().len(), 8);
+    }
 
     #[test]
     fn open_lists_match_hosts_and_paths() {

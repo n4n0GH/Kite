@@ -14,8 +14,164 @@ ManagerWindow {
     width: Kirigami.Units.gridUnit * 50
     height: Kirigami.Units.gridUnit * 36
 
-    function get(k) { return JSON.parse(Browser.setting(k)) }
-    function set(k, v) { Browser.setSetting(k, JSON.stringify(v)) }
+    // ---- changes wait for Apply (the bar at the bottom), as in System Settings ----
+    // Settings changed on the page: key → value. Pages read through get(), so
+    // they show what's waiting (and controls that depend on it follow).
+    property var pending: ({})
+    // Changes that aren't settings (the search engines, a plugin turned on or
+    // off): name → what Apply does.
+    property var pendingActions: ({})
+    readonly property bool changed: Object.keys(pending).length > 0 || Object.keys(pendingActions).length > 0
+    function get(k) { return k in pending ? pending[k] : JSON.parse(Browser.setting(k)) }
+    function set(k, v) {
+        const p = Object.assign({}, pending)
+        if (JSON.stringify(v) === JSON.stringify(JSON.parse(Browser.setting(k)))) delete p[k]
+        else p[k] = v
+        pending = p
+    }
+    function stage(name, action) { const a = Object.assign({}, pendingActions); a[name] = action; pendingActions = a }
+    function unstage(name) { const a = Object.assign({}, pendingActions); delete a[name]; pendingActions = a }
+    // Right away, for what acts at once anyway (a start page file being made).
+    function setNow(k, v) { Browser.setSetting(k, JSON.stringify(v)) }
+    function applyChanges() {
+        const p = pending, actions = pendingActions
+        // Saved before the list is emptied: emptying it makes the page read the
+        // settings again at once, and it must find the new ones (read before
+        // they're saved, a control would show the old value, saved or not).
+        for (const k in p) Browser.setSetting(k, JSON.stringify(p[k]))
+        for (const name in actions) actions[name]()
+        pending = ({})
+        pendingActions = ({})
+        // (The filters are only rebuilt on request.)
+        if ("adblock.subscriptions" in p || "adblock.customRules" in p) Browser.reloadAdblock(false)
+    }
+    function discardChanges() {
+        pending = ({})
+        pendingActions = ({})
+        // The page starts over from the saved settings.
+        pageLoader.active = false
+        pageLoader.active = true
+    }
+
+    // ---- what every page is made of (KDE HIG: forms with text section headings) ----
+    // A page: one column, centred, of the same width on every page.
+    readonly property real columnWidth: Kirigami.Units.gridUnit * 36
+    // Its width and place on a page, the same whether the page scrolls or not:
+    // from the page's width, with room for a scrollbar always kept (a page
+    // makes room for one only when it shows it). A ScrollablePage stretches
+    // what it holds to its room, so the column sits in an item of its own.
+    readonly property real scrollbarRoom: Kirigami.Units.gridUnit * 1.5
+    function columnWidthIn(page) { return Math.min(page.width - page.leftPadding * 2 - scrollbarRoom, columnWidth) }
+    function columnXIn(page) { return (page.width - page.leftPadding * 2 - scrollbarRoom - columnWidthIn(page)) / 2 }
+    // (Shown once its forms have lined up their labels: Kirigami does that a turn
+    // of the event loop after they're made, so the first frame could show each
+    // section's form on its own, and the rows jump into place.)
+    component PageColumn: ColumnLayout {
+        id: pageColumn
+        property bool settled: false
+        spacing: Kirigami.Units.largeSpacing
+        opacity: settled ? 1 : 0
+        Component.onCompleted: Qt.callLater(() => Qt.callLater(() => pageColumn.settled = true))
+    }
+    // A section's title, as System Settings has them: on the left, a line after it.
+    // (Without the padding it has as a list's item: it lines up with the rest of the column.)
+    component SectionHeader: Kirigami.ListSectionHeader { Layout.fillWidth: true; leftPadding: 0; rightPadding: 0 }
+    // A section's form. The forms of a page line up their labels with each other.
+    component Form: Kirigami.FormLayout {
+        id: form
+        readonly property bool kiteForm: true
+        Layout.fillWidth: true
+        Component.onCompleted: twinFormLayouts = form.parent ? form.parent.children.filter(c => c !== form && c.kiteForm === true) : []
+    }
+    // What a setting does, under it.
+    component Hint: QQC2.Label {
+        Layout.fillWidth: true
+        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+        wrapMode: Text.Wrap
+        opacity: 0.7
+        font: Kirigami.Theme.smallFont
+    }
+    // A user agent to choose: common browsers' (Browser.userAgentPresets), or one
+    // typed in a field shown for it. `value` is what's stored ("" for the first
+    // option, kite:qtwebengine for Kite naming QtWebEngine).
+    component UserAgentField: ColumnLayout {
+        id: uaf
+        property string firstOption: "Like other sites"
+        readonly property var presets: JSON.parse(Browser.userAgentPresets())
+        readonly property int customIndex: presets.length + 1
+        readonly property string value: uaCombo.currentIndex === 0 ? "" : uaCombo.currentIndex === customIndex ? uaText.text.trim() : presets[uaCombo.currentIndex - 1].userAgent
+        // The user changed it.
+        signal edited()
+        function load(ua) {
+            const preset = presets.findIndex(p => p.userAgent === ua)
+            uaCombo.currentIndex = !ua ? 0 : preset >= 0 ? preset + 1 : customIndex
+            uaText.text = uaCombo.currentIndex === customIndex ? ua : ""
+        }
+        spacing: Kirigami.Units.smallSpacing
+        QQC2.ComboBox {
+            id: uaCombo
+            model: [uaf.firstOption].concat(uaf.presets.map(p => p.name), ["Custom…"])
+            onActivated: { if (currentIndex === uaf.customIndex) uaText.forceActiveFocus(); uaf.edited() }
+        }
+        QQC2.TextField {
+            id: uaText
+            visible: uaCombo.currentIndex === uaf.customIndex
+            Layout.fillWidth: true
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+            placeholderText: "Type or paste a user agent"
+            onTextEdited: uaf.edited()
+        }
+    }
+    // A row of a list on a page: highlighted under the pointer (KDE's list row),
+    // so it's clear which row a button belongs to. Rows aren't clicked themselves.
+    component ListRow: QQC2.ItemDelegate {
+        id: listRow
+        default property alias content: rowBox.data
+        Layout.fillWidth: true
+        hoverEnabled: true
+        down: false
+        highlighted: false
+        topPadding: Kirigami.Units.smallSpacing
+        bottomPadding: Kirigami.Units.smallSpacing
+        contentItem: Item {
+            id: rowBox
+            implicitHeight: children.length ? children[0].implicitHeight : 0
+            implicitWidth: children.length ? children[0].implicitWidth : 0
+            // (Its one child, a RowLayout, fills it.)
+            Component.onCompleted: if (children.length) { children[0].anchors.fill = rowBox }
+        }
+    }
+    // A row's icon button: its name as a tooltip.
+    component RowButton: QQC2.ToolButton {
+        display: QQC2.AbstractButton.IconOnly
+        QQC2.ToolTip.text: text
+        QQC2.ToolTip.visible: hovered
+        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+    }
+    // A setting's checkbox.
+    component Check: QQC2.CheckBox {
+        property string key
+        checked: !!w.get(key)
+        onToggled: w.set(key, checked)
+    }
+    // Apply and Cancel, at the bottom of a page with changes to apply.
+    component ApplyBar: QQC2.ToolBar {
+        id: applyBar
+        property bool changed
+        property alias leading: leadingRow.data
+        signal apply()
+        signal cancel()
+        position: QQC2.ToolBar.Footer
+        contentItem: RowLayout {
+            RowLayout { id: leadingRow }
+            Item { Layout.fillWidth: true }
+            QQC2.DialogButtonBox {
+                // (The order of the buttons is the platform's.)
+                QQC2.Button { text: "Apply"; icon.name: "dialog-ok-apply"; enabled: applyBar.changed; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.ApplyRole; onClicked: applyBar.apply() }
+                QQC2.Button { text: "Cancel"; icon.name: "dialog-cancel"; enabled: applyBar.changed; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole; onClicked: applyBar.cancel() }
+            }
+        }
+    }
 
     readonly property var pages: [
         {key: "general", title: "General", icon: "go-home"},
@@ -36,7 +192,9 @@ ManagerWindow {
         width: Kirigami.Units.gridUnit * 12
         actions: w.pages.map(p => pageAction.createObject(w, {text: p.title, iconName: p.icon, key: p.key}))
     }
-    Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: iconName; checked: w.page === key; onTriggered: w.page = key } }
+    // (Content Blocking is listed while blocking is on, as set on the Browsing page,
+    // or while it's the page shown.)
+    Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: iconName; checked: w.page === key; visible: key !== "adblock" || !!w.get("adblock.enabled") || w.page === key; onTriggered: w.page = key } }
 
     // Submenus (a start page file, a site's settings) are pages pushed on
     // the stack: they slide in, one at a time, with a back arrow in the
@@ -48,8 +206,38 @@ ManagerWindow {
     pageStack.initialPage: Kirigami.ScrollablePage {
         id: sp
         title: (w.pages.find(p => p.key === w.page) || {}).title || ""
-        Loader {
-            width: sp.width - Kirigami.Units.gridUnit * 2
+        // Leaving with changes not applied asks first (leavePage), like a site's page.
+        readonly property bool unsaved: w.changed
+        function applyChanges() { w.applyChanges() }
+        function discardChanges() { w.discardChanges() }
+        footer: ApplyBar {
+            changed: w.changed
+            onApply: w.applyChanges()
+            onCancel: w.discardChanges()
+            // Plugins & Extensions' own buttons.
+            leading: [
+                QQC2.Button {
+                    visible: w.page === "extensions"
+                    text: "Install Plugin…"
+                    icon.name: "document-open"
+                    onClicked: if (pageLoader.item && pageLoader.item.installPlugin) pageLoader.item.installPlugin()
+                },
+                QQC2.Button {
+                    visible: w.page === "extensions"
+                    // (As "Enable WebExtensions" is set, applied or not.)
+                    enabled: !!w.get("extensions.enabled")
+                    text: "Manage Extensions…"
+                    icon.name: "kite-extension"
+                    onClicked: w.app.showAddons()
+                }
+            ]
+        }
+        Item {
+          implicitHeight: pageLoader.height
+          Loader {
+            id: pageLoader
+            width: w.columnWidthIn(sp)
+            x: w.columnXIn(sp)
             sourceComponent: {
                 switch (w.page) {
                 case "appearance": return appearance
@@ -64,6 +252,124 @@ ManagerWindow {
                 case "shortcuts": return shortcuts
                 default: return general
                 }
+            }
+          }
+        }
+    }
+
+    // Dangerous Sites' lists, for `kite --debug` (Browsing → Dangerous Sites).
+    Component {
+        id: safeBrowsingListsPage
+        Kirigami.ScrollablePage {
+            id: sbPage
+            title: "Dangerous Sites Lists"
+            Item {
+            implicitHeight: sbl.implicitHeight
+            PageColumn {
+                id: sbl
+                width: w.columnWidthIn(sbPage)
+                x: w.columnXIn(sbPage)
+                readonly property int pageSize: 500
+                property var entries: []
+                property int total: 0
+                function load(more) {
+                    const r = JSON.parse(Browser.safeBrowsingEntries(search.text, more ? entries.length : 0, pageSize))
+                    total = r.total || 0
+                    entries = (more ? entries : []).concat(r.entries || [])
+                }
+                Component.onCompleted: load(false)
+                // The check, written out.
+                function explain(r) {
+                    if (r.error) return r.error
+                    if (r.mode === "off") return "Dangerous Sites is off."
+                    const lines = []
+                    if (r.allowed) lines.push("Allowed for this session (the user chose to visit it anyway): not checked.")
+                    if (r.mode === "open") {
+                        lines.push(r.entry ? "Listed: " + r.entry + " (" + r.threat + ")" : "Not listed: loads normally.")
+                        return lines.join("\n")
+                    }
+                    let listed = false
+                    for (const e of r.expressions || []) {
+                        lines.push(e.expression)
+                        lines.push("  sha256 " + e.hash)
+                        for (const m of e.matches) {
+                            listed = true
+                            lines.push("  matches " + m.list + " prefix " + m.prefix + (m.knownClean ? " (Google said clean, cached)" : " (would be confirmed with Google)"))
+                        }
+                        if (e.confirmed) lines.push("  confirmed dangerous by Google (cached): " + e.confirmed)
+                    }
+                    lines.push("")
+                    lines.push(listed ? "A hash prefix matches: Kite asks Google for the full hashes before warning." : "No hash prefix matches: loads normally, Google isn't asked.")
+                    return lines.join("\n")
+                }
+
+                SectionHeader { text: "Check an Address" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    QQC2.TextField {
+                        id: probe
+                        Layout.fillWidth: true
+                        placeholderText: "https://example.com/page"
+                        onAccepted: checkButton.clicked()
+                    }
+                    QQC2.Button {
+                        id: checkButton
+                        text: "Check"
+                        icon.name: "search"
+                        enabled: probe.text.trim() !== ""
+                        onClicked: verdict.text = sbl.explain(JSON.parse(Browser.safeBrowsingExplain(probe.text)))
+                    }
+                }
+                QQC2.TextArea {
+                    id: verdict
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    readOnly: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    font.family: "monospace"
+                }
+                Hint { Layout.maximumWidth: -1; text: "From the lists stored here; nothing is sent to Google for this." }
+
+                SectionHeader { text: "Entries" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Kirigami.SearchField {
+                        id: search
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: Kirigami.Units.gridUnit * 6
+                        placeholderText: "Search entries…"
+                        // (After typing stops for a moment: lists can be long.)
+                        onTextChanged: searchDelay.restart()
+                        Timer { id: searchDelay; interval: 300; onTriggered: sbl.load(false) }
+                    }
+                    QQC2.Label { text: sbl.total.toLocaleString(Qt.locale(), "f", 0) + (sbl.total === 1 ? " entry" : " entries"); opacity: 0.7 }
+                }
+                Hint {
+                    Layout.maximumWidth: -1
+                    text: "Open lists: the hosts and addresses as listed. Google: the hash prefixes (hex) of each list; addresses are matched by the SHA-256 of their host/path forms."
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Repeater {
+                        model: sbl.entries
+                        delegate: ListRow {
+                            required property var modelData
+                            RowLayout {
+                                QQC2.Label { text: modelData.entry; textFormat: Text.PlainText; font.family: "monospace"; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                                QQC2.Label { text: modelData.threat; opacity: 0.7 }
+                                QQC2.Label { visible: modelData.list !== "open lists"; text: modelData.list; opacity: 0.7; font: Kirigami.Theme.smallFont }
+                            }
+                        }
+                    }
+                }
+                QQC2.Button {
+                    visible: sbl.entries.length < sbl.total
+                    text: "Show More (" + (sbl.total - sbl.entries.length).toLocaleString(Qt.locale(), "f", 0) + " left)"
+                    icon.name: "go-down"
+                    onClicked: sbl.load(true)
+                }
+            }
             }
         }
     }
@@ -158,10 +464,9 @@ ManagerWindow {
     // Kite's own: extensions configure their shortcuts themselves) ----
     Component {
         id: shortcuts
-        ColumnLayout {
+        PageColumn {
             id: sc
-            spacing: Kirigami.Units.smallSpacing
-            readonly property var overrides: w.app.liveSettings["shortcuts"] || {}
+            readonly property var overrides: w.get("shortcuts") || {}
             readonly property var actions: w.app.shortcutActions
             readonly property var groups: actions.reduce((g, a) => g.includes(a.group) ? g : g.concat([a.group]), [])
             property string filter: ""
@@ -191,11 +496,8 @@ ManagerWindow {
                     onClicked: resetAllDlg.open()
                 }
             }
-            QQC2.Label {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                font: Kirigami.Theme.smallFont
+            Hint {
+                Layout.maximumWidth: -1
                 text: "Click a shortcut to change it, or + to add another one. Shortcuts need Ctrl, Alt or Meta (or a function key), so typing on web pages keeps working."
             }
             Repeater {
@@ -207,41 +509,42 @@ ManagerWindow {
                     Layout.fillWidth: true
                     visible: items.length > 0
                     spacing: 0
-                    Kirigami.Heading { level: 4; text: grp.modelData; Layout.topMargin: Kirigami.Units.largeSpacing; Layout.bottomMargin: Kirigami.Units.smallSpacing }
+                    SectionHeader { text: grp.modelData }
                     Repeater {
                         model: grp.items
-                        delegate: RowLayout {
+                        delegate: ListRow {
                             id: row
                             required property var modelData
                             readonly property var current: sc.keys(modelData)
                             readonly property bool changed: sc.overrides[modelData.id] !== undefined
-                            Layout.fillWidth: true
-                            Layout.minimumHeight: Kirigami.Units.gridUnit * 1.8
-                            spacing: Kirigami.Units.smallSpacing
-                            QQC2.Label { text: row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: row.changed }
-                            QQC2.Label { visible: row.current.length === 0; text: "None"; opacity: 0.5 }
-                            Repeater {
-                                model: row.current
-                                delegate: QQC2.Button {
-                                    required property string modelData
-                                    required property int index
-                                    text: Browser.keySequenceDisplay(modelData)
-                                    font.family: "monospace"
-                                    onClicked: recorder.record(row.modelData, index)
-                                    QQC2.ToolTip.text: "Change, or remove with the button in the dialog"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                            RowLayout {
+                                spacing: Kirigami.Units.smallSpacing
+                                QQC2.Label { text: row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: row.changed }
+                                QQC2.Label { visible: row.current.length === 0; text: "None"; opacity: 0.5 }
+                                Repeater {
+                                    model: row.current
+                                    delegate: QQC2.Button {
+                                        required property string modelData
+                                        required property int index
+                                        text: Browser.keySequenceDisplay(modelData)
+                                        font.family: "monospace"
+                                        onClicked: recorder.record(row.modelData, index)
+                                        QQC2.ToolTip.text: "Change, or remove with the button in the dialog"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                    }
                                 }
-                            }
-                            QQC2.ToolButton {
-                                icon.name: "list-add"
-                                onClicked: recorder.record(row.modelData, -1)
-                                QQC2.ToolTip.text: "Add a shortcut"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                            }
-                            QQC2.ToolButton {
-                                icon.name: "edit-undo"
-                                enabled: row.changed
-                                opacity: row.changed ? 1 : 0
-                                onClicked: sc.reset(row.modelData)
-                                QQC2.ToolTip.text: "Reset to " + (row.modelData.keys.length ? row.modelData.keys.map(k => Browser.keySequenceDisplay(k)).join(", ") : "none"); QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                RowButton {
+                                    icon.name: "list-add"
+                                    text: "Add a shortcut"
+                                    onClicked: recorder.record(row.modelData, -1)
+                                }
+                                RowButton {
+                                    icon.name: "edit-undo"
+                                    // (Kept in its place when there's nothing to reset, so the keys line up.)
+                                    enabled: row.changed
+                                    opacity: row.changed ? 1 : 0
+                                    text: "Reset to " + (row.modelData.keys.length ? row.modelData.keys.map(k => Browser.keySequenceDisplay(k)).join(", ") : "none")
+                                    onClicked: sc.reset(row.modelData)
+                                }
                             }
                         }
                     }
@@ -364,9 +667,13 @@ ManagerWindow {
             property string target   // "home" | "newtab"
             title: target === "home" ? "Home Page File" : "New Tab Page File"
             // ---- a home / new tab page file -------------------------------------
-            ColumnLayout {
+            // (Saved right away: its buttons make and copy files at once.)
+            Item {
+            implicitHeight: spm.implicitHeight
+            PageColumn {
                 id: spm
-                width: page.width - Kirigami.Units.gridUnit * 2
+                width: w.columnWidthIn(page)
+                x: w.columnXIn(page)
                 readonly property string target: page.target
                 readonly property string fileKey: "startpage." + target + ".file"
                 readonly property string copyKey: "startpage." + target + ".copy"
@@ -375,8 +682,7 @@ ManagerWindow {
                     spCopy.checked = w.get(copyKey)
                 }
                 function edit() { Qt.openUrlExternally("file://" + encodeURI(w.app.startPageFile(target))) }
-                Kirigami.FormLayout {
-                    Layout.fillWidth: true
+                Form {
                     RowLayout {
                         Kirigami.FormData.label: "HTML file:"
                         Layout.fillWidth: true
@@ -385,7 +691,7 @@ ManagerWindow {
                             Layout.fillWidth: true
                             Layout.minimumWidth: Kirigami.Units.gridUnit * 16
                             placeholderText: "No file chosen"
-                            onEditingFinished: if (text.trim() !== w.get(spm.fileKey)) w.set(spm.fileKey, text.trim())
+                            onEditingFinished: if (text.trim() !== w.get(spm.fileKey)) w.setNow(spm.fileKey, text.trim())
                         }
                         QQC2.Button { text: "Choose…"; icon.name: "document-open"; onClicked: spDialog.open() }
                         FileDialog {
@@ -394,7 +700,7 @@ ManagerWindow {
                             onAccepted: {
                                 const path = decodeURIComponent(selectedFile.toString().replace(/^file:\/\//, ""))
                                 spFile.text = path
-                                w.set(spm.fileKey, path)
+                                w.setNow(spm.fileKey, path)
                                 // A new file replaces the copy too.
                                 if (w.get(spm.copyKey)) Browser.startPageImport(spm.target, path)
                             }
@@ -406,15 +712,11 @@ ManagerWindow {
                         onToggled: {
                             // The chosen file is copied, or a starter page made.
                             if (checked && !(spFile.text && Browser.startPageImport(spm.target, spFile.text))) spFile.text = Browser.startPageCreate(spm.target)
-                            if (checked && !w.get(spm.fileKey)) w.set(spm.fileKey, spFile.text)
-                            w.set(spm.copyKey, checked)
+                            if (checked && !w.get(spm.fileKey)) w.setNow(spm.fileKey, spFile.text)
+                            w.setNow(spm.copyKey, checked)
                         }
                     }
-                    QQC2.Label {
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
+                    Hint {
                         text: spCopy.checked
                             ? "Kite uses its own copy (kite:startpage/" + spm.target + "/), so the original file can move or go. Images and style sheets can go in its folder."
                             : "Kite loads the file where it is, with the images and style sheets next to it."
@@ -428,8 +730,8 @@ ManagerWindow {
                                 const path = Browser.startPageCreate(spm.target)
                                 if (!path) return
                                 spFile.text = path
-                                w.set(spm.fileKey, path)
-                                w.set(spm.copyKey, true)
+                                w.setNow(spm.fileKey, path)
+                                w.setNow(spm.copyKey, true)
                                 spCopy.checked = true
                             }
                             QQC2.ToolTip.text: "A simple start page with a clock, a search box and links, kept inside Kite"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -455,34 +757,28 @@ ManagerWindow {
                             QQC2.ToolTip.text: "Copy the chosen file into Kite again (replaces the copy's edits)"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                         }
                     }
-                    QQC2.Label {
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
-                        text: "Saving the file reloads the page in Kite."
-                    }
+                    Hint { text: "Saving the file reloads the page in Kite." }
                 }
+            }
             }
         }
     }
 
     Component {
         id: general
-        ColumnLayout {
-            // Home page / new tab page: an address or a file (managed below).
+        PageColumn {
+            // Home page / new tab page: an address or a file (managed on a page of its own).
             component PageChoice: ColumnLayout {
                 id: pc
                 property string target        // "home" | "newtab"
                 property string modeKey
                 property string urlKey
                 property string placeholder: ""
-                readonly property bool file: mode === "file"
-                property string mode: w.get(modeKey)
+                readonly property bool file: w.get(modeKey) === "file"
                 spacing: Kirigami.Units.smallSpacing
                 RowLayout {
-                    QQC2.RadioButton { text: "Address"; checked: !pc.file; onToggled: if (checked) { pc.mode = "url"; w.set(pc.modeKey, "url") } }
-                    QQC2.RadioButton { text: "File"; checked: pc.file; onToggled: if (checked) { pc.mode = "file"; w.set(pc.modeKey, "file") } }
+                    QQC2.RadioButton { text: "Address"; checked: !pc.file; onToggled: if (checked) w.set(pc.modeKey, "url") }
+                    QQC2.RadioButton { text: "File"; checked: pc.file; onToggled: if (checked) w.set(pc.modeKey, "file") }
                 }
                 QQC2.TextField {
                     visible: !pc.file
@@ -505,8 +801,8 @@ ManagerWindow {
                 }
             }
 
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
+            SectionHeader { text: "Startup" }
+            Form {
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "When Kite starts:"
                     model: [{k: "restore", t: "Restore previous session"}, {k: "homepage", t: "Open home page"}, {k: "speeddial", t: "Open start page"}, {k: "blank", t: "Open blank page"}]
@@ -519,108 +815,147 @@ ManagerWindow {
                     visible: !homeChoice.file
                     text: "Use Current Page as Home Page"
                     enabled: !!w.app.activeWindow && !!w.app.activeWindow.currentTab
-                    onClicked: { w.set("general.homepage", w.app.activeWindow.currentTab.url); homeChoice.mode = ""; homeChoice.mode = "url" }
+                    onClicked: w.set("general.homepage", w.app.activeWindow.currentTab.url)
                 }
                 PageChoice { Kirigami.FormData.label: "New tab page:"; Kirigami.FormData.labelAlignment: Qt.AlignTop; target: "newtab"; modeKey: "general.newTabPageMode"; urlKey: "general.newTabPage"; placeholder: "kite:start" }
-                QQC2.CheckBox { Kirigami.FormData.label: "Start page:"; text: "Show site tiles (sites you visit often and ones you add)"; checked: w.get("speeddial.showTiles"); onToggled: w.set("speeddial.showTiles", checked) }
-                Item { Kirigami.FormData.isSection: true }
+                Check { Kirigami.FormData.label: "Start page:"; text: "Show site tiles (sites you visit often and ones you add)"; key: "speeddial.showTiles" }
+            }
+            SectionHeader { text: "Search" }
+            Form {
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "Default search engine:"
                     model: JSON.parse(Browser.engines()).map(e => e.name)
                     currentIndex: Math.max(0, model.indexOf(w.get("general.searchEngine")))
                     onActivated: i => w.set("general.searchEngine", model[i])
                 }
-                QQC2.CheckBox { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; checked: w.get("general.searchFromLocationBar"); onToggled: w.set("general.searchFromLocationBar", checked) }
-                QQC2.CheckBox { text: "Show search suggestions"; checked: w.get("general.showSearchSuggestions"); onToggled: w.set("general.showSearchSuggestions", checked) }
-                Item { Kirigami.FormData.isSection: true }
+                Check { Kirigami.FormData.label: "Location bar:"; text: "Search when input isn't an address"; key: "general.searchFromLocationBar" }
+                Check { text: "Show search suggestions"; key: "general.showSearchSuggestions" }
+            }
+            SectionHeader { text: "Profile and Diagnostics" }
+            Form {
+                QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.maximumWidth: Kirigami.Units.gridUnit * 24 }
                 RowLayout {
                     Kirigami.FormData.label: "Settings file:"
                     QQC2.Button { text: "Export…"; icon.name: "document-export"; onClicked: settingsExport.open() }
                     QQC2.Button { text: "Import…"; icon.name: "document-import"; onClicked: settingsImport.open() }
                 }
-                QQC2.Label {
-                    // (A set width: a form makes room for a text's whole length otherwise.)
-                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                    wrapMode: Text.Wrap
-                    opacity: 0.7
-                    font: Kirigami.Theme.smallFont
-                    text: "To carry your settings, search engines and site settings to another computer. Not your window size, download folder, start page files or Safe Browsing key; bookmarks and logins have exports of their own."
-                }
-                QQC2.CheckBox { Kirigami.FormData.label: "Crash reports:"; text: "Show the report after Kite crashes"; checked: w.get("general.crashReportNotice"); onToggled: w.set("general.crashReportNotice", checked) }
+                Hint { text: "To carry your settings, search engines and site settings to another computer. Not your window size, download folder, start page files or Safe Browsing key; bookmarks and logins have exports of their own." }
+                Check { Kirigami.FormData.label: "Crash reports:"; text: "Show the report after Kite crashes"; key: "general.crashReportNotice" }
                 RowLayout {
                     QQC2.Button { text: "View Last Report"; icon.name: "tools-report-bug"; enabled: Browser.crashReport() !== ""; onClicked: if (w.app.activeWindow) w.app.activeWindow.showCrashReport(true) }
                     QQC2.Button { text: "Open Log Folder"; icon.name: "folder-open"; onClicked: Qt.openUrlExternally(Browser.logFolderUrl()) }
                 }
-                QQC2.Label {
-                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                    wrapMode: Text.Wrap
-                    opacity: 0.7
-                    font: Kirigami.Theme.smallFont
-                    text: "Kite keeps a log of its warnings and errors, and a report of its last crash. They stay on this computer; addresses from private windows are scrambled in them."
-                }
-                QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                Hint { text: "Kite keeps a log of its warnings and errors, and a report of its last crash. They stay on this computer; addresses from private windows are scrambled in them." }
             }
-
         }
     }
 
     Component {
         id: appearance
-        Kirigami.FormLayout {
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "General" }
-            QQC2.CheckBox { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; checked: w.get("appearance.showBookmarksToolbar"); onToggled: w.set("appearance.showBookmarksToolbar", checked) }
-            QQC2.CheckBox {
-                text: "Show home button"
-                readonly property var items: w.app.liveSettings["toolbar.items"] || []
-                checked: items.includes("home")
-                onToggled: {
-                    const list = items.filter(i => i !== "home")
-                    if (checked) list.splice(Math.max(0, list.indexOf("urlbar")), 0, "home")
-                    w.set("toolbar.items", list)
+        PageColumn {
+            SectionHeader { text: "Window" }
+            Form {
+                Check { Kirigami.FormData.label: "Toolbars:"; text: "Show bookmarks toolbar"; key: "appearance.showBookmarksToolbar" }
+                QQC2.CheckBox {
+                    text: "Show home button"
+                    readonly property var items: w.get("toolbar.items") || []
+                    checked: items.includes("home")
+                    onToggled: {
+                        const list = items.filter(i => i !== "home")
+                        if (checked) list.splice(Math.max(0, list.indexOf("urlbar")), 0, "home")
+                        w.set("toolbar.items", list)
+                    }
                 }
+                Check { text: "Show menu bar (or tap Alt to show it briefly)"; key: "appearance.showMenuBar" }
+                QQC2.Button { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; enabled: !!w.app.activeWindow; onClicked: w.app.activeWindow.customizeToolbar() }
+                Check { Kirigami.FormData.label: "Status:"; text: "Show link targets when hovering links"; key: "appearance.showStatusBar" }
             }
-            QQC2.CheckBox { text: "Show menu bar (or tap Alt to show it briefly)"; checked: w.get("appearance.showMenuBar"); onToggled: w.set("appearance.showMenuBar", checked) }
-            QQC2.Button { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; enabled: !!w.app.activeWindow; onClicked: w.app.activeWindow.customizeToolbar() }
-            QQC2.CheckBox { text: "Show link targets when hovering links"; checked: w.get("appearance.showStatusBar"); onToggled: w.set("appearance.showStatusBar", checked) }
-            QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }
-            QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Force dark mode on websites"; checked: w.get("appearance.forceDarkMode"); onToggled: w.set("appearance.forceDarkMode", checked) }
-            QQC2.CheckBox { text: "Overlay scrollbars (thin, widen on hover, hide when idle)"; checked: w.get("appearance.overlayScrollbars"); onToggled: w.set("appearance.overlayScrollbars", checked) }
-            QQC2.Label { text: "Some changes apply to new tabs and windows; scrollbar changes after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
-
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tabs" }
-            QQC2.ComboBox {
-                id: tabPos
-                Kirigami.FormData.label: "Position:"
-                model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the left"}, {k: "verticalRight", t: "Vertical list on the right"}]
-                textRole: "t"
-                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("tabs.position")))
-                onActivated: i => w.set("tabs.position", model[i].k)
+            SectionHeader { text: "Web Content" }
+            Form {
+                QQC2.SpinBox { Kirigami.FormData.label: "Default zoom:"; from: 30; to: 300; stepSize: 10; value: w.get("appearance.defaultZoom"); onValueModified: w.set("appearance.defaultZoom", value); textFromValue: v => v + "%" }
+                Check { Kirigami.FormData.label: "Colours:"; text: "Force dark mode on websites"; key: "appearance.forceDarkMode" }
+                Check { Kirigami.FormData.label: "Scrollbars:"; text: "Overlay scrollbars (thin, widen on hover, hide when idle)"; key: "appearance.overlayScrollbars" }
+                Hint { text: "Some changes apply to new tabs and windows; scrollbar changes after restarting Kite." }
             }
-            QQC2.CheckBox { text: "Hide the tab bar when only one tab is open"; checked: w.get("tabs.hideWhenSingle"); onToggled: w.set("tabs.hideWhenSingle", checked) }
-            QQC2.Label { text: "Also available by right-clicking the tab bar."; opacity: 0.7; font: Kirigami.Theme.smallFont }
-            QQC2.CheckBox { enabled: tabPos.currentIndex < 3; text: "Stretch tabs across the whole tab bar"; checked: w.get("tabs.fillWidth"); onToggled: w.set("tabs.fillWidth", checked) }
-            QQC2.Label { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)."; opacity: 0.7; font: Kirigami.Theme.smallFont }
-            QQC2.CheckBox { text: "Tree-style tabs in vertical lists"; checked: w.get("tabs.tree"); onToggled: w.set("tabs.tree", checked) }
-            QQC2.Label { text: "Links open as children of their tab. Drag a tab sideways to change its level; its children move with it."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
-            QQC2.CheckBox { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; checked: w.get("tabs.newTabAfterActive"); onToggled: w.set("tabs.newTabAfterActive", checked) }
-            QQC2.CheckBox { text: "Switch to tabs opened from links"; checked: w.get("tabs.switchToNewTabFromLink"); onToggled: w.set("tabs.switchToNewTabFromLink", checked) }
-            QQC2.CheckBox { text: "Open popup windows in tabs"; checked: w.get("tabs.openPopupsInTabs"); onToggled: w.set("tabs.openPopupsInTabs", checked) }
-            QQC2.CheckBox { Kirigami.FormData.label: "Closing:"; text: "Close window when the last tab is closed"; checked: w.get("tabs.closeWindowWithLastTab"); onToggled: w.set("tabs.closeWindowWithLastTab", checked) }
+            SectionHeader { text: "Tabs" }
+            Form {
+                QQC2.ComboBox {
+                    id: tabPos
+                    Kirigami.FormData.label: "Position:"
+                    model: [{k: "top", t: "Above the address bar"}, {k: "belowToolbar", t: "Below the address bar"}, {k: "bottom", t: "Below the page"}, {k: "vertical", t: "Vertical list on the left"}, {k: "verticalRight", t: "Vertical list on the right"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("tabs.position")))
+                    onActivated: i => w.set("tabs.position", model[i].k)
+                }
+                Check { text: "Hide the tab bar when only one tab is open"; key: "tabs.hideWhenSingle" }
+                Hint { text: "Also available by right-clicking the tab bar." }
+                Check { enabled: tabPos.currentIndex < 3; text: "Stretch tabs across the whole tab bar"; key: "tabs.fillWidth" }
+                Hint { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)." }
+                Check { text: "Tree-style tabs in vertical lists"; key: "tabs.tree" }
+                Hint { text: "Links open as children of their tab. Drag a tab sideways to change its level; its children move with it." }
+                Check { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; key: "tabs.newTabAfterActive" }
+                Check { text: "Switch to tabs opened from links"; key: "tabs.switchToNewTabFromLink" }
+                Check { text: "Open popup windows in tabs"; key: "tabs.openPopupsInTabs" }
+                Check { Kirigami.FormData.label: "Closing:"; text: "Close window when the last tab is closed"; key: "tabs.closeWindowWithLastTab" }
+            }
         }
     }
 
     Component {
         id: browsing
-        Kirigami.FormLayout {
-            QQC2.CheckBox { Kirigami.FormData.label: "Web content:"; text: "Enable JavaScript"; checked: w.get("web.javascript"); onToggled: w.set("web.javascript", checked) }
-            QQC2.CheckBox { text: "Load images automatically"; checked: w.get("web.autoloadImages"); onToggled: w.set("web.autoloadImages", checked) }
-            QQC2.CheckBox { text: "Allow local storage"; checked: w.get("web.localStorage"); onToggled: w.set("web.localStorage", checked) }
-            QQC2.CheckBox { text: "Let pages lock the mouse pointer when you click in them (games)"; checked: w.get("web.pointerLock"); onToggled: w.set("web.pointerLock", checked) }
-            QQC2.CheckBox { text: "Open a page's file picker in the last folder used, until Kite closes"; checked: w.get("browsing.rememberFileFolder"); onToggled: w.set("browsing.rememberFileFolder", checked) }
-            QQC2.CheckBox { text: "Enable plugins (PDF viewer is always on)"; checked: w.get("web.pluginsEnabled"); onToggled: w.set("web.pluginsEnabled", checked) }
-            QQC2.CheckBox { text: "Smooth scrolling"; checked: w.get("web.smoothScrolling"); onToggled: w.set("web.smoothScrolling", checked) }
-            QQC2.CheckBox { text: "Spatial navigation (arrow keys between links)"; checked: w.get("web.spatialNavigation"); onToggled: w.set("web.spatialNavigation", checked) }
-            QQC2.CheckBox { text: "Print backgrounds"; checked: w.get("web.printBackgrounds"); onToggled: w.set("web.printBackgrounds", checked) }
+        PageColumn {
+          SectionHeader { text: "Web Content" }
+          Form {
+            Check { Kirigami.FormData.label: "Pages:"; text: "Enable JavaScript"; key: "web.javascript" }
+            Check { text: "Load images automatically"; key: "web.autoloadImages" }
+            Check { text: "Allow local storage"; key: "web.localStorage" }
+            Check { text: "Let pages lock the mouse pointer when you click in them (games)"; key: "web.pointerLock" }
+            // Where a page's file picker opens (upload buttons; Main.fileFolder).
+            QQC2.ComboBox {
+                id: filePicker
+                Kirigami.FormData.label: "File picker:"
+                model: [{k: "home", t: "Home directory"}, {k: "last", t: "Last directory used"}, {k: "custom", t: "Custom"}]
+                textRole: "t"
+                currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("browsing.fileFolder")))
+                onActivated: i => { w.set("browsing.fileFolder", model[i].k); if (model[i].k === "custom" && !w.get("browsing.fileFolderPath")) pickerFolderDialog.open() }
+            }
+            RowLayout {
+                visible: filePicker.currentIndex === 2
+                QQC2.TextField {
+                    id: pickerFolder
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 18
+                    placeholderText: "Choose a folder"
+                    text: w.get("browsing.fileFolderPath")
+                    onEditingFinished: w.set("browsing.fileFolderPath", text.trim())
+                }
+                QQC2.Button {
+                    icon.name: "document-open-folder"
+                    text: "Choose Folder…"
+                    display: QQC2.AbstractButton.IconOnly
+                    onClicked: pickerFolderDialog.open()
+                    QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                }
+                FolderDialog {
+                    id: pickerFolderDialog
+                    onAccepted: { pickerFolder.text = decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//, "")); w.set("browsing.fileFolderPath", pickerFolder.text) }
+                }
+            }
+            Hint { text: filePicker.currentIndex === 1 ? "Where a page's file picker, as for uploading a file, opens: the folder last used in one, until Kite closes. Private windows don't change it." : "Where a page's file picker, as for uploading a file, opens." }
+            Check { Kirigami.FormData.label: "Printing:"; text: "Print backgrounds"; key: "web.printBackgrounds" }
+            // (Its lists and rules are on the Content Blocking page, listed while this is on.)
+            Check { Kirigami.FormData.label: "Content blocking:"; text: "Block ads and trackers"; key: "adblock.enabled" }
+            UserAgentField {
+                Kirigami.FormData.label: "User agent:"
+                firstOption: "Kite's default (reads like Chrome)"
+                Component.onCompleted: load(w.get("web.userAgent"))
+                onEdited: w.set("web.userAgent", value)
+            }
+            Hint { text: "What Kite tells sites it is. Kite's default leaves out “QtWebEngine”, which few browsers send and so would make you easier to recognise; some sites need it to work, though. Sites can also have one of their own, in Site Settings." }
+          }
+          SectionHeader { text: "Scrolling" }
+          Form {
+            Check { Kirigami.FormData.label: "Movement:"; text: "Smooth scrolling"; key: "web.smoothScrolling" }
+            Check { text: "Spatial navigation (arrow keys between links)"; key: "web.spatialNavigation" }
             // ---- "web.wheelScrollPixels" (bootstrap.cpp scales wheel notches) ----
             QQC2.CheckBox {
                 id: wheelSystem
@@ -640,39 +975,62 @@ ManagerWindow {
                 }
                 QQC2.Label { text: "px per wheel notch" }
             }
-            QQC2.Label { text: "Scroll distance on web pages. Touchpads and Ctrl+wheel (zoom) are not affected."; opacity: 0.7; font: Kirigami.Theme.smallFont }
-            QQC2.CheckBox { Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; checked: w.get("web.spellcheck"); onToggled: w.set("web.spellcheck", checked) }
-            QQC2.TextField { Kirigami.FormData.label: "Languages:"; text: w.get("web.spellcheckLanguages").join(", "); onEditingFinished: w.set("web.spellcheckLanguages", text.split(",").map(s => s.trim()).filter(s => s)) }
-            QQC2.TextField { Kirigami.FormData.label: "User agent:"; Layout.fillWidth: true; placeholderText: "Default"; text: w.get("web.userAgent"); onEditingFinished: w.set("web.userAgent", text) }
-            QQC2.Label { text: "User agent and spelling changes apply after restarting Kite."; opacity: 0.7; font: Kirigami.Theme.smallFont }
+            Hint { text: "Scroll distance on web pages. Touchpads and Ctrl+wheel (zoom) are not affected." }
+          }
+          SectionHeader { text: "Spelling" }
+          Form {
+            Check { id: spellOn; Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; key: "web.spellcheck" }
+            // One per installed dictionary (a language without one would do nothing).
+            Flow {
+                id: spellLangs
+                Kirigami.FormData.label: "Languages:"
+                Layout.fillWidth: true
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+                spacing: Kirigami.Units.largeSpacing
+                visible: available.length > 0
+                enabled: spellOn.checked
+                readonly property var available: JSON.parse(Browser.spellDictionaries())
+                // What's chosen, as the dictionaries are named ("en-US" finds en_US).
+                readonly property var chosen: JSON.parse(Browser.resolveSpellLanguages(JSON.stringify(w.get("web.spellcheckLanguages"))))
+                Repeater {
+                    model: spellLangs.available
+                    delegate: QQC2.CheckBox {
+                        required property string modelData
+                        text: modelData
+                        checked: spellLangs.chosen.includes(modelData)
+                        onToggled: w.set("web.spellcheckLanguages", checked ? spellLangs.chosen.concat([modelData]) : spellLangs.chosen.filter(l => l !== modelData))
+                    }
+                }
+            }
+            Hint {
+                text: spellLangs.available.length > 0
+                    ? "The languages of the dictionaries installed on this computer. More come with your distribution's QtWebEngine dictionary packages."
+                    : "No spelling dictionaries were found, so nothing is checked. Your distribution's QtWebEngine dictionary packages add them."
+            }
 
             // ---- memory ("tabs.unloadInactive", WebTab.unload()) ----
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Memory" }
-            QQC2.CheckBox { id: unloadOn; Kirigami.FormData.label: "Inactive tabs:"; text: "Unload tabs that haven't been shown for a while"; checked: w.get("tabs.unloadInactive"); onToggled: w.set("tabs.unloadInactive", checked) }
+          }
+          SectionHeader { text: "Memory" }
+          Form {
+            Check { id: unloadOn; Kirigami.FormData.label: "Inactive tabs:"; text: "Unload tabs that haven't been shown for a while"; key: "tabs.unloadInactive" }
             RowLayout {
                 enabled: unloadOn.checked
                 QQC2.Label { text: "Unload after" }
                 QQC2.SpinBox { from: 1; to: 1440; editable: true; value: w.get("tabs.unloadAfterMinutes"); onValueModified: w.set("tabs.unloadAfterMinutes", value) }
                 QQC2.Label { text: "minutes" }
             }
-            QQC2.CheckBox { enabled: unloadOn.checked; text: "Keep pinned tabs loaded"; checked: w.get("tabs.unloadKeepPinned"); onToggled: w.set("tabs.unloadKeepPinned", checked) }
-            QQC2.Label {
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                wrapMode: Text.Wrap
-                opacity: 0.8
-                font: Kirigami.Theme.smallFont
+            Check { enabled: unloadOn.checked; text: "Keep pinned tabs loaded"; key: "tabs.unloadKeepPinned" }
+            Hint {
                 text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. Any tab can also be unloaded from its context menu."
             }
 
             // ---- form autofill ("browsing.formFill", formfill.rs) ----
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Forms" }
-            QQC2.CheckBox { id: ffOn; Kirigami.FormData.label: "Autofill:"; text: "Fill in forms with saved addresses"; checked: w.get("browsing.formFill"); onToggled: { w.set("browsing.formFill", checked); if (checked && FormFill.count > 0) FormFill.unlock() } }
-            QQC2.CheckBox { enabled: ffOn.checked; text: "Offer to save addresses typed into forms"; checked: w.get("browsing.formFillSave"); onToggled: w.set("browsing.formFillSave", checked) }
-            QQC2.Label {
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                wrapMode: Text.Wrap
-                opacity: 0.8
-                font: Kirigami.Theme.smallFont
+          }
+          SectionHeader { text: "Forms" }
+          Form {
+            Check { id: ffOn; Kirigami.FormData.label: "Autofill:"; text: "Fill in forms with saved addresses"; key: "browsing.formFill"; onToggled: if (checked && FormFill.count > 0) FormFill.unlock() }
+            Check { enabled: ffOn.checked; text: "Offer to save addresses typed into forms"; key: "browsing.formFillSave" }
+            Hint {
                 text: "Suggestions appear when you click into an address, name, email or phone field; nothing is filled in until you pick one. Saved entries are encrypted"
                     + (FormFill.keyStore === "kwallet" ? ", with the key kept in KDE Wallet."
                        : FormFill.keyStore === "file" ? ", with the key kept in a file in your Kite profile (KDE Wallet was not available), which protects them when the database alone is copied."
@@ -689,7 +1047,7 @@ ManagerWindow {
                 Connections { target: FormFill; function onChanged() { ff.refresh() } function onUnlockedChanged() { ff.refresh() } }
                 QQC2.Label {
                     visible: text !== ""
-                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 24
                     wrapMode: Text.Wrap
                     text: FormFill.unlocking ? "Opening KDE Wallet…"
                         : FormFill.error !== "" ? "Saved entries can't be read: " + FormFill.error + "."
@@ -708,7 +1066,7 @@ ManagerWindow {
                         required property var modelData
                         Layout.fillWidth: true
                         Kirigami.Icon { source: "user-identity"; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
-                        QQC2.Label { text: modelData.label; Layout.fillWidth: true; Layout.maximumWidth: Kirigami.Units.gridUnit * 20; elide: Text.ElideRight }
+                        QQC2.Label { text: modelData.label; Layout.fillWidth: true; Layout.maximumWidth: Kirigami.Units.gridUnit * 18; elide: Text.ElideRight }
                         QQC2.ToolButton { icon.name: "document-edit"; onClicked: { ffEdit.entry = modelData; ffEdit.open() } QQC2.ToolTip.text: "Edit"; QQC2.ToolTip.visible: hovered }
                         QQC2.ToolButton { icon.name: "edit-delete"; onClicked: FormFill.remove(modelData.id); QQC2.ToolTip.text: "Remove"; QQC2.ToolTip.visible: hovered }
                     }
@@ -758,7 +1116,9 @@ ManagerWindow {
             }
 
             // ---- dangerous sites ("browsing.safeBrowsing", safebrowsing.rs) ----
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Dangerous Sites" }
+          }
+          SectionHeader { text: "Dangerous Sites" }
+          Form {
             QQC2.ComboBox {
                 id: sbMode
                 Kirigami.FormData.label: "Protection:"
@@ -767,11 +1127,7 @@ ManagerWindow {
                 currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("browsing.safeBrowsing")))
                 onActivated: i => { w.set("browsing.safeBrowsing", model[i].k); sbStatus.refresh() }
             }
-            QQC2.Label {
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                wrapMode: Text.Wrap
-                opacity: 0.8
-                font: Kirigami.Theme.smallFont
+            Hint {
                 text: [
                     "Known phishing and malware sites load like any other. No extra network traffic.",
                     "Pages and downloads are checked against Google's lists of dangerous sites, with a warning before they open.\n\nTraffic: Kite downloads Google's lists of address fingerprints (shortened hashes) about every 30 minutes, a few megabytes at first, then small updates, and compares addresses on your computer. Only when an address matches a fingerprint, which is rare, does Kite ask Google about that fingerprint to confirm.\n\nPrivacy: Google never receives the addresses you visit, but sees your IP address with each update and confirmation, and a confirmation tells it you may be visiting one of the few sites sharing that fingerprint. The API key ties these requests to your Google account.",
@@ -805,56 +1161,78 @@ ManagerWindow {
                 // (Updates run in the background.)
                 Timer { interval: 2000; repeat: true; running: sbStatus.visible || sbMode.currentIndex > 0; onTriggered: sbStatus.refresh() }
             }
+            // Only with `kite --debug`: what the lists hold, and how an address is checked.
+            QQC2.Button {
+                Kirigami.FormData.label: "Debugging:"
+                visible: Browser.debugMode() && sbMode.currentIndex > 0
+                text: "Browse Lists…"
+                icon.name: "tools-report-bug"
+                onClicked: w.pageStack.push(safeBrowsingListsPage)
+                QQC2.ToolTip.text: "The entries checked against, as stored now (of the mode as applied)"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+            }
+          }
         }
     }
 
     Component {
         id: search
-        ColumnLayout {
+        PageColumn {
             id: se
             property var engines: JSON.parse(Browser.engines())
-            function save() { Browser.saveEngines(JSON.stringify(engines)); engines = JSON.parse(Browser.engines()) }
-            QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "Type a shortcut followed by a space and your search in the location bar, e.g. “w KDE”. Use %s where the search terms go." }
+            // (Saved with Apply.)
+            function edited(list) {
+                engines = list
+                w.stage("engines", () => Browser.saveEngines(JSON.stringify(list)))
+            }
+            function change(index, field, value) {
+                if (engines[index][field] === value) return
+                const list = engines.slice()
+                list[index] = Object.assign({}, list[index], {[field]: value})
+                edited(list)
+            }
+            Hint {
+                Layout.maximumWidth: -1
+                text: "Type a shortcut followed by a space and your search in the location bar, e.g. “w KDE”. Use %s where the search terms go."
+            }
             Repeater {
                 model: se.engines
                 delegate: RowLayout {
                     required property var modelData
                     required property int index
                     Layout.fillWidth: true
-                    QQC2.TextField { text: modelData.name; Layout.preferredWidth: Kirigami.Units.gridUnit * 8; onEditingFinished: { se.engines[index].name = text; se.save() } }
-                    QQC2.TextField { text: modelData.url; Layout.fillWidth: true; onEditingFinished: { se.engines[index].url = text; se.save() } }
-                    QQC2.TextField { text: modelData.shortcut; Layout.preferredWidth: Kirigami.Units.gridUnit * 3; placeholderText: "key"; onEditingFinished: { se.engines[index].shortcut = text; se.save() } }
-                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { se.engines.splice(index, 1); se.save() } }
+                    QQC2.TextField { text: modelData.name; Layout.preferredWidth: Kirigami.Units.gridUnit * 8; onEditingFinished: se.change(index, "name", text) }
+                    QQC2.TextField { text: modelData.url; Layout.fillWidth: true; onEditingFinished: se.change(index, "url", text) }
+                    QQC2.TextField { text: modelData.shortcut; Layout.preferredWidth: Kirigami.Units.gridUnit * 3; placeholderText: "key"; onEditingFinished: se.change(index, "shortcut", text) }
+                    QQC2.ToolButton {
+                        icon.name: "edit-delete"
+                        text: "Remove"
+                        display: QQC2.AbstractButton.IconOnly
+                        onClicked: se.edited(se.engines.filter((_, i) => i !== index))
+                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
                 }
             }
-            QQC2.Button { text: "Add Search Engine"; icon.name: "list-add"; onClicked: { se.engines = se.engines.concat([{name: "New engine", url: "https://example.com/search?q=%s", shortcut: "", suggestions_url: "", post_data: ""}]); se.save() } }
+            QQC2.Button { text: "Add Search Engine"; icon.name: "list-add"; onClicked: se.edited(se.engines.concat([{name: "New engine", url: "https://example.com/search?q=%s", shortcut: "", suggestions_url: "", post_data: ""}])) }
         }
     }
 
     Component {
         id: privacy
-        ColumnLayout {
-            spacing: Kirigami.Units.largeSpacing
-            component Hint: QQC2.Label {
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                font: Kirigami.Theme.smallFont
-            }
-            component Check: QQC2.CheckBox {
-                property string key
-                checked: !!w.get(key)
-                onToggled: w.set(key, checked)
-            }
-
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
+        PageColumn {
+            SectionHeader { text: "History" }
+            Form {
                 Check { Kirigami.FormData.label: "History:"; text: "Remember browsing history"; key: "privacy.saveHistory" }
                 Check { text: "Clear history, cookies and cache when Kite closes"; key: "privacy.clearOnExit" }
-                Check { Kirigami.FormData.label: "Private windows:"; text: "Show often visited sites on the start page"; key: "privacy.privateHistoryTiles" }
+            }
+            SectionHeader { text: "Private Windows" }
+            Form {
+                Check { Kirigami.FormData.label: "From your browsing:"; text: "Show often visited sites on the start page"; key: "privacy.privateHistoryTiles" }
                 Check { text: "Suggest pages from the history in the address bar"; key: "privacy.privateHistorySuggestions" }
                 Check { text: "Show notifications from pages and downloads"; key: "privacy.privateNotifications" }
-                QQC2.Label { text: "These show pages from your regular browsing in private windows, where others might see them. What you added yourself, tiles and bookmarks, always shows."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                Hint { text: "These show pages from your regular browsing in private windows, where others might see them. What you added yourself, tiles and bookmarks, always shows." }
+            }
+            SectionHeader { text: "Cookies" }
+            Form {
                 QQC2.ComboBox {
                     Kirigami.FormData.label: "Cookies:"
                     model: [{k: "all", t: "Allow all cookies"}, {k: "noThirdParty", t: "Block third-party cookies"}, {k: "none", t: "Block all cookies (many sites won't work)"}]
@@ -865,9 +1243,9 @@ ManagerWindow {
                 Check { id: siteCookies; text: "Use per-site cookie rules"; key: "privacy.siteCookieRules" }
                 Hint { text: "Allow, block, or keep until Kite closes the cookies of single sites, in Site Settings." }
                 QQC2.Button { text: "Manage Cookies…"; icon.name: "preferences-web-browser-cookies"; onClicked: w.pageStack.push(cookiesPage) }
-                QQC2.Button { Kirigami.FormData.label: "Certificates:"; text: "Manage Certificate Exceptions…"; icon.name: "security-medium"; onClicked: w.pageStack.push(certificatesPage) }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Tracking" }
+            }
+            SectionHeader { text: "Tracking" }
+            Form {
                 Check { Kirigami.FormData.label: "Ask sites:"; text: "Send Global Privacy Control"; key: "privacy.globalPrivacyControl" }
                 Hint { text: "Asks sites not to sell or share your data. Legally binding in some places, such as California." }
                 Check { text: "Send “Do Not Track”"; key: "web.doNotTrack" }
@@ -877,17 +1255,17 @@ ManagerWindow {
                 Check { text: "Block link click pings"; key: "privacy.blockPings" }
                 Check { text: "Tell sites which page linked to them (referrer)"; key: "privacy.sendReferer" }
                 Check { text: "Let sites ask to open links like mailto: and magnet:"; key: "privacy.protocolHandlers" }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Fingerprinting" }
-                Check { Kirigami.FormData.label: "Identity:"; text: "Use a common user agent"; key: "privacy.genericUserAgent" }
-                Hint { text: "Leaves out “QtWebEngine” from what Kite tells sites about itself, so it reads like Chrome." }
-                Check { text: "Appear as Firefox when signing in to Google"; key: "web.googleSignIn" }
-                Hint { text: "Google refuses to sign you in with browsers it doesn't know. This only applies on accounts.google.com, and only tells that site Kite is Firefox." }
+            }
+            SectionHeader { text: "Fingerprinting" }
+            Form {
+                Check { Kirigami.FormData.label: "Identity:"; text: "Appear as Firefox when signing in to Google"; key: "web.googleSignIn" }
+                Hint { text: "Google refuses to sign you in with browsers it doesn't know. This only applies on accounts.google.com, and only tells that site Kite is Firefox. What Kite tells other sites it is, the user agent, is chosen in Browsing settings." }
                 Check { text: "Hide local network addresses from WebRTC"; key: "privacy.webrtcPublicOnly" }
                 Check { text: "Allow fingerprint protection"; key: "privacy.antiFingerprinting" }
                 Hint { text: "Turn it on for single sites in Site Settings: canvas, WebGL and audio readouts are blurred and the hardware reported is generic. Some sites may misbehave." }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Connections" }
+            }
+            SectionHeader { text: "Connections" }
+            Form {
                 Check { Kirigami.FormData.label: "Encryption:"; text: "HTTPS-only mode"; key: "privacy.httpsOnly" }
                 Hint { text: "Pages load over a secure connection. Sites without one show a warning first. Local addresses are left alone." }
                 QQC2.ComboBox {
@@ -909,8 +1287,10 @@ ManagerWindow {
                     onActivated: i => w.set("privacy.dnsServer", model[i])
                 }
                 Check { text: "Look up the addresses of links in advance (DNS prefetching)"; key: "web.dnsPrefetch" }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Proxy" }
+                QQC2.Button { Kirigami.FormData.label: "Certificates:"; text: "Manage Certificate Exceptions…"; icon.name: "security-medium"; onClicked: w.pageStack.push(certificatesPage) }
+            }
+            SectionHeader { text: "Proxy" }
+            Form {
                 QQC2.ComboBox {
                     id: proxyMode
                     Kirigami.FormData.label: "Proxy:"
@@ -932,8 +1312,9 @@ ManagerWindow {
                     QQC2.SpinBox { from: 1; to: 65535; editable: true; value: w.get("privacy.proxyPort"); textFromValue: v => String(v); valueFromText: t => parseInt(t) || 1; onValueModified: w.set("privacy.proxyPort", value) }
                 }
                 Hint { text: "Proxy changes apply after restarting Kite. With SOCKS5 (e.g. Tor on port 9050), host names are looked up through the proxy too." }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Container tabs" }
+            }
+            SectionHeader { text: "Container Tabs" }
+            Form {
                 Check { id: containersOn; Kirigami.FormData.label: "Containers:"; text: "Use container tabs"; key: "privacy.containers" }
                 Hint { text: "Each container keeps its own cookies, site data and logins: sites in one container can't see what you do in another. Open them from the menu, the tab bar or a link's context menu." }
                 // ---- containers ------------------------------------------------
@@ -991,8 +1372,9 @@ ManagerWindow {
                     }
                     Hint { text: "Removing a container closes nothing: its open tabs act as normal tabs after Kite restarts." }
                 }
-
-                Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Clear Recent History" }
+            }
+            SectionHeader { text: "Clear Recent History" }
+            Form {
                 QQC2.ComboBox { id: since; Kirigami.FormData.label: "Time range:"; model: ["Last hour", "Today", "Last 7 days", "Everything"] }
                 QQC2.CheckBox { id: cHistory; Kirigami.FormData.label: "Clear:"; text: "Browsing history"; checked: true }
                 QQC2.CheckBox { id: cCookies; text: "Cookies and site data"; checked: true }
@@ -1014,9 +1396,8 @@ ManagerWindow {
 
     Component {
         id: passwords
-        ColumnLayout {
+        PageColumn {
             id: pw
-            spacing: Kirigami.Units.largeSpacing
             property var entries: []
             property var exceptions: []
             property var revealed: ({})
@@ -1053,18 +1434,25 @@ ManagerWindow {
             Connections { target: Passwords; function onChanged() { pw.reload() } }
             readonly property var shown: entries.filter(e => search.text === "" || (e.host + " " + e.username).toLowerCase().includes(search.text.toLowerCase()))
 
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
-                QQC2.CheckBox { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; checked: w.get("passwords.save"); onToggled: w.set("passwords.save", checked) }
-                QQC2.CheckBox { text: "Fill logins automatically over https"; checked: w.get("passwords.autofill"); onToggled: w.set("passwords.autofill", checked) }
-                QQC2.Label { text: "On plain http pages, and with this off, a login is filled when you pick it from the password icon in the location bar."; opacity: 0.7; font: Kirigami.Theme.smallFont; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                QQC2.CheckBox { id: genOn; Kirigami.FormData.label: "Generator:"; text: "Suggest strong passwords on sign-up forms"; checked: w.get("passwords.generator"); onToggled: w.set("passwords.generator", checked) }
+            SectionHeader { text: "Saving and Filling" }
+            Form {
+                Check { Kirigami.FormData.label: "Logins:"; text: "Offer to save passwords"; key: "passwords.save" }
+                Check { text: "Fill logins automatically over https"; key: "passwords.autofill" }
+                Hint { text: "On plain http pages, and with this off, a login is filled when you pick it from the password icon in the location bar." }
+            }
+            SectionHeader { text: "Generator" }
+            Form {
+                Check { id: genOn; Kirigami.FormData.label: "Sign-up forms:"; text: "Suggest strong passwords"; key: "passwords.generator" }
                 RowLayout {
+                    Kirigami.FormData.label: "Length:"
                     enabled: genOn.checked
                     QQC2.SpinBox { from: 8; to: 64; value: w.get("passwords.generatorLength"); onValueModified: w.set("passwords.generatorLength", value) }
                     QQC2.Label { text: "characters" }
-                    QQC2.CheckBox { text: "Include symbols"; checked: w.get("passwords.generatorSymbols"); onToggled: w.set("passwords.generatorSymbols", checked) }
                 }
+                Check { enabled: genOn.checked; text: "Include symbols"; key: "passwords.generatorSymbols" }
+            }
+            SectionHeader { text: "Storage" }
+            Form {
                 QQC2.ComboBox {
                     id: storage
                     Kirigami.FormData.label: "Store logins in:"
@@ -1079,11 +1467,8 @@ ManagerWindow {
                     currentIndex: Math.max(0, model.findIndex(m => m.k === Passwords.backend))
                     onActivated: i => pw.switchTo(model[i].k)
                 }
-                QQC2.Label {
+                Hint {
                     visible: Passwords.backend === "kwallet" || pw.switching || Passwords.walletOpening
-                    Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-                    wrapMode: Text.Wrap
-                    opacity: 0.75
                     text: Passwords.walletOpening ? "Opening KDE Wallet…" : pw.switching ? "Moving saved logins…"
                         : "Logins are kept in your network wallet, in the same folder Falkon uses, so both browsers share them."
                 }
@@ -1094,7 +1479,7 @@ ManagerWindow {
                 }
             }
 
-            Kirigami.Heading { level: 3; text: "Saved Logins" }
+            SectionHeader { text: "Saved Logins" }
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
                 visible: Passwords.locked
@@ -1103,40 +1488,53 @@ ManagerWindow {
             }
             RowLayout {
                 visible: !Passwords.locked
-                Kirigami.SearchField { id: search; Layout.fillWidth: true }
+                // (It may shrink: its own minimum would widen the page's column.)
+                Kirigami.SearchField { id: search; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 6 }
                 QQC2.Button { text: "Add"; icon.name: "list-add"; onClicked: { editDlg.entry = null; editDlg.open() } }
                 QQC2.Button { text: "Import…"; icon.name: "document-import"; onClicked: importDlg.open() }
                 QQC2.Button { text: "Export…"; icon.name: "document-export"; enabled: pw.entries.length > 0; onClicked: exportWarn.open() }
             }
             QQC2.Label { visible: !Passwords.locked && pw.entries.length === 0; text: "No saved logins."; opacity: 0.7 }
-            Repeater {
+            // (Rows in a column of their own: back to back, as a list.)
+            ColumnLayout {
+              Layout.fillWidth: true
+              spacing: 0
+              Repeater {
                 model: pw.shown
-                delegate: RowLayout {
+                delegate: ListRow {
                     required property var modelData
-                    Layout.fillWidth: true
-                    Kirigami.Icon { source: "globe"; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
-                    QQC2.Label { text: modelData.host; Layout.preferredWidth: Kirigami.Units.gridUnit * 11; elide: Text.ElideMiddle; font.bold: true }
-                    QQC2.Label { text: modelData.username || "(no username)"; Layout.preferredWidth: Kirigami.Units.gridUnit * 9; elide: Text.ElideRight }
-                    QQC2.Label { text: pw.revealed[modelData.id] ? modelData.password : "••••••••"; Layout.fillWidth: true; elide: Text.ElideRight; font.family: "monospace" }
-                    QQC2.ToolButton { icon.name: pw.revealed[modelData.id] ? "password-show-off" : "password-show-on"; onClicked: { const r = Object.assign({}, pw.revealed); r[modelData.id] = !r[modelData.id]; pw.revealed = r } QQC2.ToolTip.text: "Show password"; QQC2.ToolTip.visible: hovered }
-                    QQC2.ToolButton { icon.name: "edit-copy"; onClicked: { clip.text = modelData.password; clip.selectAll(); clip.copy(); clip.text = ""; w.app.toast("Password copied", "edit-copy") } QQC2.ToolTip.text: "Copy password"; QQC2.ToolTip.visible: hovered }
-                    QQC2.ToolButton { icon.name: "document-edit"; onClicked: { editDlg.entry = modelData; editDlg.open() } }
-                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: Passwords.remove(modelData.id) }
+                    RowLayout {
+                        QQC2.Label { text: modelData.host; Layout.preferredWidth: Kirigami.Units.gridUnit * 11; elide: Text.ElideMiddle; font.bold: true }
+                        QQC2.Label { text: modelData.username || "(no username)"; Layout.preferredWidth: Kirigami.Units.gridUnit * 9; elide: Text.ElideRight }
+                        QQC2.Label { text: pw.revealed[modelData.id] ? modelData.password : "••••••••"; Layout.fillWidth: true; elide: Text.ElideRight; font.family: "monospace" }
+                        RowButton { icon.name: pw.revealed[modelData.id] ? "password-show-off" : "password-show-on"; text: pw.revealed[modelData.id] ? "Hide password" : "Show password"; onClicked: { const r = Object.assign({}, pw.revealed); r[modelData.id] = !r[modelData.id]; pw.revealed = r } }
+                        RowButton { icon.name: "edit-copy"; text: "Copy password"; onClicked: { clip.text = modelData.password; clip.selectAll(); clip.copy(); clip.text = ""; w.app.toast("Password copied", "edit-copy") } }
+                        RowButton { icon.name: "document-edit"; text: "Edit login"; onClicked: { editDlg.entry = modelData; editDlg.open() } }
+                        RowButton { icon.name: "edit-delete"; text: "Remove login"; onClicked: Passwords.remove(modelData.id) }
+                    }
                 }
+              }
             }
             TextEdit { id: clip; visible: false }
             QQC2.Button { visible: pw.entries.length > 0; text: "Remove All Logins…"; icon.name: "edit-delete"; onClicked: removeAllDlg.open() }
 
-            Kirigami.Heading { level: 3; text: "Never Saved For" }
+            SectionHeader { text: "Never Saved For" }
             QQC2.Label { visible: pw.exceptions.length === 0; text: "No exceptions."; opacity: 0.7 }
-            Repeater {
+            ColumnLayout {
+              Layout.fillWidth: true
+              spacing: 0
+              Repeater {
                 model: pw.exceptions
-                delegate: RowLayout {
+                delegate: ListRow {
                     required property string modelData
-                    QQC2.Label { text: modelData; Layout.preferredWidth: Kirigami.Units.gridUnit * 16 }
-                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: Passwords.removeException(modelData) }
+                    RowLayout {
+                        QQC2.Label { text: modelData; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                        RowButton { icon.name: "edit-delete"; text: "Remove exception (logins can be saved there again)"; onClicked: Passwords.removeException(modelData) }
+                    }
                 }
+              }
             }
+            QQC2.Button { visible: pw.exceptions.length > 0; text: "Remove All Exceptions…"; icon.name: "edit-delete"; onClicked: removeAllExceptionsDlg.open() }
             QQC2.Label { visible: pw.message !== ""; text: pw.message }
 
             FileDialog { id: importDlg; title: "Import Passwords"; nameFilters: ["Passwords (*.csv *.xml)", "CSV from Firefox, Chrome, Bitwarden (*.csv)", "Falkon export (*.xml)"]; onAccepted: pw.message = Passwords.importFile(selectedFile.toString()) }
@@ -1147,6 +1545,13 @@ ManagerWindow {
                 subtitle: "Your passwords will be saved as readable text. Anyone who can open the file can see them."
                 standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
                 onAccepted: exportDlg.open()
+            }
+            Kirigami.PromptDialog {
+                id: removeAllExceptionsDlg
+                title: "Remove All Exceptions?"
+                subtitle: "Kite will offer to save logins on these sites again."
+                standardButtons: Kirigami.Dialog.Ok | Kirigami.Dialog.Cancel
+                onAccepted: { for (const host of pw.exceptions.slice()) Passwords.removeException(host) }
             }
             Kirigami.PromptDialog {
                 id: removeAllDlg
@@ -1216,9 +1621,10 @@ ManagerWindow {
 
     Component {
         id: adblock
-        ColumnLayout {
+        PageColumn {
             id: ab
-            property var subs: w.get("adblock.subscriptions")
+            readonly property var subs: w.get("adblock.subscriptions")
+            function setSubs(list) { w.set("adblock.subscriptions", list) }
             property string status: ""
             Connections { target: Browser; function onAdblockStatus(m) { ab.status = m } }
             readonly property string extBlocker: Browser.contentBlocker(false)
@@ -1228,26 +1634,12 @@ ManagerWindow {
                 type: Kirigami.MessageType.Information
                 text: ab.extBlocker + " is blocking content, so Kite's built-in blocker is paused. These settings apply again when it is disabled or removed."
             }
-            QQC2.CheckBox { text: "Block ads and trackers"; checked: w.get("adblock.enabled"); onToggled: w.set("adblock.enabled", checked) }
-            Kirigami.Heading { level: 3; text: "Filter Subscriptions" }
-            Repeater {
-                model: ab.subs
-                delegate: RowLayout {
-                    required property var modelData
-                    required property int index
-                    Layout.fillWidth: true
-                    QQC2.CheckBox { checked: modelData.enabled; onToggled: { const s = ab.subs.slice(); s[index].enabled = checked; ab.subs = s; w.set("adblock.subscriptions", s) } }
-                    ColumnLayout { spacing: 0; Layout.fillWidth: true
-                        QQC2.Label { text: modelData.title }
-                        QQC2.Label { text: modelData.url; font: Kirigami.Theme.smallFont; opacity: 0.7; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                    }
-                    QQC2.ToolButton { icon.name: "edit-delete"; onClicked: { const s = ab.subs.slice(); s.splice(index, 1); ab.subs = s; w.set("adblock.subscriptions", s) } }
-                }
-            }
+            SectionHeader { text: "Filter Subscriptions" }
             RowLayout {
-                QQC2.TextField { id: subTitle; placeholderText: "Title" }
+                Layout.fillWidth: true
+                QQC2.TextField { id: subTitle; placeholderText: "Title"; Layout.preferredWidth: Kirigami.Units.gridUnit * 8 }
                 QQC2.TextField { id: subUrl; placeholderText: "https://… list URL"; Layout.fillWidth: true }
-                QQC2.Button { text: "Add"; icon.name: "list-add"; enabled: subUrl.text.startsWith("http"); onClicked: { const s = ab.subs.concat([{title: subTitle.text || subUrl.text, url: subUrl.text, enabled: true}]); ab.subs = s; w.set("adblock.subscriptions", s); subUrl.text = ""; subTitle.text = "" } }
+                QQC2.Button { text: "Add"; icon.name: "list-add"; enabled: subUrl.text.startsWith("http"); onClicked: { ab.setSubs(ab.subs.concat([{title: subTitle.text || subUrl.text, url: subUrl.text, enabled: true}])); subUrl.text = ""; subTitle.text = "" } }
             }
             QQC2.Menu {
                 id: presets
@@ -1256,39 +1648,141 @@ ManagerWindow {
                 QQC2.MenuItem { text: "Fanboy's Annoyances"; onTriggered: { subTitle.text = text; subUrl.text = "https://easylist.to/easylist/fanboy-annoyance.txt" } }
                 QQC2.MenuItem { text: "EasyList Germany"; onTriggered: { subTitle.text = text; subUrl.text = "https://easylist.to/easylistgermany/easylistgermany.txt" } }
             }
-            QQC2.Button { text: "Suggested Lists…"; icon.name: "view-list-details"; onClicked: presets.popup() }
-            Kirigami.Heading { level: 3; text: "Custom Rules" }
+            RowLayout {
+                QQC2.Button { text: "Suggested Lists…"; icon.name: "view-list-details"; onClicked: presets.popup() }
+                QQC2.Button {
+                    text: "Update Lists Now"
+                    icon.name: "view-refresh"
+                    onClicked: { Browser.reloadAdblock(true); ab.status = "Downloading lists…" }
+                    QQC2.ToolTip.text: "Download the lists again now (of the subscriptions as applied)"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                }
+                QQC2.Label { text: ab.status; opacity: 0.7; Layout.fillWidth: true; elide: Text.ElideRight }
+            }
+            // (Rows back to back, as a list.)
+            ColumnLayout {
+              Layout.fillWidth: true
+              spacing: 0
+              Repeater {
+                model: ab.subs
+                delegate: ListRow {
+                    required property var modelData
+                    required property int index
+                    RowLayout {
+                        QQC2.CheckBox { Accessible.name: modelData.title; checked: modelData.enabled; onToggled: { const s = ab.subs.slice(); s[index] = Object.assign({}, s[index], {enabled: checked}); ab.setSubs(s) } }
+                        ColumnLayout { spacing: 0; Layout.fillWidth: true
+                            QQC2.Label { text: modelData.title; Layout.fillWidth: true; elide: Text.ElideRight }
+                            QQC2.Label { text: modelData.url; font: Kirigami.Theme.smallFont; opacity: 0.7; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        }
+                        RowButton {
+                            icon.name: "edit-delete"
+                            text: "Remove " + modelData.title
+                            onClicked: ab.setSubs(ab.subs.filter((_, i) => i !== index))
+                        }
+                    }
+                }
+              }
+            }
+
+            SectionHeader { text: "Custom Rules" }
             QQC2.TextArea {
                 id: rules
                 Layout.fillWidth: true
                 Layout.preferredHeight: Kirigami.Units.gridUnit * 8
                 font.family: "monospace"
                 placeholderText: "||ads.example.com^\nexample.org##.banner"
-                text: w.get("adblock.customRules")
-                onEditingFinished: w.set("adblock.customRules", text)
+                // (Not bound: setting it again while typing would move the cursor.)
+                Component.onCompleted: text = w.get("adblock.customRules")
+                onTextChanged: if (text !== w.get("adblock.customRules")) w.set("adblock.customRules", text)
                 // (A rule added from a page's Block Element while this is open.)
                 Connections { target: w.app; function onCustomFiltersChanged() { rules.text = w.get("adblock.customRules") } }
             }
-            Kirigami.Heading { level: 3; text: "Disabled on These Sites" }
+            Hint { Layout.maximumWidth: -1; text: "Adblock Plus syntax, one rule per line. The filters are rebuilt when you apply." }
+
+            SectionHeader { text: "Disabled on These Sites" }
             QQC2.Label { text: w.get("adblock.allowlist").join(", ") || "None"; wrapMode: Text.Wrap; Layout.fillWidth: true }
-            RowLayout {
-                QQC2.Button { text: "Apply"; icon.name: "dialog-ok-apply"; onClicked: { w.set("adblock.customRules", rules.text); Browser.reloadAdblock(false); ab.status = "Rebuilding…" } }
-                QQC2.Button { text: "Update Lists Now"; icon.name: "view-refresh"; onClicked: { Browser.reloadAdblock(true); ab.status = "Downloading lists…" } }
-                QQC2.Label { text: ab.status; opacity: 0.8 }
-            }
         }
     }
 
     Component {
         id: downloads
-        Kirigami.FormLayout {
-            RowLayout {
-                Kirigami.FormData.label: "Save files to:"
-                QQC2.TextField { id: dir; text: w.get("downloads.directory"); Layout.preferredWidth: Kirigami.Units.gridUnit * 20; onEditingFinished: w.set("downloads.directory", text) }
-                QQC2.Button { icon.name: "document-open-folder"; onClicked: folderDialog.open() }
-                FolderDialog { id: folderDialog; onAccepted: { dir.text = selectedFolder.toString().replace("file://", ""); w.set("downloads.directory", dir.text) } }
+        PageColumn {
+            SectionHeader { text: "Saving" }
+            Form {
+                RowLayout {
+                    Kirigami.FormData.label: "Save files to:"
+                    QQC2.TextField { id: dir; text: w.get("downloads.directory"); Layout.preferredWidth: Kirigami.Units.gridUnit * 18; onEditingFinished: w.set("downloads.directory", text) }
+                    QQC2.Button {
+                        icon.name: "document-open-folder"
+                        text: "Choose Folder…"
+                        display: QQC2.AbstractButton.IconOnly
+                        onClicked: folderDialog.open()
+                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
+                    FolderDialog { id: folderDialog; onAccepted: { dir.text = selectedFolder.toString().replace("file://", ""); w.set("downloads.directory", dir.text) } }
+                }
+                Check { text: "Always ask where to save files"; key: "downloads.askWhereToSave" }
             }
-            QQC2.CheckBox { text: "Always ask where to save files"; checked: w.get("downloads.askWhereToSave"); onToggled: w.set("downloads.askWhereToSave", checked) }
+
+            // ---- notifications ("downloads.notifications", Main.notifyDownloadComplete) ----
+            SectionHeader { text: "Notifications" }
+            Form {
+                Check { id: dlNotify; Kirigami.FormData.label: "Finished downloads:"; text: "Show a notification when a download finishes"; key: "downloads.notifications" }
+                RowLayout {
+                    Kirigami.FormData.label: "Close after:"
+                    enabled: dlNotify.checked
+                    QQC2.SpinBox {
+                        from: 0; to: 300; stepSize: 5; editable: true
+                        value: w.get("downloads.notificationTimeout")
+                        textFromValue: v => v === 0 ? "Desktop default" : v + " s"
+                        valueFromText: t => /default/i.test(t) ? 0 : (parseInt(t) || 0)
+                        onValueModified: w.set("downloads.notificationTimeout", value)
+                    }
+                }
+                Hint { text: "Seconds the notification stays; 0 leaves it to the desktop's notification settings. With Plasma Integration showing downloads in the notification area, Plasma shows them as jobs and decides how long they stay." }
+            }
+
+            // ---- an external download manager ("downloads.external", external.rs) ----
+            SectionHeader { text: "External Download Manager" }
+            Form {
+                Check { id: externalOn; Kirigami.FormData.label: "Downloads:"; text: "Use an external download manager"; key: "downloads.external" }
+                RowLayout {
+                    Kirigami.FormData.label: "Program:"
+                    enabled: externalOn.checked
+                    QQC2.TextField {
+                        id: externalProgram
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 18
+                        placeholderText: "e.g. kget, uget-gtk or /path/to/program"
+                        text: w.get("downloads.externalProgram")
+                        onEditingFinished: w.set("downloads.externalProgram", text.trim())
+                    }
+                    QQC2.Button {
+                        icon.name: "document-open"
+                        text: "Choose Program…"
+                        display: QQC2.AbstractButton.IconOnly
+                        onClicked: programDialog.open()
+                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    }
+                    FileDialog {
+                        id: programDialog
+                        title: "Choose a Download Manager"
+                        currentFolder: "file:///usr/bin"
+                        onAccepted: {
+                            externalProgram.text = decodeURIComponent(selectedFile.toString().replace(/^file:\/\//, ""))
+                            w.set("downloads.externalProgram", externalProgram.text)
+                        }
+                    }
+                }
+                QQC2.TextField {
+                    Kirigami.FormData.label: "Arguments:"
+                    enabled: externalOn.checked
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 18
+                    font.family: "monospace"
+                    text: w.get("downloads.externalArguments")
+                    onEditingFinished: w.set("downloads.externalArguments", text)
+                }
+                Hint { text: "%d is replaced with the file's address and %f with its name; without %d, the address goes last. Quotes group words, as in a terminal." }
+                Hint { text: "The program gets only the address, not your sign-in to the site, so downloads that need you to be signed in may fail there. Private windows, saved pages and files made by a page still download in Kite." }
+            }
         }
     }
 
@@ -1363,9 +1857,8 @@ ManagerWindow {
     }
     Component {
         id: sites
-        ColumnLayout {
+        PageColumn {
             id: ss
-            spacing: Kirigami.Units.largeSpacing
             property var list: []
             function reload() { list = JSON.parse(Browser.allSiteSettings()) }
             Component.onCompleted: { reload(); suggest() }
@@ -1403,10 +1896,9 @@ ManagerWindow {
 
             ColumnLayout {
                 Layout.fillWidth: true
-                QQC2.Label {
-                    Layout.fillWidth: true
-                    wrapMode: Text.Wrap
-                    text: "Sites can have their own zoom level, dark mode, style sheet and script. Zoom levels you set while browsing are remembered here too."
+                Hint {
+                    Layout.maximumWidth: -1
+                    text: "Sites can have their own zoom level, dark mode, cookie rules, user agent, style sheet and script. Zoom levels you set while browsing are remembered here too."
                 }
                 RowLayout {
                     QQC2.TextField {
@@ -1480,23 +1972,22 @@ ManagerWindow {
                 })
             }
             // Always in view, however long the page gets (like System Settings' bar).
-            footer: QQC2.ToolBar {
-                position: QQC2.ToolBar.Footer
-                contentItem: RowLayout {
-                    QQC2.Button {
-                        text: "Remove Site"
-                        icon.name: "edit-delete"
-                        onClicked: { Browser.clearSiteSettings(sitePage.host); w.app.siteSettingsChanged(sitePage.host); w.pageStack.pop() }
-                    }
-                    QQC2.Button { text: "Reset"; icon.name: "edit-undo"; enabled: editor.changed; onClicked: editor.load() }
-                    Item { Layout.fillWidth: true }
-                    QQC2.Button { text: "Apply"; icon.name: "dialog-ok-apply"; enabled: editor.changed; onClicked: editor.save() }
+            footer: ApplyBar {
+                changed: editor.changed
+                onApply: editor.save()
+                onCancel: editor.load()
+                leading: QQC2.Button {
+                    text: "Remove Site"
+                    icon.name: "edit-delete"
+                    onClicked: { Browser.clearSiteSettings(sitePage.host); w.app.siteSettingsChanged(sitePage.host); w.pageStack.pop() }
                 }
             }
-            ColumnLayout {
+            Item {
+            implicitHeight: editor.implicitHeight
+            PageColumn {
                 id: editor
-                width: sitePage.width - Kirigami.Units.gridUnit * 2
-                spacing: Kirigami.Units.largeSpacing
+                width: w.columnWidthIn(sitePage)
+                x: w.columnXIn(sitePage)
                 property var site: ({})
                 function load() {
                     site = JSON.parse(Browser.siteSettings(sitePage.host))
@@ -1505,10 +1996,7 @@ ManagerWindow {
                     darkMode.currentIndex = site.dark_mode || 0
                     cookieRule.currentIndex = site.cookies || 0
                     fingerprint.checked = site.fingerprint === 1
-                    const ua = site.user_agent || ""
-                    const preset = uaChoice.presets.findIndex(p => p.userAgent === ua)
-                    uaChoice.currentIndex = !ua ? 0 : preset >= 0 ? preset + 1 : uaChoice.customIndex
-                    uaCustom.text = uaChoice.currentIndex === uaChoice.customIndex ? ua : ""
+                    uaChoice.load(site.user_agent || "")
                     css.text = site.css || ""
                     js.text = site.js || ""
                 }
@@ -1528,8 +2016,9 @@ ManagerWindow {
                 }
                 Component.onCompleted: load()
 
-                Kirigami.FormLayout {
-                    Layout.fillWidth: true
+                SectionHeader { text: "Appearance" }
+                Form {
+                    id: siteForm
                     RowLayout {
                         Kirigami.FormData.label: "Zoom:"
                         QQC2.CheckBox { id: zoomCustom; text: "Own zoom level" }
@@ -1540,6 +2029,9 @@ ManagerWindow {
                         Kirigami.FormData.label: "Dark mode:"
                         model: [(w.get("appearance.forceDarkMode") ? "Like other sites (forced dark)" : "Like other sites (as designed)"), "Always force dark", "Always force light"]
                     }
+                }
+                SectionHeader { text: "Privacy and Identity" }
+                Form {
                     // Per-site cookie rules ("privacy.siteCookieRules").
                     QQC2.ComboBox {
                         id: cookieRule
@@ -1551,11 +2043,9 @@ ManagerWindow {
                         QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                         // (A disabled control gets no hover: the hint is shown below.)
                     }
-                    QQC2.Label {
+                    Hint {
                         visible: !cookieRule.enabled
                         text: "Turn on per-site cookie rules in Privacy settings to use this."
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
                     }
                     // Fingerprint protection ("privacy.antiFingerprinting").
                     QQC2.CheckBox {
@@ -1564,135 +2054,109 @@ ManagerWindow {
                         enabled: w.get("privacy.antiFingerprinting")
                         text: "Protect against fingerprinting"
                     }
-                    QQC2.Label {
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-                        wrapMode: Text.Wrap
+                    Hint {
                         text: fingerprint.enabled
                             ? "Blurs canvas, WebGL and audio readouts and reports generic hardware, so this site can't recognise you by them. Some sites (drawing tools, maps, captchas) may misbehave."
                             : "Turn on fingerprint protection in Privacy settings to use this."
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
                     }
                     // The site's own user agent: sent to its server and seen by its pages.
-                    QQC2.ComboBox {
-                        id: uaChoice
-                        Kirigami.FormData.label: "User agent:"
-                        readonly property var presets: JSON.parse(Browser.userAgentPresets())
-                        readonly property int customIndex: presets.length + 1
-                        // What's stored: "" for the one other sites get.
-                        readonly property string value: currentIndex === 0 ? "" : currentIndex === customIndex ? uaCustom.text.trim() : presets[currentIndex - 1].userAgent
-                        model: ["Like other sites"].concat(presets.map(p => p.name), ["Custom…"])
-                        onActivated: if (currentIndex === customIndex) uaCustom.forceActiveFocus()
-                    }
-                    QQC2.TextField {
-                        id: uaCustom
-                        visible: uaChoice.currentIndex === uaChoice.customIndex
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 30
-                        placeholderText: "Type or paste a user agent"
-                    }
-                    QQC2.Label {
-                        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-                        wrapMode: Text.Wrap
+                    UserAgentField { id: uaChoice; Kirigami.FormData.label: "User agent:" }
+                    Hint {
                         text: "For sites that refuse Kite or show it the wrong page. Some refuse a browser claiming to be Chrome that isn't: \"Kite, naming QtWebEngine\" tells them what it is."
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
                     }
                 }
-                Kirigami.Heading { level: 4; text: "Custom CSS" }
-                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Added to every page of this site. Use !important to override the site's own styles." }
+                SectionHeader { text: "Custom CSS" }
+                Hint { Layout.maximumWidth: -1; text: "Added to every page of this site. Use !important to override the site's own styles." }
                 QQC2.ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Kirigami.Units.gridUnit * 9
                     QQC2.TextArea { id: css; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "body { font-size: 110% !important; }" }
                 }
-                Kirigami.Heading { level: 4; text: "Custom JavaScript" }
-                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Runs in every page of this site once it has loaded, with the same access as the site's own scripts. Only add code you trust." }
+                SectionHeader { text: "Custom JavaScript" }
+                Hint { Layout.maximumWidth: -1; text: "Runs in every page of this site once it has loaded, with the same access as the site's own scripts. Only add code you trust." }
                 QQC2.ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Kirigami.Units.gridUnit * 9
                     QQC2.TextArea { id: js; font.family: "monospace"; wrapMode: TextEdit.NoWrap; placeholderText: "document.querySelector('#banner')?.remove()" }
                 }
-                QQC2.Label { Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.7; font: Kirigami.Theme.smallFont; text: "Zoom and forced dark apply to open tabs right away; forced light, the user agent, CSS and JavaScript when the site's pages are next loaded." }
+                Hint { Layout.maximumWidth: -1; text: "Zoom and forced dark apply to open tabs right away; forced light, the user agent, CSS and JavaScript when the site's pages are next loaded." }
+            }
             }
         }
     }
 
     Component {
         id: extensions
-        Kirigami.FormLayout {
-            // (Left-aligned across the page, as Privacy comes out by its contents.)
-            wideMode: false
+        PageColumn {
+            // (The bar's "Install Plugin…".)
+            function installPlugin() { pluginFileDialog.open() }
             // ---- Kite's own optional features ----
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "Plugins" }
-            QQC2.Label {
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 34
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                font: Kirigami.Theme.smallFont
-                text: "Kite's native plugins for powerusers."
-            }
+            SectionHeader { text: "Plugins" }
+            Hint { Layout.maximumWidth: -1; text: "Kite's native plugins for powerusers." }
             Kirigami.InlineMessage {
                 Layout.fillWidth: true
-                Layout.maximumWidth: Kirigami.Units.gridUnit * 34
                 visible: w.app.pluginsDisabled
                 type: Kirigami.MessageType.Information
                 text: "Kite was started with --no-plugins: no plugin is running, and they can't be turned on. Those you installed can still be removed. Start Kite normally to get them back."
             }
-            // (In a column of their own: the form would put rows made later at its end,
-            // and installing a plugin makes them anew.)
+            // (Rows back to back, as a list.)
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
+                spacing: 0
                 Repeater {
                     model: w.app.plugins
-                    delegate: ColumnLayout {
+                    delegate: ListRow {
                         id: entry
                         required property var modelData
-                        property bool on: w.app.pluginEnabled(modelData)
-                        Layout.fillWidth: true
-                        spacing: Kirigami.Units.smallSpacing
+                        // On or off as shown; what's applied is pluginEnabled().
+                        readonly property bool applied: w.app.pluginEnabled(modelData)
+                        property bool on: applied
+                        readonly property string change: "plugin:" + modelData.id
                         RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Kirigami.Units.smallSpacing
-                            Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth }
-                            // (Installed ones come from anyone: their text is only text.)
-                            QQC2.Label { text: entry.modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true }
+                            spacing: Kirigami.Units.largeSpacing
+                            // (The size they had: themes draw some icons differently when larger.)
+                            Kirigami.Icon { source: entry.modelData.icon; implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth; Layout.alignment: Qt.AlignTop }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                // (Installed ones come from anyone: their text is only text.)
+                                QQC2.Label { text: entry.modelData.name; textFormat: Text.PlainText; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
+                                QQC2.Label {
+                                    Layout.fillWidth: true
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                    opacity: 0.7
+                                    font: Kirigami.Theme.smallFont
+                                    text: (entry.modelData.installed ? "Installed from a file, not part of Kite. " : "") + entry.modelData.description
+                                }
+                            }
                             QQC2.Switch {
                                 Accessible.name: entry.modelData.name
                                 enabled: !w.app.pluginsDisabled
                                 checked: entry.on
-                                onToggled: { entry.on = checked; w.app.setPluginEnabled(entry.modelData, checked) }
+                                onToggled: {
+                                    entry.on = checked
+                                    if (checked === entry.applied) w.unstage(entry.change)
+                                    else { const plugin = entry.modelData, on = checked; w.stage(entry.change, () => w.app.setPluginEnabled(plugin, on)) }
+                                }
                             }
-                            QQC2.Button {
+                            RowButton {
                                 visible: !!entry.modelData.settingsPage
-                                enabled: entry.on
-                                text: "Configure…"
+                                // (Once it's on for real.)
+                                enabled: entry.on && !(entry.change in w.pendingActions)
+                                text: "Configure " + entry.modelData.name + "…"
                                 icon.name: "configure"
                                 onClicked: w.openPluginSettings(entry.modelData)
                             }
-                            QQC2.Button {
+                            RowButton {
                                 visible: !!entry.modelData.installed
-                                text: "Remove…"
+                                text: "Remove " + entry.modelData.name + "…"
                                 icon.name: "edit-delete"
                                 onClicked: { removePluginPrompt.plugin = entry.modelData; removePluginPrompt.open() }
                             }
                         }
-                        QQC2.Label {
-                            Layout.maximumWidth: Kirigami.Units.gridUnit * 34
-                            wrapMode: Text.Wrap
-                            textFormat: Text.PlainText
-                            opacity: 0.7
-                            font: Kirigami.Theme.smallFont
-                            text: (entry.modelData.installed ? "Installed from a file, not part of Kite. " : "") + entry.modelData.description
-                        }
                     }
                 }
-            }
-            QQC2.Button {
-                text: "Install Plugin from File…"
-                icon.name: "document-open"
-                onClicked: pluginFileDialog.open()
             }
             FileDialog {
                 id: pluginFileDialog
@@ -1773,13 +2237,15 @@ ManagerWindow {
                 standardButtons: Kirigami.Dialog.Ok
             }
             // ---- WebExtensions ----
-            Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: "WebExtensions" }
-            QQC2.CheckBox { text: "Enable WebExtensions"; checked: w.get("extensions.enabled"); onToggled: w.set("extensions.enabled", checked) }
-            QQC2.CheckBox { text: "Identify as Firefox on addons.mozilla.org"; checked: w.get("extensions.amoSpoofFirefox"); onToggled: w.set("extensions.amoSpoofFirefox", checked) }
-            QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
-            QQC2.CheckBox { text: "Let other sites offer add-ons to install"; checked: w.get("extensions.siteInstalls"); onToggled: w.set("extensions.siteInstalls", checked) }
-            QQC2.Label { Layout.maximumWidth: Kirigami.Units.gridUnit * 26; wrapMode: Text.Wrap; opacity: 0.75; text: "Kite always asks first, and says which site offered it. With this off, add-on files from sites other than addons.mozilla.org download like any other file." }
-            QQC2.Button { text: "Manage Extensions…"; icon.name: "kite-extension"; onClicked: w.app.showAddons() }
+            SectionHeader { text: "WebExtensions" }
+            Form {
+                Check { id: extensionsOn; Kirigami.FormData.label: "Extensions:"; text: "Enable WebExtensions"; key: "extensions.enabled" }
+                // (What installing does, which needs extensions.)
+                Check { Kirigami.FormData.label: "Installing:"; enabled: extensionsOn.checked; text: "Identify as Firefox on addons.mozilla.org"; key: "extensions.amoSpoofFirefox" }
+                Hint { text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
+                Check { enabled: extensionsOn.checked; text: "Let other sites offer add-ons to install"; key: "extensions.siteInstalls" }
+                Hint { text: "Kite always asks first, and says which site offered it. With this off, add-on files from sites other than addons.mozilla.org download like any other file." }
+            }
         }
     }
 }
