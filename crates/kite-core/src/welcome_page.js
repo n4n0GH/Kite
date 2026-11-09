@@ -8,11 +8,13 @@
   const send = (message) => console.debug('kite-welcome:' + JSON.stringify(Object.assign({ token: data.token }, message)));
 
   let source = null; // what to import from, if anything
+  let engine = data.engine; // the search engine
   let level = 'high';
 
+  const steps = ['import', 'search', 'privacy', 'ready'];
   function show(step) {
-    for (const id of ['import', 'privacy', 'ready']) $(id).hidden = id !== step;
-    document.querySelectorAll('.steps li').forEach((li, i) => li.classList.toggle('on', i === ['import', 'privacy', 'ready'].indexOf(step)));
+    for (const id of steps) $(id).hidden = id !== step;
+    document.querySelectorAll('.steps li').forEach((li, i) => li.classList.toggle('on', i === steps.indexOf(step)));
     const first = $(step).querySelector('input, button.primary:not(:disabled), button');
     if (first) first.focus();
   }
@@ -39,10 +41,39 @@
       $('sources').append(label);
     });
   }
-  $('skip-import').onclick = () => { source = null; show('privacy'); };
-  $('do-import').onclick = () => { if (source) show('privacy'); };
+  $('skip-import').onclick = () => { source = null; show('search'); };
+  $('do-import').onclick = () => { if (source) show('search'); };
 
-  // ---- step 2: privacy level ----
+  // ---- step 2: search engine ----
+  // (Names and lines only into .textContent.)
+  data.engines.forEach((e) => {
+    const label = document.createElement('label');
+    label.className = 'engine';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'engine';
+    input.value = e.name;
+    input.checked = e.name === engine;
+    input.onchange = () => { engine = e.name; $('use-engine').textContent = 'Use ' + e.name; };
+    const text = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = e.name;
+    text.append(name);
+    if (e.about) {
+      const about = document.createElement('small');
+      about.textContent = e.about;
+      text.append(about);
+    }
+    label.append(input, text);
+    $('engines').append(label);
+  });
+  $('use-engine').textContent = 'Use ' + engine;
+  $('back-search').onclick = () => show('import');
+  // Skipping keeps the engine Kite has now.
+  $('skip-search').onclick = () => { engine = data.engine; show('privacy'); };
+  $('use-engine').onclick = () => show('privacy');
+
+  // ---- step 3: privacy level ----
   const levels = [
     {
       key: 'low', name: 'Low',
@@ -89,16 +120,16 @@
   $('ack-box').onchange = () => { $('use-level').disabled = !$('ack-box').checked; };
   showLevel();
   $('skip-level').onclick = () => { level = 'high'; finish(); };
-  // Back to the import step, as it was left (the browser chosen stays chosen).
-  $('back').onclick = () => show('import');
+  // Back to the search step, as it was left (the engine chosen stays chosen).
+  $('back').onclick = () => show('search');
   $('use-level').onclick = () => { if (!$('use-level').disabled) finish(); };
 
-  // ---- step 3: setting up ----
+  // ---- step 4: setting up ----
   let answered = false;
   let shownLongEnough = false;
   function finish() {
     show('ready');
-    send({ op: 'finish', level, source });
+    send({ op: 'finish', level, source, engine });
     // Long enough to be seen, even when there's nothing to import.
     setTimeout(() => { shownLongEnough = true; maybeDone(); }, 1600);
   }

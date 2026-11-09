@@ -272,8 +272,10 @@ own address; a restored session reopens the page itself.
 ## First launch
 
 A new profile starts on `kite:welcome`. It offers to import bookmarks from another browser on the
-computer, then asks how private Kite should be, from Low to Extreme with High as the default. Each
-level only sets ordinary settings, which can all be changed later in Settings. Starting to browse
+computer, lets you choose a search engine (DuckDuckGo, Google, Startpage or Ecosia), then asks how
+private Kite should be, from Low to Extreme with High as the default. Each level only sets ordinary
+settings, which can all be changed later in Settings; from High up, the search engines' addresses
+also lose the parameters that tell them a search comes from Kite (`t=kite`, `client=kite`). Starting to browse
 before it's finished skips it with the default level. Quitting halfway brings it back next time,
 and it can be opened again at `kite:welcome`. Profiles from before 0.8.0 don't get it.
 

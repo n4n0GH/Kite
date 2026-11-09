@@ -22,6 +22,14 @@ h2 { font-size: 1.15em; font-weight: 600; margin: 0 0 .3em; }
 #sources label { display: flex; align-items: center; gap: .6em; padding: .55em .8em; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 #sources label:hover { background: #8881; }
 #sources label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* The search step: like the browsers to import from, with a line about each. */
+#engines { display: flex; flex-direction: column; gap: .35em; }
+#engines input { margin: 0; accent-color: var(--accent); }
+#engines label { display: flex; align-items: center; gap: .6em; padding: .55em .8em; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+#engines label:hover { background: #8881; }
+#engines label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#engines label span { display: flex; flex-direction: column; }
+#engines label small { opacity: .75; }
 #sources input { margin: 0; accent-color: var(--accent); }
 
 .slider { margin: .5em 0 1.2em; }

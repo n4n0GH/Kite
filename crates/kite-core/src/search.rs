@@ -30,11 +30,51 @@ pub fn builtin_engines() -> Vec<SearchEngine> {
         e("DuckDuckGo", "https://duckduckgo.com/?q=%s&t=kite", "d", "https://duckduckgo.com/ac/?q=%s&type=list"),
         e("Google", "https://www.google.com/search?client=kite&q=%s", "g", "https://suggestqueries.google.com/complete/search?output=firefox&q=%s"),
         e("Startpage", "https://www.startpage.com/do/search?query=%s", "sp", ""),
+        e("Ecosia", "https://www.ecosia.org/search?q=%s", "eco", "https://ac.ecosia.org/autocomplete?q=%s&type=list"),
         e("Wikipedia (en)", "https://en.wikipedia.org/wiki/Special:Search?search=%s", "w", "https://en.wikipedia.org/w/api.php?action=opensearch&search=%s&namespace=0"),
         e("KDE Store", "https://store.kde.org/search/projectSearchText/%s", "kde", ""),
         e("Firefox Add-ons", "https://addons.mozilla.org/firefox/search/?q=%s", "amo", ""),
         e("YouTube", "https://www.youtube.com/results?search_query=%s", "yt", ""),
     ]
+}
+
+/// The built-in engines that search the whole web (not one site): the ones the
+/// welcome page offers.
+pub const WEB_SEARCH: [&str; 4] = ["DuckDuckGo", "Google", "Startpage", "Ecosia"];
+
+/// The parameters telling an engine its searches come from Kite (`t=kite`,
+/// `client=kite`), taken out of its address. The rest stays as it was.
+pub fn without_kite_params(url: &str) -> String {
+    let Some((base, query)) = url.split_once('?') else { return url.to_owned() };
+    let (query, fragment) = match query.split_once('#') {
+        Some((q, f)) => (q, Some(f)),
+        None => (query, None),
+    };
+    let kept: Vec<&str> = query.split('&').filter(|p| !matches!(p.split_once('='), Some(("t" | "client", "kite")))).collect();
+    let mut out = base.to_owned();
+    if !kept.is_empty() && kept != [""] {
+        out.push('?');
+        out.push_str(&kept.join("&"));
+    }
+    if let Some(f) = fragment {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
+}
+
+/// Add a built-in engine to a list it isn't in yet (by name or address), saved.
+/// Whether it was added.
+pub fn add_builtin_if_missing(db: &Connection, name: &str) -> anyhow::Result<bool> {
+    let Some(engine) = builtin_engines().into_iter().find(|e| e.name == name) else { return Ok(false) };
+    let mut engines = load_engines(db)?;
+    let host = url::Url::parse(&engine.url.replace("%s", "x")).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
+    if engines.iter().any(|e| e.name == name || (!host.is_empty() && e.url.contains(&host))) {
+        return Ok(false);
+    }
+    engines.push(engine);
+    save_engines(db, &engines)?;
+    Ok(true)
 }
 
 /// Engines from the database (user edited); seeded with built-ins on first use.
@@ -285,6 +325,40 @@ pub fn load_action(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn kites_parameters_come_out_and_nothing_else() {
+        assert_eq!(without_kite_params("https://duckduckgo.com/?q=%s&t=kite"), "https://duckduckgo.com/?q=%s");
+        assert_eq!(without_kite_params("https://www.google.com/search?client=kite&q=%s"), "https://www.google.com/search?q=%s");
+        assert_eq!(without_kite_params("https://x.example/?t=other&q=%s"), "https://x.example/?t=other&q=%s", "another's value stays");
+        assert_eq!(without_kite_params("https://x.example/?client=kite"), "https://x.example/", "nothing left, no '?'");
+        assert_eq!(without_kite_params("https://x.example/search/%s"), "https://x.example/search/%s");
+        assert_eq!(without_kite_params("https://x.example/?q=%s&t=kite#top"), "https://x.example/?q=%s#top");
+        for e in builtin_engines() {
+            assert!(!without_kite_params(&e.url).contains("kite"), "{}", e.name);
+            assert!(without_kite_params(&e.url).contains("%s"), "{}", e.name);
+        }
+        for name in WEB_SEARCH {
+            assert!(builtin_engines().iter().any(|e| e.name == name), "{name} is built in");
+        }
+    }
+
+    #[test]
+    fn a_builtin_is_added_once() {
+        let db = crate::db::open_in_memory().unwrap();
+        let mut list = load_engines(&db).unwrap();
+        list.retain(|e| e.name != "Ecosia");
+        save_engines(&db, &list).unwrap();
+        assert!(add_builtin_if_missing(&db, "Ecosia").unwrap());
+        assert!(!add_builtin_if_missing(&db, "Ecosia").unwrap(), "only once");
+        assert_eq!(load_engines(&db).unwrap().iter().filter(|e| e.name == "Ecosia").count(), 1);
+        // One of the user's own for the same site counts too.
+        let mut list = load_engines(&db).unwrap();
+        list.retain(|e| e.name != "Ecosia");
+        list.push(SearchEngine { name: "Trees".into(), url: "https://www.ecosia.org/search?q=%s&x=1".into(), shortcut: String::new(), suggestions_url: String::new(), post_data: String::new() });
+        save_engines(&db, &list).unwrap();
+        assert!(!add_builtin_if_missing(&db, "Ecosia").unwrap());
+    }
+
     use super::*;
 
     fn selected(text: &str) -> Option<String> {

@@ -113,6 +113,14 @@ fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     for key in Privacy::KEYS {
         privacy.apply(key, &shared.settings().get(key));
     }
+    // Ecosia joined the built-in engines: added once to profiles from before it.
+    {
+        const KNOWN: &str = "search.ecosiaOffered";
+        if shared.settings().get(KNOWN).is_null() {
+            let _ = kite_core::search::add_builtin_if_missing(&shared.db(), "Ecosia");
+            let _ = shared.settings().set(KNOWN, serde_json::Value::Bool(true));
+        }
+    }
     // Zooms stored as a site's own though equal to the default (resetting used
     // to store them) aren't one.
     {

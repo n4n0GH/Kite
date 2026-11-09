@@ -2098,6 +2098,16 @@ impl qobject::Browser {
                 } else {
                     String::new()
                 };
+                // The search engine chosen (one this profile has).
+                if let Some(engine) = m["engine"].as_str() {
+                    let known = search::load_engines(&app().shared.db()).unwrap_or_default().iter().any(|e| e.name == engine);
+                    if known && app().shared.settings().get_str("general.searchEngine") != engine {
+                        let value = json!(engine);
+                        let _ = app().shared.settings().set("general.searchEngine", value.clone());
+                        apply_setting("general.searchEngine", &value);
+                        self.as_mut().setting_changed(q("general.searchEngine"), js(&value));
+                    }
+                }
                 self.as_mut().apply_welcome(level);
                 js(&json!({"imported": imported}))
             }
@@ -2127,6 +2137,16 @@ impl qobject::Browser {
             if a.shared.settings().get(key) != value {
                 let _ = a.shared.settings().set(key, value.clone());
                 changed.push((key, value));
+            }
+        }
+        // From High up, the search engines aren't told it's Kite searching.
+        if kite_core::welcome::hides_kite_from_search(level) {
+            let db = a.shared.db();
+            if let Ok(engines) = search::load_engines(&db) {
+                let plain: Vec<search::SearchEngine> = engines.iter().cloned().map(|mut e| { e.url = search::without_kite_params(&e.url); e }).collect();
+                if plain != engines {
+                    let _ = search::save_engines(&db, &plain);
+                }
             }
         }
         let _ = a.shared.settings().set("general.welcome", json!("done"));

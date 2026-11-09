@@ -291,7 +291,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             // The first-launch page (kite_core::welcome).
             "welcome" => {
                 let sources = crate::browser::import_sources();
-                (200, "text/html".into(), kite_core::welcome::page(crate::state::welcome_token(), &kite_core::config::secret(), &sources).into_bytes())
+                // The web search engines this profile has, to choose from.
+                let have: Vec<String> = kite_core::search::load_engines(&app().shared.db()).unwrap_or_default().into_iter().map(|e| e.name).collect();
+                let engines: Vec<String> = kite_core::search::WEB_SEARCH.iter().filter(|n| have.iter().any(|h| h == *n)).map(|n| n.to_string()).collect();
+                let engine = app().shared.settings().get_str("general.searchEngine");
+                (200, "text/html".into(), kite_core::welcome::page(crate::state::welcome_token(), &kite_core::config::secret(), &sources, &engines, &engine).into_bytes())
             }
             // HTTPS-only: the site has no working https version.
             "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
