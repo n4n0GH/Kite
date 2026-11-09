@@ -381,6 +381,17 @@ public:
     void detach(QPointer<QQuickWebEngineView> view);
 };
 
+// Views Kite took out of the provider's list (unloaded tabs), to leave them out.
+static QList<QPointer<QQuickWebEngineView>> g_faviconOut;
+
+static void collectViews(QQuickItem *in, QList<QQuickItem *> &out)
+{
+    for (QQuickItem *c : in->childItems()) {
+        if (c->inherits("QQuickWebEngineView")) out.append(c);
+        collectViews(c, out);
+    }
+}
+
 static QQuickItem *findItem(QQuickItem *in, const QString &name)
 {
     for (QQuickItem *c : in->childItems()) {
@@ -399,8 +410,14 @@ extern "C" void kite_cpp_favicon_track(const char *viewName, bool track)
         QQuickItem *item = findItem(q->contentItem(), name);
         if (!item || !item->inherits("QQuickWebEngineView")) continue;
         QPointer<QQuickWebEngineView> view(static_cast<QQuickWebEngineView *>(item));
-        if (track) FaviconProviderHelper::instance()->attach(view);
-        else FaviconProviderHelper::instance()->detach(view);
+        g_faviconOut.removeAll(nullptr);
+        if (track) {
+            g_faviconOut.removeAll(view);
+            FaviconProviderHelper::instance()->attach(view);
+        } else {
+            if (!g_faviconOut.contains(view)) g_faviconOut.append(view);
+            FaviconProviderHelper::instance()->detach(view);
+        }
         return;
     }
 }
@@ -423,14 +440,36 @@ extern "C" const char *kite_cpp_key_native(const char *sequence)
     return buf.constData();
 }
 
-extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl)
+// The provider answers from the first view in its list showing the icon, which
+// needn't be the tab asking: a view can have a page without the favicon helper
+// Qt only adds when the view is made (one woken from unloading, one a page
+// opened a window in), and reading that one's icon crashes Kite. So while
+// asking (the provider answers right away, on this thread), the asking tab's
+// view is the only one in the list; the others go back afterwards.
+extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl, const char *viewName)
 {
     static const QString prefix = QStringLiteral("image://favicon/");
     const QString icon = QString::fromUtf8(iconUrl);
     if (!g_engine || !icon.startsWith(prefix)) return;
     auto *provider = dynamic_cast<QQuickAsyncImageProvider *>(g_engine->imageProvider(QStringLiteral("favicon")));
     if (!provider) return;
-    QQuickImageResponse *response = provider->requestImageResponse(icon.mid(prefix.size()), QSize(64, 64));
+    const QString self = QString::fromUtf8(viewName);
+    QList<QQuickItem *> views;
+    for (QWindow *w : QGuiApplication::topLevelWindows())
+        if (auto *q = qobject_cast<QQuickWindow *>(w)) collectViews(q->contentItem(), views);
+    bool found = false;
+    QList<QPointer<QQuickWebEngineView>> others;
+    for (QQuickItem *v : views) {
+        if (v->objectName() == self) { found = true; continue; }
+        QPointer<QQuickWebEngineView> view(static_cast<QQuickWebEngineView *>(v));
+        if (g_faviconOut.contains(view)) continue;
+        others.append(view);
+        FaviconProviderHelper::instance()->detach(view);
+    }
+    // (Without the asking view in a window, there's no telling which would answer.)
+    QQuickImageResponse *response = found ? provider->requestImageResponse(icon.mid(prefix.size()), QSize(64, 64)) : nullptr;
+    for (const auto &view : others)
+        if (view) FaviconProviderHelper::instance()->attach(view);
     if (!response) return;
     const QByteArray page(pageUrl);
     // The response may finish on another thread; handle it on the GUI thread.

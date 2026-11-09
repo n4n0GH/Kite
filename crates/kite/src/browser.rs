@@ -570,7 +570,7 @@ pub mod qobject {
         /// Cache the favicon `icon_url` (image://favicon/...) shown for `page_url`.
         #[qinvokable]
         #[cxx_name = "saveFavicon"]
-        fn save_favicon(self: &Browser, page_url: &QString, icon_url: &QString);
+        fn save_favicon(self: &Browser, page_url: &QString, icon_url: &QString, view_name: &QString);
         /// An unloaded tab's view leaves Qt's favicon provider (`track`
         /// false) until it is loaded again (see bootstrap.cpp).
         #[qinvokable]
@@ -1592,8 +1592,8 @@ impl qobject::Browser {
         }
     }
 
-    fn save_favicon(&self, page_url: &QString, icon_url: &QString) {
-        crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string());
+    fn save_favicon(&self, page_url: &QString, icon_url: &QString, view_name: &QString) {
+        crate::ffi::save_favicon(&page_url.to_string(), &icon_url.to_string(), &view_name.to_string());
     }
 
     fn favicon_track(&self, view_name: &QString, track: bool) {
