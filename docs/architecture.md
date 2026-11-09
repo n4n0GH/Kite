@@ -134,6 +134,8 @@ instead (`qml/ExtBridge.qml`).
 | `midi` | MIDI devices for Web MIDI, through ALSA's sequencer, loaded when needed |
 | `instance` | One Kite to a profile: what's started on an open profile hands its URLs to the Kite that has it, and ends |
 | `kwin`, `screensaver` | KWin scripting (picture-in-picture staying on top); screen inhibition |
+| `crashlog` | The log file and crash reports in `logs/<profile>/`; scrambling addresses from private windows |
+| `external` | Starting outside programs with Kite's environment and files kept from them: native messaging hosts and an external download manager (arguments split like a shell's, never run through one) |
 
 ### kite-core: the WebExtension platform
 
@@ -153,7 +155,8 @@ tested without a browser. See [An extension API call](#an-extension-api-call).
 
 | File | Responsibility |
 |---|---|
-| `main.rs` | The entry point, arguments, Chromium flags |
+| `main.rs` | The entry point, arguments, Chromium flags, the spelling dictionaries' folder |
+| `crash.rs` | The logger (stderr and `kite.log`), the panic hook and the signal handler for native crashes |
 | `state.rs` | `App`, the process-wide state, and background updaters |
 | `browser.rs`, `extensions.rs`, `passwords.rs`, `formfill.rs` | The QML singletons |
 | `ffi.rs` | The C ABI, serving `kite:` pages (`serve`) and intercepting requests (`kite_intercept`) |
@@ -179,7 +182,9 @@ inside Qt. Keep this structure.
 
 ### Changing a setting
 
-1. Settings and the palette call `Browser.setSetting(key, json)`.
+1. Settings and the palette call `Browser.setSetting(key, json)`. In the Settings window a change
+   waits in `pending` (`PreferencesWindow.set`) until Apply, which `applyChanges` saves; pages read
+   through `get`, which sees what's waiting.
 2. `set_setting` in `browser.rs` stores it, applies anything Rust acts on itself, and emits
    `settingChanged`.
 3. The `Connections` on `Browser` in `Main.qml` reacts. Keys listed in `liveKeys` update
@@ -253,6 +258,8 @@ if allowed. `kite --private` uses a throwaway profile folder, deleted at exit.
 | Command | Does |
 |---|---|
 | `kite --no-plugins` | Runs no plugin in this session. Nothing stored changes |
+| `kite --debug` | Shows tools for looking into Kite. For now: the lists Dangerous Sites checks against, and how an address is checked (Settings → Browsing) |
+| The log | `logs/<profile>/kite.log` (`kite.prev.log`: the run before), and `last-crash.txt` after a crash |
 | `kite --factory` | Saves the settings to `settings-before-factory.json` in the profile, plus an untouched copy in `settings-before-factory.original`, then starts with the defaults. Run before anything reads the settings, since they may be what's broken. Bookmarks, logins, extensions and sessions stay |
 
 The saved `.json` can be imported in Settings → General. It leaves out what an import always does, such
@@ -264,7 +271,11 @@ everything, byte for byte.
 | Trap | Why |
 |---|---|
 | Never put a `WebTab` directly in a `Repeater` | Script results then crash Qt, see [above](#the-main-qml-objects) |
-| A page woken from being unloaded has no favicon helper | Reading its icon crashes, so `WebTab.faviconOut` keeps it off the favicon provider |
+| A page woken from being unloaded has no favicon helper | Reading its icon crashes, so `WebTab.faviconOut` keeps it off the favicon provider. Qt puts views back on it by itself, so saving an icon (`kite_cpp_save_favicon`) takes every other view off for the request |
+| Settings: Apply saves before it empties `pending` | Emptying it makes the page read the settings again at once; read before they're saved, controls show the old values |
+| Twinned `FormLayout`s line up a turn of the event loop late | So a settings page (`PageColumn`) is shown only once that's done, or its rows jump |
+| QtWebEngine finds spelling dictionaries by file name | Distributions name them `en_US.bdic`; `util::resolve_spell_languages` turns "en-US" into that |
+| Qt can't remove a request header, only empty it | Client hints are emptied when Kite poses as another browser, only the ones Chromium added |
 | `frame.runJavaScript` needs a callback | Qt doesn't run it otherwise; pass `() => {}` |
 | `Array.prototype.flatMap` doesn't exist in Qt's JavaScript | Use `reduce` and `concat` |
 | A `.js` import named `Keys` hides the attached `Keys` | Pick another name for the import |
@@ -293,6 +304,7 @@ profiles/<name>/
     adblock/          filter subscriptions
     extensions/       registry.json, storage.db and the unpacked extensions
     webengine/        Chromium's storage: cookies, cache, local storage
+logs/<profile>/           kite.log, kite.prev.log, last-crash.txt (logs/private/ for --private)
 native-messaging-hosts/   Kite's own native messaging manifests
 plugins/<id>/             plugins installed from a file
 ```

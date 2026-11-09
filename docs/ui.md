@@ -127,8 +127,16 @@ The list is `pages` in `PreferencesWindow.qml`, and each page is a `Component` i
 General, Appearance, Browsing, Search Engines, Privacy, Passwords, Content Blocking, Downloads, Site
 Settings, Plugins & Extensions, and Shortcuts.
 
+Every page is built from the same pieces, defined at the top of `PreferencesWindow.qml`, so they
+look alike: a centred `PageColumn` of the same width on every page, a `SectionHeader` (title on the
+left, a line after it) for each group, a `Form` (a `FormLayout` lining up its labels with the page's
+other forms) under it, `Hint` for the text under a setting, `Check` for a setting's checkbox,
+`ListRow` and `RowButton` for the rows of a list, and `UserAgentField`. Changes wait in `pending`
+until the `ApplyBar` at the bottom applies them; a page's own buttons can go on the bar's left.
+
 Submenus are pages pushed on top of them. Most are in the same file, such as a site's settings, a
-start page file and a plugin's settings. Two have files of their own:
+start page file, a plugin's settings and, with `kite --debug`, Dangerous Sites' lists. Two have
+files of their own:
 
 | Page | File |
 |---|---|

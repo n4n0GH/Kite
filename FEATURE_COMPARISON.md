@@ -4,7 +4,7 @@ Desktop features, compared on Linux (Kite's only platform).
 
 **Legend:** ✅ built in · ⚠️ partial, hidden or experimental, or only through an extension · ❌ no
 
-The **Kite** column reflects Kite's code as of commit `ca63eaa` (2026-11-05), and the command palette after it.
+The **Kite** column reflects Kite 0.9.0 (2026-11-09).
 The **Chrome** and **Firefox** columns reflect their stable releases as known in mid-2026. Both
 ship changes every four weeks, so check the newest versions before relying on a single row.
 
@@ -94,6 +94,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Remove tracking parameters from URLs | ✅ | ❌ | ✅ | Firefox: in strict tracking protection. |
 | Block link click pings | ✅ | ❌ | ✅ | Firefox doesn't send them by default. |
 | Generic user agent (no engine token) | ✅ | ✅ | ✅ | Kite drops QtWebEngine's rare token. |
+| Choose the user agent, for all sites or one | ✅ | ⚠️ | ⚠️ | Kite: common browsers or your own, in Settings and Site Settings; pages see the same, without client hints. Chrome: a command-line flag or an extension. Firefox: `about:config` for all sites, an extension per site. |
 | Fingerprinting protection | ✅ | ⚠️ | ✅ | Kite: canvas/WebGL/audio noise and generic hardware, turned on per site. Firefox: known fingerprinters blocked, more in strict mode. Chrome: limited. |
 | WebRTC local IP protection | ✅ | ⚠️ | ✅ | Chrome hides local IPs with mDNS; no setting. |
 | HTTPS-only mode | ✅ | ✅ | ✅ | |
@@ -138,6 +139,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Bookmark import and export | ✅ | ✅ | ✅ | Kite imports HTML (as Chrome and Firefox export it) or Falkon's bookmarks.json, and exports HTML. |
 | Import straight from an installed browser | ❌ | ✅ | ✅ | Kite needs an exported file. |
 | Download manager | ✅ | ✅ | ✅ | |
+| Hand downloads to an external download manager | ✅ | ⚠️ | ⚠️ | Kite: a program and its arguments, as in Falkon. Chrome and Firefox: through an extension. |
 | Printing with the system dialog | ✅ | ⚠️ | ✅ | Chrome has its own print preview, with the system dialog a step away. |
 | Ask where to save | ✅ | ✅ | ✅ | |
 | Reading list | ❌ | ✅ | ❌ | |
@@ -174,6 +176,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Developer tools | ✅ | ✅ | ✅ | Kite has Chromium's DevTools. |
 | View page source | ✅ | ✅ | ✅ | |
 | Console logging to a terminal | ✅ | ⚠️ | ⚠️ | Kite routes page and extension consoles to `RUST_LOG`. |
+| Crash reports | ✅ | ✅ | ✅ | Kite keeps its log and the last crash on the computer and shows it after the crash; Chrome and Firefox send theirs to Google and Mozilla, if allowed. |
 
 ## Desktop integration (Linux / KDE)
 

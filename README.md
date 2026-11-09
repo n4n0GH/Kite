@@ -55,22 +55,35 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   `tabs.discard()`.
 * **Home and new tab page:** an address or a local HTML file, used in place or kept as a copy
   in the profile (`kite:startpage/…`); saving the file reloads it.
-* **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules
-  and fingerprint protection, from Settings or the address bar.
+* **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules,
+  fingerprint protection and user agent, from Settings or the address bar. A zoom back at the
+  default isn't kept as a site's own.
 * **Cookies and certificates:** stored cookies to look through and remove, by site; certificate
   exceptions to accept one certificate for good, and to take that back (Settings → Privacy).
 * **Privacy:** third-party cookies blocked by default, Global Privacy Control, tracking
-  parameters removed from addresses, link pings dropped, a common user agent, WebRTC limited
+  parameters removed from addresses, link pings dropped, a common user agent (or another
+  browser's, for all sites or one, with matching page properties and no client hints), WebRTC limited
   to public addresses, HTTPS-only mode, DNS over HTTPS, a proxy (SOCKS5/HTTP), container
   tabs, per-site cookie rules and fingerprint protection; each can be switched separately.
 * **Dangerous-site warnings (opt-in, off by default):** pages and downloads checked against
   Google Safe Browsing (with your own API key; only hash prefixes leave the computer) or the
-  open malware-filter phishing/URLhaus lists (checked entirely locally).
+  open malware-filter phishing/URLhaus lists (checked entirely locally). With `kite --debug`, the
+  stored entries can be browsed and an address's check explained (Settings → Browsing).
 * **Content blocking:** built in, without an extension's memory: Brave's engine with EasyList,
   EasyPrivacy and uBlock Origin's lists and scriptlets (`crates/kite-core/resources/`, GPLv3, from
   [uBlock Origin](https://github.com/gorhill/uBlock); `packaging/update-adblock-resources.py` refreshes
   them). Paused while an extension such as uBlock Origin does the blocking.
 * **Passwords:** see below.
+* **Downloads:** a download list with pause and resume; notifications when one finishes, with a
+  timeout of your choice; or an external download manager (like Falkon's: a program and its
+  arguments, `%d` for the address), which private windows and saved pages leave out.
+* **Settings:** laid out like System Settings, with changes waiting for Apply (or Cancel) at the
+  bottom; leaving a page with changes asks first. Spell checking uses the system's QtWebEngine
+  dictionaries, listed in Settings → Browsing.
+* **Crash reports:** a log of warnings and errors and a report of the last crash, kept on the
+  computer (`~/.local/share/kite/logs/<profile>/`) and shown after a crash, with the system's
+  backtrace from `coredumpctl` where there is one. Addresses from private windows are scrambled
+  in both.
 * **Desktop:** Kirigami/Breeze UI following the KDE colour scheme and icon theme, KDE
   notifications, Chromium's overlay scrollbars shown when the pointer nears the edge, Screen
   Wake Lock through the desktop's screensaver inhibition.
@@ -85,7 +98,7 @@ qqc2-desktop-style. QtWebEngineQuick *development* headers are optional.
 
 ```sh
 cargo build --release
-./target/release/kite [URL...]            # --profile NAME, --private
+./target/release/kite [URL...]            # --profile NAME, --private, --debug
 cargo test --workspace && node --test crates/kite-core/src/webext/js/*.test.js crates/kite/qml/*.test.js crates/kite/plugins/*/*.test.js
 ```
 
@@ -271,6 +284,8 @@ and it can be opened again at `kite:welcome`. Profiles from before 0.8.0 don't g
 Kite stops working, `kite --factory` saves your settings to a file in the profile and starts with the
 defaults. To bring them back, import that file in Settings → General. Bookmarks, logins and
 extensions aren't touched. `kite --no-plugins` runs no plugins for a session, to rule them out.
+`kite --debug` shows tools for looking into Kite: for now, the lists Dangerous Sites checks
+against.
 
 ## Known limitations
 
