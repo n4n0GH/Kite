@@ -58,7 +58,7 @@ separately**. A new command needs adding to each one where it belongs.
 
 | Menu | Opened by | Defined in |
 |---|---|---|
-| Main menu (☰) | The toolbar's menu button | `MainMenu.qml`, through `BrowserWindow.openMainMenu`. The About box is here too |
+| Main menu (☰) | The toolbar's menu button | `MainMenu.qml`, through `BrowserWindow.openMainMenu`. The About box is `AboutDialog.qml` (`BrowserWindow.showAbout`) |
 | Classic menu bar (File, Edit, View…) | Setting, or tapping Alt | `BrowserMenuBar.qml` |
 | Page context menu | Right-click on a page | `PageContextMenu.qml`, including extensions' `menus` entries |
 | Tab context menu | Right-click on a tab | `TabButton.qml` |

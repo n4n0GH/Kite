@@ -107,13 +107,6 @@ QQC2.Menu {
     QQC2.MenuItem { text: "Command Palette…"; icon.name: "search"; onTriggered: win.toggleCommandPalette() }
     QQC2.MenuItem { text: "Settings"; icon.name: "settings-configure"; onTriggered: app.showPreferences() }
     QQC2.MenuSeparator {}
-    QQC2.MenuItem { text: "About Kite"; icon.name: "help-about"; onTriggered: aboutDialog.open() }
+    QQC2.MenuItem { text: "About Kite"; icon.name: "help-about"; onTriggered: win.showAbout() }
     QQC2.MenuItem { text: "Quit"; icon.name: "application-exit"; onTriggered: app.quit() }
-
-    property Kirigami.PromptDialog aboutDialog: Kirigami.PromptDialog {
-        parent: menu.win.contentItem
-        title: "About Kite"
-        subtitle: "Kite " + Qt.application.version + "\n\nA KDE web browser written in Rust, inspired by Falkon, with native support for Firefox WebExtensions installed from addons.mozilla.org.\n\n" + Browser.engineInfo() + "\n\nLicensed under the GNU GPL v3 or later."
-        standardButtons: Kirigami.Dialog.Close
-    }
 }

@@ -527,7 +527,7 @@ QQC2.ApplicationWindow {
         else menu.popup(item, 0, item.height)
     }
     function customizeToolbar() { part(customizePart).open() }
-    function showAbout() { part(mainMenuPart).aboutDialog.open() }
+    function showAbout() { part(aboutPart).open() }
     // The last crash's report; `expanded` shows its text right away.
     function showCrashReport(expanded) { part(crashReportPart).show(expanded) }
 
@@ -546,6 +546,7 @@ QQC2.ApplicationWindow {
     Component { id: sessionDialogsPart; SessionDialogs { win: bw } }
     Component { id: customizePart; CustomizeToolbarDialog { win: bw; catalog: bw.toolbarCatalog } }
     Component { id: crashReportPart; CrashReportDialog { parent: bw.contentItem } }
+    Component { id: aboutPart; AboutDialog { parent: bw.contentItem } }
     // Closing the last window (or quitting) while Settings has changes not applied:
     // asked here, in the window just clicked. (The Settings window may be behind
     // others, and on Wayland Kite can't bring it to the front.)
