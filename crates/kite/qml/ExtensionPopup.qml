@@ -93,7 +93,7 @@ QQC2.Popup {
                 }
             }
             onContextMenuRequested: request => request.accepted = false
-            onJavaScriptConsoleMessage: (level, message, line, source) => popup.win.app.logConsole(true, "popup", level, message, source, line)
+            onJavaScriptConsoleMessage: (level, message, line, source) => popup.win.app.logConsole(true, "popup", level, message, source, line, popup.win.privateMode)
         }
     }
     ExtBridge {

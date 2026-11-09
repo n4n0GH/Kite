@@ -145,6 +145,11 @@ pub fn copy_text(text: &str) {
     unsafe { kite_cpp_copy_text(text.as_ptr()) }
 }
 
+/// The engine in one line, for the log.
+pub fn engine_version() -> String {
+    unsafe { format!("QtWebEngine {} (Chromium {})", s(kite_cpp_webengine_version()), s(kite_cpp_chromium_version())) }
+}
+
 /// What the About box says about the engine.
 pub fn engine_info() -> String {
     unsafe {
@@ -597,9 +602,10 @@ pub unsafe extern "C" fn kite_intercept(
     KiteBuf::from_vec(out.into_bytes())
 }
 
-/// Qt/QML log output. QML categories `console.page` / `console.extension`
-/// become log targets `console::page` / `console::extension`; other Qt
-/// categories `qt::<category>`.
+/// Qt/QML log output. QML categories `console.page` / `console.extension` /
+/// `kite.<name>` become log targets `console::page` / `console::extension` /
+/// `kite::<name>`; other Qt categories `qt::<category>`. Any of them with
+/// "private." before it comes from a private window: its addresses are scrambled.
 #[no_mangle]
 pub unsafe extern "C" fn kite_log(level: std::ffi::c_int, category: *const c_char, message: *const c_char) {
     let level = match level {
@@ -609,12 +615,22 @@ pub unsafe extern "C" fn kite_log(level: std::ffi::c_int, category: *const c_cha
         _ => log::Level::Debug,
     };
     let category = s(category);
+    // A private window's lines ("private.<category>"): addresses scrambled.
+    let (category, private) = match category.strip_prefix("private.") {
+        Some(rest) => (rest, true),
+        None => (category, false),
+    };
     let target = match category {
-        c if c.starts_with("console.") => c.replace('.', "::"),
+        c if c.starts_with("console.") || c.starts_with("kite.") => c.replace('.', "::"),
         "default" => "qt".to_owned(),
         c => format!("qt::{c}"),
     };
-    log::log!(target: target.as_str(), level, "{}", s(message));
+    let message = s(message);
+    if private {
+        log::log!(target: target.as_str(), level, "{}", kite_core::crashlog::scramble_urls(message));
+    } else {
+        log::log!(target: target.as_str(), level, "{message}");
+    }
 }
 
 /// Cookie store change (from QWebEngineCookieStore signals).

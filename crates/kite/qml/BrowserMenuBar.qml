@@ -104,6 +104,7 @@ QQC2.MenuBar {
     }
     BarMenu {
         title: "&Help"
+        QQC2.MenuItem { text: "Last &Crash Report"; icon.name: "tools-report-bug"; onTriggered: menuBar.win.showCrashReport(true) }
         QQC2.MenuItem { text: "&About Kite"; icon.name: "help-about"; onTriggered: menuBar.win.showAbout() }
     }
 }

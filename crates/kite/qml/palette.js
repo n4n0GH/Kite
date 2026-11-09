@@ -12,6 +12,7 @@ const TOGGLES = [
     {page: "general", text: "Show site tiles (sites you visit often and ones you add)", key: "speeddial.showTiles"},
     {page: "general", text: "Search when input isn't an address", key: "general.searchFromLocationBar"},
     {page: "general", text: "Show search suggestions", key: "general.showSearchSuggestions"},
+    {page: "general", text: "Show the report after Kite crashes", key: "general.crashReportNotice"},
     {page: "appearance", text: "Show bookmarks toolbar", key: "appearance.showBookmarksToolbar"},
     {page: "appearance", text: "Show menu bar (or tap Alt to show it briefly)", key: "appearance.showMenuBar"},
     {page: "appearance", text: "Show link targets when hovering links", key: "appearance.showStatusBar"},

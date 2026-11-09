@@ -546,6 +546,18 @@ ManagerWindow {
                     font: Kirigami.Theme.smallFont
                     text: "To carry your settings, search engines and site settings to another computer. Not your window size, download folder, start page files or Safe Browsing key; bookmarks and logins have exports of their own."
                 }
+                QQC2.CheckBox { Kirigami.FormData.label: "Crash reports:"; text: "Show the report after Kite crashes"; checked: w.get("general.crashReportNotice"); onToggled: w.set("general.crashReportNotice", checked) }
+                RowLayout {
+                    QQC2.Button { text: "View Last Report"; icon.name: "tools-report-bug"; enabled: Browser.crashReport() !== ""; onClicked: if (w.app.activeWindow) w.app.activeWindow.showCrashReport(true) }
+                    QQC2.Button { text: "Open Log Folder"; icon.name: "folder-open"; onClicked: Qt.openUrlExternally(Browser.logFolderUrl()) }
+                }
+                QQC2.Label {
+                    Layout.maximumWidth: Kirigami.Units.gridUnit * 26
+                    wrapMode: Text.Wrap
+                    opacity: 0.7
+                    font: Kirigami.Theme.smallFont
+                    text: "Kite keeps a log of its warnings and errors, and a report of its last crash. They stay on this computer; addresses from private windows are scrambled in them."
+                }
                 QQC2.Label { Kirigami.FormData.label: "Profile:"; text: Browser.profileName() + "  (" + Browser.webEnginePath().replace(/\/webengine$/, "") + ")"; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
 

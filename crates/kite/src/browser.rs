@@ -143,6 +143,22 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "crashedLastTime"]
         fn crashed_last_time(self: &Browser) -> bool;
+        /// The last crash's report (crash.rs), or "".
+        #[qinvokable]
+        #[cxx_name = "crashReport"]
+        fn crash_report(self: &Browser) -> QString;
+        /// Whether that report is new since the last start (true once).
+        #[qinvokable]
+        #[cxx_name = "takeNewCrashReport"]
+        fn take_new_crash_report(self: &Browser) -> bool;
+        /// The folder with the log and crash reports, as a file: URL.
+        #[qinvokable]
+        #[cxx_name = "logFolderUrl"]
+        fn log_folder_url(self: &Browser) -> QString;
+        /// Put Kite's crash handler back in front if QtWebEngine replaced it.
+        #[qinvokable]
+        #[cxx_name = "checkCrashHandler"]
+        fn check_crash_handler(self: &Browser);
         #[qinvokable]
         #[cxx_name = "pushClosedTab"]
         fn push_closed_tab(self: Pin<&mut Browser>, json: &QString);
@@ -1157,6 +1173,18 @@ impl qobject::Browser {
     }
     fn crashed_last_time(&self) -> bool {
         app().shared.session().crashed_last_time()
+    }
+    fn crash_report(&self) -> QString {
+        q(crate::crash::report().unwrap_or_default())
+    }
+    fn take_new_crash_report(&self) -> bool {
+        crate::crash::take_new_report()
+    }
+    fn log_folder_url(&self) -> QString {
+        q(crate::crash::dir().and_then(|d| url::Url::from_directory_path(d).ok()).map(|u| u.to_string()).unwrap_or_default())
+    }
+    fn check_crash_handler(&self) {
+        crate::crash::install_signal_handlers();
     }
     fn push_closed_tab(self: Pin<&mut Self>, json: &QString) {
         if let Ok(t) = serde_json::from_str(&json.to_string()) {

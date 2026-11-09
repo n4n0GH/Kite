@@ -7,6 +7,7 @@
 //! * qml/: the user interface (Kirigami / QtQuick, QtWebEngine views).
 
 mod browser;
+mod crash;
 mod extensions;
 mod ffi;
 mod formfill;
@@ -78,7 +79,9 @@ Environment:
   RUST_LOG               Log filter (default: warn,console::page=error). Web page
                          consoles log to console::page, extension pages to
                          console::extension, Qt to qt::<category>; e.g.
-                         RUST_LOG=console::page=info shows all page messages";
+                         RUST_LOG=console::page=info shows all page messages.
+                         The log also goes to <data>/logs/<profile>/kite.log,
+                         beside the last crash report (last-crash.txt)";
 
 /// Start in the home folder, wherever Kite was started from: file dialogs that aren't
 /// told where to open do so in the working directory, and an AppImage keeps the
@@ -92,7 +95,7 @@ fn work_in_home() {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn,console::page=error")).init();
+    crash::init_logging();
     work_in_home();
     let mut profile = kite_core::profiles::DEFAULT.to_owned();
     let mut chosen = false;
@@ -166,6 +169,7 @@ fn main() {
         let instance = claim_profile(&profile, &urls, qt_args.len() > 1 || state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed));
         *state::INSTANCE.lock().unwrap_or_else(|e| e.into_inner()) = instance;
     }
+    crash::start(&profile, private);
     if let Err(e) = state::init(&profile, urls, private) {
         eprintln!("kite: cannot open profile {profile}: {e}");
         std::process::exit(1);
@@ -201,6 +205,7 @@ fn main() {
     ffi::set_wheel_pixels(state::app().shared.settings().get_i64("web.wheelScrollPixels"));
     let version = concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast();
     let code = unsafe { kite_bootstrap((argv.len() - 1) as c_int, argv.as_mut_ptr(), version) };
+    crash::clean_exit();
     if private {
         let _ = std::fs::remove_dir_all(state::app().shared.profile.root());
     }

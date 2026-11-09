@@ -392,6 +392,12 @@ QtObject {
         const notice = Browser.startupNotice()
         // (Long enough to read a file's name, and to notice it after starting up.)
         if (notice && activeWindow) activeWindow.toast(notice, "dialog-information", 30000)
+        // The last run crashed and left a report (crash.rs): once, unless turned off.
+        if (Browser.takeNewCrashReport() && setting("general.crashReportNotice") && activeWindow)
+            activeWindow.showCrashReport(false)
+        // QtWebEngine may have put its own crash handler in front of Kite's while starting.
+        Browser.checkCrashHandler()
+        crashHandlerCheck.start()
         Browser.listenForStarts()
     }
 
@@ -648,6 +654,8 @@ QtObject {
         if (Browser.isPrivate()) return
         Browser.saveSession(JSON.stringify(windows.filter(w => !w.privateMode).map(w => w.saveState())))
     }
+    // (Again once Chromium's processes are surely up.)
+    property Timer crashHandlerCheck: Timer { interval: 10000; onTriggered: Browser.checkCrashHandler() }
     property Timer sessionTimer: Timer { interval: 15000; repeat: true; running: true; onTriggered: app.saveSession() }
 
     // ---- extensions -------------------------------------------------------------
@@ -879,11 +887,17 @@ QtObject {
     // console::page / console::extension (see kite_log, RUST_LOG).
     property LoggingCategory pageConsole: LoggingCategory { name: "console.page"; defaultLogLevel: LoggingCategory.Debug }
     property LoggingCategory extensionConsole: LoggingCategory { name: "console.extension"; defaultLogLevel: LoggingCategory.Debug }
+    // The same from private windows: the log gets their addresses scrambled (ffi.rs kite_log).
+    property LoggingCategory privatePageConsole: LoggingCategory { name: "private.console.page"; defaultLogLevel: LoggingCategory.Debug }
+    property LoggingCategory privateExtensionConsole: LoggingCategory { name: "private.console.extension"; defaultLogLevel: LoggingCategory.Debug }
+    // Tabs' renderer processes ending (crashes, killed, out of memory): logged as kite::tabs.
+    property LoggingCategory tabsLog: LoggingCategory { name: "kite.tabs"; defaultLogLevel: LoggingCategory.Debug }
+    property LoggingCategory privateTabsLog: LoggingCategory { name: "private.kite.tabs"; defaultLogLevel: LoggingCategory.Debug }
     // What frames tell WebTab (it may hold a password): never logged.
     readonly property string frameSecret: Browser.frameSecret()
-    function logConsole(extension, prefix, level, message, source, line) {
+    function logConsole(extension, prefix, level, message, source, line, inPrivate) {
         if (message.startsWith(frameSecret)) return
-        const cat = extension ? extensionConsole : pageConsole
+        const cat = inPrivate ? (extension ? privateExtensionConsole : privatePageConsole) : (extension ? extensionConsole : pageConsole)
         const text = (prefix ? "[" + prefix + "] " : "") + message + (source ? " (" + source + ":" + line + ")" : "")
         if (level === WebEngineView.ErrorMessageLevel) console.error(cat, text)
         else if (level === WebEngineView.WarningMessageLevel) console.warn(cat, text)

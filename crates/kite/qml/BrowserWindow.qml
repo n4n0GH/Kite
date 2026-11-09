@@ -527,6 +527,9 @@ QQC2.ApplicationWindow {
     }
     function customizeToolbar() { customizeDialog.open() }
     function showAbout() { mainMenu.aboutDialog.open() }
+    // The last crash's report; `expanded` shows its text right away.
+    function showCrashReport(expanded) { crashReportDialog.show(expanded) }
+    CrashReportDialog { id: crashReportDialog; parent: bw.contentItem }
 
     // Menu bar shown briefly after tapping Alt while it's otherwise hidden.
     // The C++ input filter (bootstrap.cpp) calls altTapped(), and

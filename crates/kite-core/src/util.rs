@@ -58,6 +58,30 @@ pub fn local_path(text: &str) -> std::path::PathBuf {
     url::Url::parse(text).ok().filter(|u| u.scheme() == "file").and_then(|u| u.to_file_path().ok()).unwrap_or_else(|| text.into())
 }
 
+/// A time as local date and time ("2026-11-09 08:51:02"), `with_ms` adding milliseconds.
+pub fn local_time_fmt(t: std::time::SystemTime, with_date: bool, with_ms: bool) -> String {
+    let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = d.as_secs() as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return String::new();
+    }
+    let mut s = String::new();
+    if with_date {
+        s += &format!("{:04}-{:02}-{:02} ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    }
+    s += &format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    if with_ms {
+        s += &format!(".{:03}", d.subsec_millis());
+    }
+    s
+}
+
+/// A time as local date and time ("2026-11-09 08:51:02").
+pub fn local_time(t: std::time::SystemTime) -> String {
+    local_time_fmt(t, true, false)
+}
+
 /// A current Firefox's user agent, for the sites that only work for known browsers.
 pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
 

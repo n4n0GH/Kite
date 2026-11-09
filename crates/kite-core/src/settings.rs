@@ -32,6 +32,7 @@ pub fn defaults() -> Map<String, Value> {
         "general.welcome": "done",
         "general.searchFromLocationBar": true,
         "general.showSearchSuggestions": true,
+        "general.crashReportNotice": true,     // the crash report dialog at the start after a crash
         // Appearance
         "appearance.showBookmarksToolbar": true,
         "appearance.showStatusBar": true,

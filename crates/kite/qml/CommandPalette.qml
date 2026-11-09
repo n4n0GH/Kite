@@ -34,6 +34,7 @@ CommandBar {
         out.push({prefix: "Page", title: "Save page as PDF", icon: "application-pdf", run: () => win.savePdf()})
         out.push({prefix: "Windows", title: "Split view", icon: "view-split-left-right", run: () => win.toggleSplit()})
         out.push({prefix: "Help", title: "About Kite", icon: "help-about", run: () => win.showAbout()})
+        out.push({prefix: "Help", title: "Last crash report", icon: "tools-report-bug", run: () => win.showCrashReport(true)})
         for (const [where, name] of [["top", "above the address bar"], ["belowToolbar", "below the address bar"], ["bottom", "below the page"], ["vertical", "vertical list on the left"], ["verticalRight", "vertical list on the right"]]) {
             const place = where
             out.push({prefix: "Tab bar", title: name, icon: "tab-duplicate", current: false, checked: win.tabPosition === place, run: () => win.setTabPosition(place)})

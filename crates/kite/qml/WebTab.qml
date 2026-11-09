@@ -923,7 +923,11 @@ Item {
                 onFindTextFinished: result => wt.window.findResult(result.numberOfMatches, result.activeMatch)
 
                 onRenderProcessTerminated: (status, code) => {
-                    if (status !== WebEngineView.NormalTerminationStatus) wt.crashed = true
+                    if (status !== WebEngineView.NormalTerminationStatus) {
+                        wt.crashed = true
+                        const how = status === WebEngineView.CrashedTerminationStatus ? "crashed" : status === WebEngineView.KilledTerminationStatus ? "was killed" : "ended abnormally"
+                        console.warn(wt.window.privateMode ? wt.app.privateTabsLog : wt.app.tabsLog, "tab " + wt.tabId + ": its renderer process " + how + " (exit code " + code + ") on " + web.url)
+                    }
                     wt.setWakeLock(false)
                     wt.stopMidi()
                     wt.releasePointerLock()
@@ -955,7 +959,7 @@ Item {
                         else wt.frameMessage(text)
                         return
                     }
-                    wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line)
+                    wt.app.logConsole(wt.isExtensionPage || source.startsWith("userscript:kite:"), "tab " + wt.tabId, level, message, source, line, wt.window.privateMode)
                 }
             }
 
