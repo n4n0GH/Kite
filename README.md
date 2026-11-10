@@ -1,8 +1,16 @@
+<p align="center">
+  <img src=".readme/kite.svg" alt="Kite logo" width="120">
+</p>
+
 # Kite
 
 A KDE web browser written in Rust, modelled on [Falkon](https://invent.kde.org/network/falkon),
 with **native support for Firefox WebExtensions** installed straight from
 [addons.mozilla.org](https://addons.mozilla.org).
+
+<p align="center">
+  <img src=".readme/startpage.png" alt="Kite on Plasma, showing its empty start page" width="900">
+</p>
 
 How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPARISON.md).
 
