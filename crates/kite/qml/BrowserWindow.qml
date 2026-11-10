@@ -281,6 +281,8 @@ QQC2.ApplicationWindow {
     // tab's descendants are hidden; tabtree.js gives the rest ("treeDepth",
     // "treeCount", "treeHidden"). A tab's descendants are always right after it.
     // Other tab bars show a flat list; the links wait for the list to return.
+    // Tabs drawn by the application style ("tabs.styleDrawn"; TabButton.qml, horizontal strips).
+    readonly property bool styledTabs: !!app.liveSettings["tabs.styleDrawn"]
     readonly property bool treeEnabled: !!app.liveSettings["tabs.tree"] && (tabPosition === "vertical" || tabPosition === "verticalRight")
     onTreeEnabledChanged: updateTree()
     // While dragging (any tab, in any tab bar), tabs pass through places they

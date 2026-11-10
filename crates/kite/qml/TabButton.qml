@@ -35,6 +35,7 @@ Item {
     readonly property bool activePane: !browser.split || browser.activePane === pane
     // Selected with Ctrl/Shift+click (BrowserWindow.selectedTabs).
     readonly property bool selected: browser.selectedTabs.includes(tabId)
+    readonly property bool hovered: hover.hovered
 
     // Tab groups: the group, whether this is its first tab (showing the
     // group's chip, its tree header, or the group itself when collapsed).
@@ -189,15 +190,19 @@ Item {
         radius: Kirigami.Units.cornerRadius
         // The current tab merges into the toolbar/page next to the strip:
         // square corners on that side, so its side borders reach the edge.
-        readonly property bool merged: root.current && !root.vertical && !lifted
+        readonly property bool merged: root.current && !root.vertical && !lifted && !styled
+        // The application style draws its shape instead ("tabs.styleDrawn",
+        // horizontal strips; lifted for a drag, it's Kite's own again).
+        readonly property bool styled: !lifted && styleLoader.status === Loader.Ready
         corners.topLeftRadius: merged && root.placement === "bottom" ? 0 : -1
         corners.topRightRadius: merged && root.placement === "bottom" ? 0 : -1
         corners.bottomLeftRadius: merged && root.placement !== "bottom" ? 0 : -1
         corners.bottomRightRadius: merged && root.placement !== "bottom" ? 0 : -1
-        color: lifted || root.current ? Kirigami.Theme.backgroundColor
+        color: styled && !root.selected ? "transparent"
+             : lifted || root.current ? Kirigami.Theme.backgroundColor
              : root.selected ? Qt.alpha(Kirigami.Theme.highlightColor, hover.hovered ? 0.36 : 0.28)
              : hover.hovered ? Qt.lighter(Kirigami.Theme.backgroundColor, 1.04) : "transparent"
-        border.width: 1
+        border.width: styled ? 0 : 1
         border.color: root.selected ? Qt.alpha(Kirigami.Theme.highlightColor, 0.7)
                     : lifted || root.current ? Kirigami.ColorUtils.linearInterpolation(Kirigami.Theme.backgroundColor, Kirigami.Theme.textColor, 0.15) : "transparent"
         // ...and has no border line on that edge (only between its side
@@ -210,10 +215,19 @@ Item {
             height: parent.border.width
             color: parent.color
         }
+        Loader {
+            id: styleLoader
+            anchors.fill: parent
+            z: -1
+            visible: !bg.lifted
+            active: !root.vertical && !!root.browser.styledTabs
+            // (Kept while inactive, for when it becomes active.)
+            Component.onCompleted: setSource(Qt.resolvedUrl("StyledTab.qml"), {tab: root})
+        }
         // The current tab's marker; container tabs always show theirs, in
-        // the container's colour.
+        // the container's colour. (A style marks the current tab its own way.)
         Rectangle {
-            visible: root.current || !!root.containerInfo
+            visible: (root.current && !bg.styled) || !!root.containerInfo
             // (Softer for the current tab of the pane that isn't active.)
             opacity: root.current && root.activePane ? 1 : 0.5
             // (A list on the right marks the side facing the page.)

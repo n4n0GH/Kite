@@ -20,6 +20,7 @@ const TOGGLES = [
     {page: "appearance", text: "Overlay scrollbars (thin, widen on hover, hide when idle)", key: "appearance.overlayScrollbars", restart: true},
     {page: "tabs", text: "Hide the tab bar when only one tab is open", key: "tabs.hideWhenSingle"},
     {page: "tabs", text: "Stretch tabs across the whole tab bar", key: "tabs.fillWidth"},
+    {page: "tabs", text: "Let the application style draw tabs", key: "tabs.styleDrawn"},
     {page: "tabs", text: "Tree-style tabs in vertical lists", key: "tabs.tree"},
     {page: "tabs", text: "Open new tabs after the current tab", key: "tabs.newTabAfterActive"},
     {page: "tabs", text: "Switch to tabs opened from links", key: "tabs.switchToNewTabFromLink"},

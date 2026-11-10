@@ -46,7 +46,9 @@ BrowserWindow.qml
 ```
 
 `TabStripSlot.qml` holds a horizontal `TabStrip.qml`, which shows `TabButton.qml`s. In split view it
-holds one strip per pane. The tab bar's place comes from the `tabs.position` setting.
+holds one strip per pane. The tab bar's place comes from the `tabs.position` setting. Kite draws the tabs
+itself; with `tabs.styleDrawn`, a horizontal tab's shape comes from the application style instead
+(`StyledTab.qml`, qqc2-desktop-style's `StyleItem`), and Kite keeps its own when that isn't installed.
 
 Each `WebTab.qml` holds the page's own overlays: the certificate warning, permission prompts,
 `AutofillPopup.qml`. Plugins put theirs in its `pageArea` (Reader View's controls).

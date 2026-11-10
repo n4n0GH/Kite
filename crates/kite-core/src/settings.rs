@@ -73,6 +73,8 @@ pub fn defaults() -> Map<String, Value> {
         "browsing.formFill": true,
         // Firefox: browser.tabs.min_inactive_duration_before_unload (10 min).
         "tabs.fillWidth": false,
+        // Horizontal tabs drawn by the application style (Breeze, Oxygen, …) instead of Kite.
+        "tabs.styleDrawn": false,
         // Links open as children of their tab, in vertical tab lists.
         "tabs.tree": false,
         // Speed dial: tiles the user added ([{url, title}], shown first) and

@@ -900,6 +900,8 @@ ManagerWindow {
                 Hint { text: "Also available by right-clicking the tab bar." }
                 Check { enabled: tabPos.currentIndex < 3; text: "Stretch tabs across the whole tab bar"; key: "tabs.fillWidth" }
                 Hint { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)." }
+                Check { enabled: tabPos.currentIndex < 3; text: "Let the application style draw tabs"; key: "tabs.styleDrawn" }
+                Hint { text: "Tabs take their shape from your application style (System Settings → Colors & Themes → Application Style), like tabs in other KDE applications, instead of Kite's own (horizontal tab bars)." }
                 Check { text: "Tree-style tabs in vertical lists"; key: "tabs.tree" }
                 Hint { text: "Links open as children of their tab. Drag a tab sideways to change its level; its children move with it." }
             }
