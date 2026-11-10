@@ -2410,6 +2410,7 @@ fn builtin_plugins() -> Vec<kite_core::plugins::Plugin> {
         include_str!("../plugins/pip/plugin.json"),
         include_str!("../plugins/plasma-integration/plugin.json"),
         include_str!("../plugins/reader-view/plugin.json"),
+        include_str!("../plugins/youtube-download/plugin.json"),
     ])
     .expect("plugin.json");
     for p in &mut plugins {

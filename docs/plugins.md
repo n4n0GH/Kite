@@ -110,6 +110,15 @@ To add to a page's context menu, give it a `contextItems(info)` function. `info`
 opened on (`linkUrl`, `srcUrl`, `mediaType`, `selectionText`, `editable`, `pageUrl`), and it returns a list
 of `{title, iconName, run}` or `{title, iconName, children}`.
 
+To put a button in the address bar, give it a `locationButtons` property: a list of
+`{icon, text, highlighted, run(button)}`, kept up to date (for `win.currentTab`, say). `run` gets the
+button, to open a popup under it. A new list makes new buttons, which closes a popup on one, so the list
+should change only when buttons come or go: `text` and `highlighted` can be functions instead, for what
+changes while a button is shown.
+
+The plugin's app item, if it has one, is `app.pluginAppItem(plugin.id)`. It's made alongside the window
+items, so look it up once they're all there (`Qt.callLater` in `Component.onCompleted`).
+
 `win.tabOpened(tab)` tells it when a tab is added (those already open are in `win.tabItems`), and
 `win.tabClosed(tabId)` when one closes. What it shows over a tab's page goes in `tab.pageArea`.
 
@@ -136,7 +145,23 @@ the same pieces, all in `org.kde.kite`:
 | `SettingsListRow` | A row of a list, highlighted under the pointer; it holds one `RowLayout` |
 | `SettingsRowButton` | A row's icon button, its `text` as a tooltip (`edit-delete` to remove the row) |
 
-### Page scripts### Page scripts
+### Page scripts### Running a program
+
+`Process` (in `org.kde.kite`) runs a program and reads what it prints:
+
+| Member | Does |
+|---|---|
+| `findProgram(name)` | Where `name` is on `PATH`, or `""` (a path is checked as given) |
+| `start(program, argsJson)` | Runs it with a JSON list of arguments, no shell. `false` when it can't |
+| `stop()` | Stops it, and what it started |
+| `running` | Whether it's running |
+| `output(line)` | A line it printed, on standard output or standard error |
+| `finished(code)` | It ended, with its exit code (`-1` when stopped) |
+
+Destroying it stops the program, so one in a window item ends with its window. Anything a page gave you
+(an address, a title) goes in as an argument after `--`, never into a shell.
+
+### Page scripts
 
 Each one gets two things that nothing else has:
 
@@ -356,6 +381,7 @@ The existing plugins are the best reference:
 | `plugins/gestures/` | The window item using a hook in `bootstrap.cpp`, tested logic in `strokes.js`, and a large settings page |
 | `plugins/vim-keys/` | Frames, updating already open tabs, its own `VimBar.qml`, and a page script built from several files |
 | `plugins/plasma-integration/` | A page script in the page's own world beside one in Kite's, context menu items, and talking to the desktop (`kite_core::plasma`) |
+| `plugins/youtube-download/` | An address bar button with a popup (`locationButtons`), work shared by all windows in its app item (`app.pluginAppItem`), and running a program (`Process`), with what it's given and prints tested in `ytdl.js` |
 | `plugins/reader-view/` | A part in every tab (`win.tabOpened`, `tab.pageArea`), scripts run in pages only when needed (`Browser.pluginFile`), a settings page sharing its controls with the page's, and a service Kite keeps for it (`kite:reader`, `kite_core::reader`) |
 
 If a plugin needs something Kite doesn't offer, add it to Kite (a hook in `BrowserWindow.qml`, say) and

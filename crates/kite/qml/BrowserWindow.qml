@@ -1314,6 +1314,20 @@ QQC2.ApplicationWindow {
             if (loader.item && id.startsWith(loader.modelData.id + ".")) loader.item.runAction(id)
         }
     }
+    // Buttons plugins put in the address bar: each window item's
+    // `locationButtons`, a list of {icon, text, highlighted, run(button)} that it
+    // keeps up to date (for the current tab, say). LocationBar.qml shows them.
+    // `text` and `highlighted` may be functions: a new list makes new buttons
+    // (closing a popup on one), so what changes while one is shown goes there.
+    readonly property var pluginLocationButtons: {
+        let out = []
+        for (let i = 0; i < pluginWindows.count; ++i) {
+            const loader = pluginWindows.itemAt(i)
+            const item = loader ? loader.item : null
+            if (item && Array.isArray(item.locationButtons)) out = out.concat(item.locationButtons)
+        }
+        return out
+    }
     // Whether a plugin's action is on now, for actions that switch something
     // (the command palette's On/Off): its window's actionChecked(id), if it has
     // one; undefined for the rest.

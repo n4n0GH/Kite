@@ -170,6 +170,24 @@ QQC2.TextField {
                 QQC2.ToolTip.text: modelData.title; QQC2.ToolTip.visible: hovered
             }
         }
+        // Plugins' buttons (BrowserWindow.pluginLocationButtons).
+        Repeater {
+            model: field.editing ? [] : field.win.pluginLocationButtons
+            delegate: QQC2.ToolButton {
+                id: pluginButton
+                required property var modelData
+                Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height
+                padding: 2
+                icon.name: modelData.icon || "kite-extension"
+                // (`text` and `highlighted` can be functions, for what changes while it's shown.)
+                readonly property string label: typeof modelData.text === "function" ? modelData.text() : modelData.text || ""
+                readonly property bool lit: typeof modelData.highlighted === "function" ? modelData.highlighted() : !!modelData.highlighted
+                icon.color: lit ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+                onClicked: modelData.run(pluginButton)
+                Accessible.name: label
+                QQC2.ToolTip.text: label; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+            }
+        }
         // Reader view, for pages that look like articles (and to leave it).
         QQC2.ToolButton {
             Layout.preferredHeight: trailing.height; Layout.preferredWidth: trailing.height

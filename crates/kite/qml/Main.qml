@@ -109,6 +109,14 @@ QtObject {
     function setPluginSetting(plugin, key, value) { Browser.setSetting("plugins." + plugin.id + "." + key, JSON.stringify(value)) }
     function pluginUrl(plugin, file) { return plugin.baseUrl + file }
     // Plugins' items for the whole browser, while they're on.
+    // A plugin's item for the whole browser (its window items reach it here), or null.
+    function pluginAppItem(pluginId) {
+        for (let i = 0; i < pluginApps.count; ++i) {
+            const loader = pluginApps.objectAt(i)
+            if (loader && loader.modelData.id === pluginId) return loader.item || null
+        }
+        return null
+    }
     property Instantiator pluginApps: Instantiator {
         model: app.plugins.filter(p => p.app)
         delegate: Loader {

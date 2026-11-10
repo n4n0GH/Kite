@@ -13,6 +13,7 @@ mod ffi;
 mod formfill;
 mod native_hosts;
 mod passwords;
+mod process;
 mod rpc;
 mod startpage;
 mod state;

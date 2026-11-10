@@ -1,0 +1,24 @@
+{
+    "id": "youtube-download",
+    "name": "YouTube Download",
+    "description": "Save the YouTube video you're watching, with yt-dlp: a download button appears in the address bar on video pages. Needs yt-dlp installed, and ffmpeg for the best quality.",
+    "icon": "download",
+    "defaultEnabled": false,
+    "app": "plugins/youtube-download/YouTubeDownloadApp.qml",
+    "window": "plugins/youtube-download/YouTubeDownloadWindow.qml",
+    "settingsPage": "plugins/youtube-download/YouTubeDownloadSettings.qml",
+    "actions": [
+        {
+            "id": "youtube-download.download",
+            "group": "Page",
+            "name": "Download this video",
+            "keys": [],
+            "icon": "download"
+        }
+    ],
+    "settings": {
+        "quality": "best",
+        "folder": "",
+        "program": ""
+    }
+}
