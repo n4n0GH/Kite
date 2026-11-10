@@ -18,7 +18,6 @@
     ],
     "settings": {
         "quality": "best",
-        "folder": "",
-        "program": ""
+        "folder": ""
     }
 }

@@ -14,37 +14,35 @@ ColumnLayout {
     property var plugin
     spacing: Kirigami.Units.largeSpacing
 
-    // What's installed, looked up each time the page is shown (and by the
-    // plugin's own item too, so the address bar follows).
+    // What the yt-dlp-only runner finds, each time the page is shown (and it
+    // tells the plugin's own item too, so the address bar follows).
     property string program: ""
-    property string ffmpeg: ""
     property string version: ""
+    property bool ffmpeg: false
+    property bool checked: false
     function check() {
-        program = finder.findProgram(app.pluginSetting(plugin, "program") || "yt-dlp")
-        ffmpeg = finder.findProgram("ffmpeg")
-        version = ""
-        if (program !== "") versionCheck.start(program, JSON.stringify(["--version"]))
+        checked = false
+        tools.checkTools()
         const store = app.pluginAppItem(plugin.id)
-        if (store) store.findPrograms()
+        if (store) store.recheck()
     }
-    Process { id: finder }
-    Process {
-        id: versionCheck
-        onOutput: line => { if (root.version === "" && /^\d/.test(line)) root.version = line.trim() }
+    YtDownloader {
+        id: tools
+        onTools: (found, ver, hasFfmpeg) => { root.program = found; root.version = ver; root.ffmpeg = hasFfmpeg; root.checked = true }
     }
     Component.onCompleted: check()
 
     SettingsSectionHeader { text: "yt-dlp" }
     Kirigami.InlineMessage {
         Layout.fillWidth: true
-        visible: root.program === ""
+        visible: root.checked && root.program === ""
         type: Kirigami.MessageType.Warning
         text: "yt-dlp isn't installed, so there's no download button in the address bar. Install it with your distribution's software manager (the package is called yt-dlp), then check again."
         actions: [Kirigami.Action { text: "Check Again"; icon.name: "view-refresh"; onTriggered: root.check() }]
     }
     Kirigami.InlineMessage {
         Layout.fillWidth: true
-        visible: root.program !== "" && root.ffmpeg === ""
+        visible: root.checked && root.program !== "" && !root.ffmpeg
         type: Kirigami.MessageType.Information
         text: "ffmpeg isn't installed. Without it, videos are saved in the best quality that comes as one file (often 720p), and audio isn't converted."
         actions: [Kirigami.Action { text: "Check Again"; icon.name: "view-refresh"; onTriggered: root.check() }]
@@ -52,18 +50,11 @@ ColumnLayout {
     SettingsForm {
         QQC2.Label {
             Kirigami.FormData.label: "Found:"
-            text: root.program === "" ? "No" : root.program + (root.version ? " (version " + root.version + ")" : "")
+            text: !root.checked ? "Checking…" : root.program === "" ? "No" : root.program + (root.version ? " (version " + root.version + ")" : "")
             elide: Text.ElideMiddle
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 24
         }
-        QQC2.TextField {
-            Kirigami.FormData.label: "Program:"
-            Layout.maximumWidth: Kirigami.Units.gridUnit * 20
-            placeholderText: "yt-dlp"
-            text: root.app.pluginSetting(root.plugin, "program")
-            onEditingFinished: if (text.trim() !== root.app.pluginSetting(root.plugin, "program")) { root.app.setPluginSetting(root.plugin, "program", text.trim()); root.check() }
-        }
-        SettingsHint { text: "Empty uses the yt-dlp on your PATH. A path to another one (a newer one you keep up to date yourself, say) uses that instead." }
+        SettingsHint { text: "yt-dlp is run from your PATH. It's the only program this plugin runs, and Kite builds what it's told to do, so a video's page can't make it do anything else." }
     }
 
     SettingsSectionHeader { text: "Saving" }
@@ -80,8 +71,8 @@ ColumnLayout {
         SettingsHint { text: "What the download button offers first; it can be changed for each video." }
         RowLayout {
             Kirigami.FormData.label: "Folder:"
-            property string chosen: root.app.pluginSetting(root.plugin, "folder")
             id: folderRow
+            property string chosen: root.app.pluginSetting(root.plugin, "folder")
             QQC2.Label {
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 14
                 elide: Text.ElideMiddle

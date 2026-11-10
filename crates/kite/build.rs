@@ -75,7 +75,7 @@ fn main() {
         // (The header has the QML singleton PointerLock, for moc.)
         .cpp_file("cpp/pointerlock.h")
         .cpp_file("cpp/pointerlock.cpp")
-        .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs", "src/process.rs"])
+        .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs", "src/ytdlp.rs"])
         .build();
 
     // QtWebEngineQuick::initialize() and QQuickWebEngineProfile — link the

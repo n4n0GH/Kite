@@ -99,7 +99,7 @@ Item {
             }
             QQC2.Label {
                 Layout.fillWidth: true
-                visible: !!root.store && root.store.ffmpeg === "" && (!root.job || root.job.state !== "running")
+                visible: !!root.store && !root.store.ffmpeg && (!root.job || root.job.state !== "running")
                 wrapMode: Text.Wrap
                 opacity: 0.7
                 font: Kirigami.Theme.smallFont

@@ -34,6 +34,10 @@ Kite only makes sure that nothing of a plugin runs before the user agrees:
 | An archive can't write outside its folder, or create links | Unpacking stays in the plugin's folder |
 | It can't take the id of a plugin that ships with Kite | It can't pass for one |
 
+Kite offers no way for a plugin to run an arbitrary program (that would be a way to run anything as you).
+Where a plugin needs an external tool, Kite adds a runner locked to that one tool and builds its
+arguments itself, so the capability stays bounded (see **Running a program**).
+
 ## What a plugin is made of
 
 ```
@@ -145,23 +149,21 @@ the same pieces, all in `org.kde.kite`:
 | `SettingsListRow` | A row of a list, highlighted under the pointer; it holds one `RowLayout` |
 | `SettingsRowButton` | A row's icon button, its `text` as a tooltip (`edit-delete` to remove the row) |
 
-### Page scripts### Running a program
+### Running a program
 
-`Process` (in `org.kde.kite`) runs a program and reads what it prints:
+Plugins can't. There's no general way to start a program, on purpose: a plugin is fully trusted
+(see **Security**), so a "run any program" door would be a way to run anything as you, which the rest of
+a plugin's reach (reading pages, settings, the network) does not add up to. When a plugin needs a
+specific tool, Kite adds a runner locked to that tool, and nothing else.
 
-| Member | Does |
-|---|---|
-| `findProgram(name)` | Where `name` is on `PATH`, or `""` (a path is checked as given) |
-| `start(program, argsJson)` | Runs it with a JSON list of arguments, no shell. `false` when it can't |
-| `stop()` | Stops it, and what it started |
-| `running` | Whether it's running |
-| `output(line)` | A line it printed, on standard output or standard error |
-| `finished(code)` | It ended, with its exit code (`-1` when stopped) |
+The one so far is `YtDownloader` (in `org.kde.kite`), for the YouTube Download plugin. It runs only
+`yt-dlp`, found on `PATH` (never a path a plugin names), and Kite builds every argument: a plugin asks it
+to save a URL at a quality into a folder, Kite checks the URL is a YouTube video and rebuilds it, checks
+the quality against a fixed list, and runs yt-dlp with arguments it wrote. So the most a plugin can make
+it do is save a YouTube video; it can't be turned into a way to run something else. Adding a tool means
+adding a runner like it in Rust (`crates/kite/src/ytdlp.rs`), not a general one.
 
-Destroying it stops the program, so one in a window item ends with its window. Anything a page gave you
-(an address, a title) goes in as an argument after `--`, never into a shell.
-
-### Page scripts
+### Page scripts### Page scripts
 
 Each one gets two things that nothing else has:
 
@@ -381,7 +383,7 @@ The existing plugins are the best reference:
 | `plugins/gestures/` | The window item using a hook in `bootstrap.cpp`, tested logic in `strokes.js`, and a large settings page |
 | `plugins/vim-keys/` | Frames, updating already open tabs, its own `VimBar.qml`, and a page script built from several files |
 | `plugins/plasma-integration/` | A page script in the page's own world beside one in Kite's, context menu items, and talking to the desktop (`kite_core::plasma`) |
-| `plugins/youtube-download/` | An address bar button with a popup (`locationButtons`), work shared by all windows in its app item (`app.pluginAppItem`), and running a program (`Process`), with what it's given and prints tested in `ytdl.js` |
+| `plugins/youtube-download/` | An address bar button with a popup (`locationButtons`), work shared by all windows in its app item (`app.pluginAppItem`), and a tool-locked runner (`YtDownloader`, `crates/kite/src/ytdlp.rs`) instead of a general one |
 | `plugins/reader-view/` | A part in every tab (`win.tabOpened`, `tab.pageArea`), scripts run in pages only when needed (`Browser.pluginFile`), a settings page sharing its controls with the page's, and a service Kite keeps for it (`kite:reader`, `kite_core::reader`) |
 
 If a plugin needs something Kite doesn't offer, add it to Kite (a hook in `BrowserWindow.qml`, say) and
