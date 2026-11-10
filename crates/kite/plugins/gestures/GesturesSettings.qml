@@ -5,7 +5,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "strokes.js" as Strokes
 
-// Settings → Plugins → Mouse Gestures.
+// Settings → Plugins & Extensions → Mouse Gestures.
 ColumnLayout {
     id: root
     property var app
@@ -26,8 +26,8 @@ ColumnLayout {
     readonly property var actions: app.shortcutActions.filter(a => !/^tab(\d|Last)/.test(a.id)).map(a => ({id: a.id, name: a.group + ": " + a.name}))
     function actionName(id) { const a = actions.find(x => x.id === id); return a ? a.name : id }
 
-    Kirigami.FormLayout {
-        Layout.fillWidth: true
+    SettingsSectionHeader { text: "Drawing" }
+    SettingsForm {
         QQC2.ComboBox {
             Kirigami.FormData.label: "Button:"
             model: [{k: "right", t: "Right button"}, {k: "middle", t: "Middle button"}]
@@ -38,49 +38,53 @@ ColumnLayout {
             onActivated: root.app.setPluginSetting(root.plugin, "button", currentValue)
         }
         QQC2.CheckBox {
+            Kirigami.FormData.label: "Trail:"
             text: "Show the stroke while drawing"
             checked: !!root.app.pluginSetting(root.plugin, "trail")
             onToggled: root.app.setPluginSetting(root.plugin, "trail", checked)
         }
     }
 
-    Kirigami.Heading { level: 4; text: "Gestures" }
+    SettingsSectionHeader { text: "Gestures" }
     QQC2.Label {
         visible: root.strokes.length === 0
+        Layout.fillWidth: true
+        horizontalAlignment: Text.AlignHCenter
         opacity: 0.7
         text: "No gestures."
     }
     ColumnLayout {
         Layout.fillWidth: true
+        spacing: 0
         Repeater {
             model: root.strokes
-            delegate: RowLayout {
+            delegate: SettingsListRow {
                 id: row
                 required property string modelData
-                QQC2.Label {
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 8
-                    horizontalAlignment: Text.AlignRight
-                    text: Strokes.arrows(row.modelData)
-                }
-                QQC2.ComboBox {
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 18
-                    model: root.actions
-                    textRole: "name"
-                    valueRole: "id"
-                    // Scrolling down this list must not change what it passes over.
-                    wheelEnabled: false
-                    currentIndex: root.actions.findIndex(a => a.id === root.map[row.modelData])
-                    onActivated: root.setMap(Object.assign({}, root.map, {[row.modelData]: currentValue}))
-                }
-                QQC2.ToolButton {
-                    icon.name: "edit-delete-remove"
-                    QQC2.ToolTip.text: "Remove this gesture"
-                    QQC2.ToolTip.visible: hovered
-                    QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    onClicked: {
-                        const next = Object.assign({}, root.map)
-                        delete next[row.modelData]
-                        Qt.callLater(root.setMap, next)
+                RowLayout {
+                    QQC2.Label {
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 8
+                        horizontalAlignment: Text.AlignRight
+                        text: Strokes.arrows(row.modelData)
+                    }
+                    QQC2.ComboBox {
+                        Layout.fillWidth: true
+                        model: root.actions
+                        textRole: "name"
+                        valueRole: "id"
+                        // Scrolling down this list must not change what it passes over.
+                        wheelEnabled: false
+                        currentIndex: root.actions.findIndex(a => a.id === root.map[row.modelData])
+                        onActivated: root.setMap(Object.assign({}, root.map, {[row.modelData]: currentValue}))
+                    }
+                    SettingsRowButton {
+                        icon.name: "edit-delete"
+                        text: "Remove this gesture"
+                        onClicked: {
+                            const next = Object.assign({}, root.map)
+                            delete next[row.modelData]
+                            Qt.callLater(root.setMap, next)
+                        }
                     }
                 }
             }

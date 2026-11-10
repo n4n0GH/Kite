@@ -29,7 +29,7 @@ CommandBar {
         for (const a of app.shortcutActions) {
             if (/^tab(\d|Last)/.test(a.id)) continue
             const id = a.id
-            out.push({prefix: a.group, title: a.name, icon: Palette.ACTION_ICONS[id] || a.icon || "system-run", keys: keysOf(id), run: () => win.runAction(id)})
+            out.push({prefix: a.group, title: a.name, icon: Palette.ACTION_ICONS[id] || a.icon || "system-run", keys: keysOf(id), checked: win.pluginActionChecked(id), run: () => win.runAction(id)})
         }
         out.push({prefix: "Page", title: "Save page as PDF", icon: "application-pdf", run: () => win.savePdf()})
         out.push({prefix: "Windows", title: "Split view", icon: "view-split-left-right", run: () => win.toggleSplit()})

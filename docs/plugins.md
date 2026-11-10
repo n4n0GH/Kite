@@ -1,7 +1,7 @@
 # Native plugins
 
 Plugins are optional features that run as part of Kite. Mouse Gestures, Vim Keys,
-Picture-in-Picture, Plasma Integration and Reader View are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
+Picture-in-Picture, Plasma Integration, Reader View and YouTube Download are plugins that ship with Kite, in `crates/kite/plugins/`. Anyone can write one and
 hand it out as a file, and users install it with **Settings → Plugins & Extensions → Install Plugin
 from File…**. Users switch plugins on and off there. The toolbar's extensions panel lists those that are on, with a button to their settings.
 
@@ -102,7 +102,9 @@ it can't cover the page. Anything it shows, it has to put up itself. It's given 
 | `app` | `Main`: `pluginSetting`, `showPreferences`, `shortcutActions`… |
 | `plugin` | The manifest, as a JavaScript object |
 
-If the plugin has actions, this item needs a `runAction(id)` function.
+If the plugin has actions, this item needs a `runAction(id)` function. An action that switches
+something on and off can say which it is now with an `actionChecked(id)` function returning `true` or
+`false` (`undefined` for the rest): the command palette shows it as On or Off.
 
 To add to a page's context menu, give it a `contextItems(info)` function. `info` says what the menu was
 opened on (`linkUrl`, `srcUrl`, `mediaType`, `selectionText`, `editable`, `pageUrl`), and it returns a list
@@ -123,7 +125,18 @@ It's given `app` and `plugin`, and is shown under the **Configure** button:
 They're stored as `plugins.<id>.<key>`, and whether it's on as `plugins.<id>.enabled`, with everything
 else in the settings file. To react to a change, connect to `Browser.settingChanged`.
 
-### Page scripts
+The page sits in the same column as Kite's own Settings pages. To look like them, it can be built from
+the same pieces, all in `org.kde.kite`:
+
+| Type | Is |
+|---|---|
+| `SettingsSectionHeader` | A section's title, with a line after it |
+| `SettingsForm` | A section's form (`Kirigami.FormLayout`); the forms of a page line up their labels |
+| `SettingsHint` | What a setting does, in small text under it |
+| `SettingsListRow` | A row of a list, highlighted under the pointer; it holds one `RowLayout` |
+| `SettingsRowButton` | A row's icon button, its `text` as a tooltip (`edit-delete` to remove the row) |
+
+### Page scripts### Page scripts
 
 Each one gets two things that nothing else has:
 
@@ -274,20 +287,27 @@ Item {
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
+import org.kde.kirigami as Kirigami
+import org.kde.kite
 
 // Settings → Plugins & Extensions → Word Count.
-RowLayout {
+ColumnLayout {
     id: root
     property var app
     property var plugin
+    spacing: Kirigami.Units.largeSpacing
 
-    QQC2.Label { text: "Words read per minute:" }
-    QQC2.SpinBox {
-        from: 50
-        to: 1000
-        stepSize: 10
-        value: root.app.pluginSetting(root.plugin, "wordsPerMinute")
-        onValueModified: root.app.setPluginSetting(root.plugin, "wordsPerMinute", value)
+    SettingsSectionHeader { text: "Reading Time" }
+    SettingsForm {
+        QQC2.SpinBox {
+            Kirigami.FormData.label: "Words read per minute:"
+            from: 50
+            to: 1000
+            stepSize: 10
+            value: root.app.pluginSetting(root.plugin, "wordsPerMinute")
+            onValueModified: root.app.setPluginSetting(root.plugin, "wordsPerMinute", value)
+        }
+        SettingsHint { text: "How long a page takes to read is worked out from this." }
     }
 }
 ```

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.kite
 
 // Settings → Plugins & Extensions → Reader View: how articles look. (The same
 // as the button over a page in reader view.)
@@ -9,15 +10,13 @@ ColumnLayout {
     id: root
     property var app
     property var plugin
+    spacing: Kirigami.Units.largeSpacing
 
-    ReaderViewLook { app: root.app; plugin: root.plugin; Layout.fillWidth: true; Layout.maximumWidth: Kirigami.Units.gridUnit * 26 }
-    QQC2.Label {
+    SettingsSectionHeader { text: "Look" }
+    ReaderViewLook {
+        app: root.app
+        plugin: root.plugin
         Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 26
-        Layout.topMargin: Kirigami.Units.largeSpacing
-        wrapMode: Text.Wrap
-        opacity: 0.7
-        font: Kirigami.Theme.smallFont
-        text: "System colours follow your desktop's. Pages already in reader view change at once."
+        hint: "System colours follow your desktop's. Pages already in reader view change at once."
     }
 }

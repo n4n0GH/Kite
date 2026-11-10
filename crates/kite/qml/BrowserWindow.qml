@@ -1314,6 +1314,16 @@ QQC2.ApplicationWindow {
             if (loader.item && id.startsWith(loader.modelData.id + ".")) loader.item.runAction(id)
         }
     }
+    // Whether a plugin's action is on now, for actions that switch something
+    // (the command palette's On/Off): its window's actionChecked(id), if it has
+    // one; undefined for the rest.
+    function pluginActionChecked(id) {
+        for (let i = 0; i < pluginWindows.count; ++i) {
+            const loader = pluginWindows.itemAt(i)
+            if (loader.item && id.startsWith(loader.modelData.id + ".") && typeof loader.item.actionChecked === "function") return loader.item.actionChecked(id)
+        }
+        return undefined
+    }
     Item {
         Repeater {
             id: pluginWindows

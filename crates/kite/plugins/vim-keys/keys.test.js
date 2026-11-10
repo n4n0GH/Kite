@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/keys.js', 'utf8').replace('.pragma library', '');
-const K = new Function(src + '\nreturn {COMMANDS, WINDOW_ACTIONS, bindings, press, conflicts, labels, siteOf, isExcepted, hintTheme, DEFAULT_HINT_COLOR, scrollSpeed, SCROLL_SPEEDS, HINT_ROLES, NG_CLICK, classSaysButton, jsactionClicks, areaBox, withoutWrappers};')();
+const K = new Function(src + '\nreturn {COMMANDS, WINDOW_ACTIONS, bindings, press, conflicts, clash, labels, siteOf, isExcepted, hintTheme, DEFAULT_HINT_COLOR, scrollSpeed, SCROLL_SPEEDS, HINT_ROLES, NG_CLICK, classSaysButton, jsactionClicks, areaBox, withoutWrappers};')();
 const plugin = JSON.parse(fs.readFileSync(__dirname + '/plugin.json', 'utf8'));
 const map = K.bindings(plugin.settings.keys);
 
@@ -194,4 +194,18 @@ test('unsure hints give way to what is close inside them', () => {
 
 test('the roles that get a hint', () => {
   for (const role of ['button', 'tab', 'link', 'checkbox', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'radio', 'textbox', 'switch', 'option']) assert.ok(K.HINT_ROLES.includes(role), role);
+});
+
+test('a recorded key: the same keys move, a key starting another is refused', () => {
+  const keys = { scrollDown: 'j', top: 'gg', back: 'H' };
+  assert.strictEqual(K.clash(keys, 'scrollUp', 'j').same.id, 'scrollDown');
+  assert.strictEqual(K.clash(keys, 'scrollUp', 'j').prefix, null);
+  assert.strictEqual(K.clash(keys, 'scrollUp', 'g').prefix.id, 'top');
+  assert.strictEqual(K.clash(keys, 'scrollUp', 'ggx').prefix.id, 'top');
+  assert.deepStrictEqual(K.clash(keys, 'top', 'gg'), { same: null, prefix: null });
+  assert.deepStrictEqual(K.clash(keys, 'scrollUp', ''), { same: null, prefix: null });
+});
+
+test('every command has a group', () => {
+  for (const c of K.COMMANDS) assert.ok(c.group, c.id);
 });

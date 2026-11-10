@@ -73,24 +73,10 @@ ManagerWindow {
         opacity: settled ? 1 : 0
         Component.onCompleted: Qt.callLater(() => Qt.callLater(() => pageColumn.settled = true))
     }
-    // A section's title, as System Settings has them: on the left, a line after it.
-    // (Without the padding it has as a list's item: it lines up with the rest of the column.)
-    component SectionHeader: Kirigami.ListSectionHeader { Layout.fillWidth: true; leftPadding: 0; rightPadding: 0 }
-    // A section's form. The forms of a page line up their labels with each other.
-    component Form: Kirigami.FormLayout {
-        id: form
-        readonly property bool kiteForm: true
-        Layout.fillWidth: true
-        Component.onCompleted: twinFormLayouts = form.parent ? form.parent.children.filter(c => c !== form && c.kiteForm === true) : []
-    }
-    // What a setting does, under it.
-    component Hint: QQC2.Label {
-        Layout.fillWidth: true
-        Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-        wrapMode: Text.Wrap
-        opacity: 0.7
-        font: Kirigami.Theme.smallFont
-    }
+    // (Plugins' settings pages use these too: SettingsSectionHeader.qml and the others.)
+    component SectionHeader: SettingsSectionHeader {}
+    component Form: SettingsForm {}
+    component Hint: SettingsHint {}
     // A user agent to choose: common browsers' (Browser.userAgentPresets), or one
     // typed in a field shown for it. `value` is what's stored ("" for the first
     // option, kite:qtwebengine for Kite naming QtWebEngine).
@@ -122,32 +108,8 @@ ManagerWindow {
             onTextEdited: uaf.edited()
         }
     }
-    // A row of a list on a page: highlighted under the pointer (KDE's list row),
-    // so it's clear which row a button belongs to. Rows aren't clicked themselves.
-    component ListRow: QQC2.ItemDelegate {
-        id: listRow
-        default property alias content: rowBox.data
-        Layout.fillWidth: true
-        hoverEnabled: true
-        down: false
-        highlighted: false
-        topPadding: Kirigami.Units.smallSpacing
-        bottomPadding: Kirigami.Units.smallSpacing
-        contentItem: Item {
-            id: rowBox
-            implicitHeight: children.length ? children[0].implicitHeight : 0
-            implicitWidth: children.length ? children[0].implicitWidth : 0
-            // (Its one child, a RowLayout, fills it.)
-            Component.onCompleted: if (children.length) { children[0].anchors.fill = rowBox }
-        }
-    }
-    // A row's icon button: its name as a tooltip.
-    component RowButton: QQC2.ToolButton {
-        display: QQC2.AbstractButton.IconOnly
-        QQC2.ToolTip.text: text
-        QQC2.ToolTip.visible: hovered
-        QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-    }
+    component ListRow: SettingsListRow {}
+    component RowButton: SettingsRowButton {}
     // A setting's checkbox.
     component Check: QQC2.CheckBox {
         property string key
@@ -451,12 +413,18 @@ ManagerWindow {
     Component {
         id: pluginSettingsPage
         Kirigami.ScrollablePage {
+            id: pluginPage
             property var plugin
             title: plugin ? plugin.name : ""
-            ColumnLayout {
+            // In the same column as every other page (its own ColumnLayout of
+            // SettingsSectionHeader, SettingsForm, SettingsHint, …).
+            Item {
+                implicitHeight: pluginLoader.height
                 Loader {
-                    Layout.fillWidth: true
-                    Component.onCompleted: setSource(w.app.pluginUrl(plugin, plugin.settingsPage), {app: w.app, plugin: plugin})
+                    id: pluginLoader
+                    width: w.columnWidthIn(pluginPage)
+                    x: w.columnXIn(pluginPage)
+                    Component.onCompleted: setSource(w.app.pluginUrl(pluginPage.plugin, pluginPage.plugin.settingsPage), {app: w.app, plugin: pluginPage.plugin})
                 }
             }
         }

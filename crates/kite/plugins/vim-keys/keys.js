@@ -1,36 +1,37 @@
 .pragma library
 // Vim keys: the rules, without a page or QML (tested with node: keys.test.js).
 
-// What can be bound, in the order Settings shows it.
+// What can be bound, in the order Settings shows it (under its group, the groups
+// in the order they first come).
 const COMMANDS = [
-    {id: "scrollDown", name: "Scroll down"},
-    {id: "scrollUp", name: "Scroll up"},
-    {id: "scrollLeft", name: "Scroll left"},
-    {id: "scrollRight", name: "Scroll right"},
-    {id: "halfPageDown", name: "Half a page down"},
-    {id: "halfPageUp", name: "Half a page up"},
-    {id: "top", name: "Top of the page"},
-    {id: "bottom", name: "Bottom of the page"},
-    {id: "hints", name: "Follow a link"},
-    {id: "hintsNewTab", name: "Open a link in a new tab"},
-    {id: "open", name: "Open an address or search"},
-    {id: "openNewTab", name: "Open in a new tab"},
-    {id: "tabSearch", name: "Search tabs"},
-    {id: "find", name: "Find in page"},
-    {id: "findNext", name: "Next match"},
-    {id: "findPrevious", name: "Previous match"},
-    {id: "back", name: "Back"},
-    {id: "forward", name: "Forward"},
-    {id: "previousTab", name: "Previous tab"},
-    {id: "nextTab", name: "Next tab"},
-    {id: "closeTab", name: "Close tab"},
-    {id: "reopenTab", name: "Reopen closed tab"},
-    {id: "newTab", name: "New tab"},
-    {id: "moveTabLeft", name: "Move the tab left"},
-    {id: "moveTabRight", name: "Move the tab right"},
-    {id: "reload", name: "Reload"},
-    {id: "copyUrl", name: "Copy the page's address"},
-    {id: "insert", name: "Pass keys to the page until Esc"},
+    {id: "scrollDown", group: "Scrolling", name: "Scroll down"},
+    {id: "scrollUp", group: "Scrolling", name: "Scroll up"},
+    {id: "scrollLeft", group: "Scrolling", name: "Scroll left"},
+    {id: "scrollRight", group: "Scrolling", name: "Scroll right"},
+    {id: "halfPageDown", group: "Scrolling", name: "Half a page down"},
+    {id: "halfPageUp", group: "Scrolling", name: "Half a page up"},
+    {id: "top", group: "Scrolling", name: "Top of the page"},
+    {id: "bottom", group: "Scrolling", name: "Bottom of the page"},
+    {id: "hints", group: "Links", name: "Follow a link"},
+    {id: "hintsNewTab", group: "Links", name: "Open a link in a new tab"},
+    {id: "open", group: "Navigation", name: "Open an address or search"},
+    {id: "openNewTab", group: "Navigation", name: "Open in a new tab"},
+    {id: "tabSearch", group: "Tabs", name: "Search tabs"},
+    {id: "find", group: "Find", name: "Find in page"},
+    {id: "findNext", group: "Find", name: "Next match"},
+    {id: "findPrevious", group: "Find", name: "Previous match"},
+    {id: "back", group: "Navigation", name: "Back"},
+    {id: "forward", group: "Navigation", name: "Forward"},
+    {id: "previousTab", group: "Tabs", name: "Previous tab"},
+    {id: "nextTab", group: "Tabs", name: "Next tab"},
+    {id: "closeTab", group: "Tabs", name: "Close tab"},
+    {id: "reopenTab", group: "Tabs", name: "Reopen closed tab"},
+    {id: "newTab", group: "Tabs", name: "New tab"},
+    {id: "moveTabLeft", group: "Tabs", name: "Move the tab left"},
+    {id: "moveTabRight", group: "Tabs", name: "Move the tab right"},
+    {id: "reload", group: "Navigation", name: "Reload"},
+    {id: "copyUrl", group: "Page", name: "Copy the page's address"},
+    {id: "insert", group: "Page", name: "Pass keys to the page until Esc"},
 ]
 // Those the window does, by the same name as its actions (BrowserWindow.runAction).
 const WINDOW_ACTIONS = ["back", "forward", "reload", "previousTab", "nextTab", "closeTab", "reopenTab", "newTab", "tabSearch"]
@@ -57,6 +58,17 @@ function press(map, pending, key) {
 function conflicts(keys) {
     const given = COMMANDS.filter(c => keys[c.id])
     return given.filter(c => given.some(o => o !== c && (keys[o.id] === keys[c.id] || keys[o.id].startsWith(keys[c.id]) || keys[c.id].startsWith(keys[o.id])))).map(c => c.id)
+}
+
+// What setting `id` to `seq` would clash with: the command already using these
+// very keys (moving them is fine), or one whose keys start these or are started
+// by them (which can't both work). {same, prefix}: a command or null each.
+function clash(keys, id, seq) {
+    const others = COMMANDS.filter(c => c.id !== id && keys[c.id])
+    return {
+        same: seq ? others.find(c => keys[c.id] === seq) || null : null,
+        prefix: seq ? others.find(c => keys[c.id] !== seq && (keys[c.id].startsWith(seq) || seq.startsWith(keys[c.id]))) || null : null,
+    }
 }
 
 // As many labels as asked for, all the same length so none starts another. The

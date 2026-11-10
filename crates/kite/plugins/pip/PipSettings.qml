@@ -9,17 +9,16 @@ ColumnLayout {
     id: root
     property var app
     property var plugin
+    spacing: Kirigami.Units.largeSpacing
 
-    QQC2.CheckBox {
-        text: "Show on all virtual desktops"
-        checked: !!root.app.pluginSetting(root.plugin, "allDesktops")
-        onToggled: root.app.setPluginSetting(root.plugin, "allDesktops", checked)
-    }
-    QQC2.Label {
-        Layout.fillWidth: true
-        wrapMode: Text.Wrap
-        opacity: 0.7
-        font: Kirigami.Theme.smallFont
-        text: "On KDE Plasma. Takes effect the next time a video goes into its window."
+    SettingsSectionHeader { text: "Window" }
+    SettingsForm {
+        QQC2.CheckBox {
+            Kirigami.FormData.label: "Desktops:"
+            text: "Show on all virtual desktops"
+            checked: !!root.app.pluginSetting(root.plugin, "allDesktops")
+            onToggled: root.app.setPluginSetting(root.plugin, "allDesktops", checked)
+        }
+        SettingsHint { text: "On KDE Plasma. Takes effect the next time a video goes into its window." }
     }
 }

@@ -25,6 +25,14 @@ Item {
         win.toast(entry ? "Vim keys on " + entry + ": on" : "Vim keys on " + site + ": off", plugin.icon)
     }
 
+    // The command palette's On/Off for "Vim keys on this site" (nothing to show
+    // where the tab isn't a website).
+    function actionChecked(id) {
+        if (id !== "vim-keys.toggleSite") return undefined
+        const site = win.currentTab ? Rules.siteOf(win.currentTab.url) : ""
+        return site ? !Rules.isExcepted(site, app.pluginSetting(plugin, "exceptions")) : undefined
+    }
+
     // ---- what pages already open have ----
     // Turning on or changing a setting needn't wait for pages to load again, and
     // turning off stops the keys at once.
