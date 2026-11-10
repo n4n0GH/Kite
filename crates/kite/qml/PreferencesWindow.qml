@@ -176,6 +176,7 @@ ManagerWindow {
     readonly property var pages: [
         {key: "general", title: "General", icon: "go-home"},
         {key: "appearance", title: "Appearance", icon: "preferences-desktop-theme"},
+        {key: "tabs", title: "Tabs", icon: "tab-new"},
         {key: "browsing", title: "Browsing", icon: "internet-web-browser"},
         {key: "search", title: "Search Engines", icon: "search"},
         {key: "privacy", title: "Privacy", icon: "preferences-system-privacy"},
@@ -241,6 +242,7 @@ ManagerWindow {
             sourceComponent: {
                 switch (w.page) {
                 case "appearance": return appearance
+                case "tabs": return tabsPage
                 case "browsing": return browsing
                 case "search": return search
                 case "privacy": return privacy
@@ -877,7 +879,14 @@ ManagerWindow {
                 Check { Kirigami.FormData.label: "Scrollbars:"; text: "Overlay scrollbars (thin, widen on hover, hide when idle)"; key: "appearance.overlayScrollbars" }
                 Hint { text: "Some changes apply to new tabs and windows; scrollbar changes after restarting Kite." }
             }
-            SectionHeader { text: "Tabs" }
+        }
+    }
+
+    // Tabs: how the tab bar looks, and where tabs open and what's shown when one closes.
+    Component {
+        id: tabsPage
+        PageColumn {
+            SectionHeader { text: "Tab Bar" }
             Form {
                 QQC2.ComboBox {
                     id: tabPos
@@ -893,10 +902,41 @@ ManagerWindow {
                 Hint { text: "Tabs share the full width and get narrower as more are opened (horizontal tab bars)." }
                 Check { text: "Tree-style tabs in vertical lists"; key: "tabs.tree" }
                 Hint { text: "Links open as children of their tab. Drag a tab sideways to change its level; its children move with it." }
-                Check { Kirigami.FormData.label: "Opening:"; text: "Open new tabs after the current tab"; key: "tabs.newTabAfterActive" }
-                Check { text: "Switch to tabs opened from links"; key: "tabs.switchToNewTabFromLink" }
-                Check { text: "Open popup windows in tabs"; key: "tabs.openPopupsInTabs" }
-                Check { Kirigami.FormData.label: "Closing:"; text: "Close window when the last tab is closed"; key: "tabs.closeWindowWithLastTab" }
+            }
+            SectionHeader { text: "Opening" }
+            Form {
+                Check { Kirigami.FormData.label: "New tabs:"; text: "Open new tabs after the current tab"; key: "tabs.newTabAfterActive" }
+                QQC2.ComboBox {
+                    Kirigami.FormData.label: "Tabs from links:"
+                    model: [{k: "afterRelated", t: "After their tab and the tabs it opened"}, {k: "afterOpener", t: "Right after their tab"}, {k: "end", t: "At the end"}]
+                    textRole: "t"
+                    currentIndex: Math.max(0, model.findIndex(m => m.k === w.get("tabs.linkTabPosition")))
+                    onActivated: i => w.set("tabs.linkTabPosition", model[i].k)
+                }
+                Hint { text: "Links opened in a new tab, from the page or its context menu. With tree-style tabs, they open as children of their tab instead." }
+                Check { Kirigami.FormData.label: "Links:"; text: "Switch to tabs opened from links"; key: "tabs.switchToNewTabFromLink" }
+                Check { Kirigami.FormData.label: "Popups:"; text: "Open popup windows in tabs"; key: "tabs.openPopupsInTabs" }
+            }
+            SectionHeader { text: "Closing" }
+            Form {
+                Check { text: "Return to the tab a closed tab was opened from"; key: "tabs.selectOpenerOnClose" }
+                Hint { text: "Once the other tabs it opened next to the closed one are closed as well." }
+                Check { text: "Close window when the last tab is closed"; key: "tabs.closeWindowWithLastTab" }
+            }
+            // ("tabs.unloadInactive", WebTab.unload())
+            SectionHeader { text: "Unloading" }
+            Form {
+                Check { id: unloadOn; Kirigami.FormData.label: "Inactive tabs:"; text: "Unload tabs that haven't been shown for a while"; key: "tabs.unloadInactive" }
+                RowLayout {
+                    enabled: unloadOn.checked
+                    QQC2.Label { text: "Unload after" }
+                    QQC2.SpinBox { from: 1; to: 1440; editable: true; value: w.get("tabs.unloadAfterMinutes"); onValueModified: w.set("tabs.unloadAfterMinutes", value) }
+                    QQC2.Label { text: "minutes" }
+                }
+                Check { enabled: unloadOn.checked; text: "Keep pinned tabs loaded"; key: "tabs.unloadKeepPinned" }
+                Hint {
+                    text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. Any tab can also be unloaded from its context menu."
+                }
             }
         }
     }
@@ -1010,22 +1050,6 @@ ManagerWindow {
                 text: spellLangs.available.length > 0
                     ? "The languages of the dictionaries installed on this computer. More come with your distribution's QtWebEngine dictionary packages."
                     : "No spelling dictionaries were found, so nothing is checked. Your distribution's QtWebEngine dictionary packages add them."
-            }
-
-            // ---- memory ("tabs.unloadInactive", WebTab.unload()) ----
-          }
-          SectionHeader { text: "Memory" }
-          Form {
-            Check { id: unloadOn; Kirigami.FormData.label: "Inactive tabs:"; text: "Unload tabs that haven't been shown for a while"; key: "tabs.unloadInactive" }
-            RowLayout {
-                enabled: unloadOn.checked
-                QQC2.Label { text: "Unload after" }
-                QQC2.SpinBox { from: 1; to: 1440; editable: true; value: w.get("tabs.unloadAfterMinutes"); onValueModified: w.set("tabs.unloadAfterMinutes", value) }
-                QQC2.Label { text: "minutes" }
-            }
-            Check { enabled: unloadOn.checked; text: "Keep pinned tabs loaded"; key: "tabs.unloadKeepPinned" }
-            Hint {
-                text: "Unloaded tabs keep their place, title and history, and reload when you switch to them (shown faded in the tab bar). Tabs playing sound, keeping the screen on, loading, with text typed into a form or with developer tools open stay loaded. Any tab can also be unloaded from its context menu."
             }
 
             // ---- form autofill ("browsing.formFill", formfill.rs) ----

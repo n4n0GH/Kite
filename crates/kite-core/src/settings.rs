@@ -47,9 +47,14 @@ pub fn defaults() -> Map<String, Value> {
         "tabs.position": "top",                // "top" | "belowToolbar" | "bottom" | "vertical" (left) | "verticalRight"
         "tabs.hideWhenSingle": false,
         "tabs.openPopupsInTabs": false,
-        "tabs.newTabAfterActive": true,
+        "tabs.newTabAfterActive": true,       // new tabs (Ctrl+T, the + button) after the current tab
+        // Tabs opened from a link: "afterRelated" (after its tab and the tabs it
+        // opened before, as Firefox does) | "afterOpener" (right after its tab) | "end".
+        "tabs.linkTabPosition": "afterRelated",
         "tabs.closeWindowWithLastTab": false,
         "tabs.switchToNewTabFromLink": false,
+        // Closing a tab opened from another goes back to that one.
+        "tabs.selectOpenerOnClose": true,
         // Browsing
         "web.javascript": true,
         "web.autoloadImages": true,

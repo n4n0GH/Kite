@@ -618,9 +618,17 @@ QQC2.ApplicationWindow {
     property bool insertingTab: false
     function setTabProperty(id, key, value) { if (insertingTab) return; const i = indexOfTab(id); if (i >= 0) tabModel.setProperty(i, key, value) }
 
-    // Where a tab opened from `tab` (a link, its context menu) goes: next to
-    // it ("tabs.newTabAfterActive"), or at the end.
-    function linkTabIndex(tab) { return app.setting("tabs.newTabAfterActive") ? indexOfTab(tab.tabId) + 1 : undefined }
+    // Where a tab opened from `tab` (a link, its context menu) goes
+    // ("tabs.linkTabPosition"): after it and the tabs it opened before, so a row
+    // of links opens in order beside it; right after it; or at the end.
+    function linkTabIndex(tab) {
+        const where = app.setting("tabs.linkTabPosition")
+        const i = indexOfTab(tab.tabId)
+        if (where === "end" || i < 0) return undefined
+        let idx = i + 1
+        if (where !== "afterOpener") while (idx < tabModel.count && tabAt(idx) && tabAt(idx).openerTabId === tab.tabId) ++idx
+        return idx
+    }
 
     function openTab(url, opts) {
         opts = opts || {}
@@ -636,9 +644,10 @@ QQC2.ApplicationWindow {
         // Its pane: as asked, its opener's, or the active one.
         const pane = opts.pane !== undefined ? opts.pane : opts.openerTabId !== undefined && opts.openerTabId >= 0 ? paneOf(opts.openerTabId) : activePane
         // Its group: as asked (a restored session), or its opener's when it
-        // opens right after it (links from a grouped tab).
+        // opens right after it or the tabs it opened (links from a grouped tab).
         let group = opts.group || ""
-        if (!group && opts.openerTabId !== undefined && opts.openerTabId >= 0 && idx === indexOfTab(opts.openerTabId) + 1 && paneOf(opts.openerTabId) === pane) group = groupOf(opts.openerTabId)
+        if (!group && opts.openerTabId !== undefined && opts.openerTabId >= 0 && idx > indexOfTab(opts.openerTabId) && indexOfTab(opts.openerTabId) >= 0
+                && (idx === indexOfTab(opts.openerTabId) + 1 || tabAt(idx - 1).openerTabId === opts.openerTabId) && paneOf(opts.openerTabId) === pane) group = groupOf(opts.openerTabId)
         if (opts.pinned) group = ""
         // Its parent: its opener, if a link opened it (after the opener's other
         // descendants, in its group); else what the place it opens in calls for.
@@ -696,10 +705,16 @@ QQC2.ApplicationWindow {
         const wasCurrent = index === currentIndex
         const wasPaneCurrent = paneTab[pane] === id
         // The tab to show next in its pane: the one to the right, or at the end
-        // the one to the left.
+        // the one to the left. A tab opened from another ("tabs.selectOpenerOnClose")
+        // goes back to it, once the tabs it opened next to this one are closed too.
         const before = paneTabs(pane)
         const at = before.indexOf(id)
-        const next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
+        let next = before.length > 1 ? before[at < before.length - 1 ? at + 1 : at - 1] : -1
+        const opener = t ? t.openerTabId : -1
+        if (opener >= 0 && opener !== id && before.includes(opener) && app.setting("tabs.selectOpenerOnClose")) {
+            const right = at < before.length - 1 ? tabById(before[at + 1]) : null
+            next = right && right.openerTabId === opener ? right.tabId : opener
+        }
         detachFromTree(id)
         tabModel.remove(index)
         updateTree()

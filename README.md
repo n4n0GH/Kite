@@ -51,7 +51,7 @@ How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPA
   or Ctrl+Alt+R), with its own text size, line length, font and colours; a plugin, on by
   default; see below.
 * **Memory saver:** tabs not shown for 10 minutes (Firefox's threshold; adjustable in
-  Settings → Browsing) are unloaded and reload when shown again; tabs playing sound, with
+  Settings → Tabs) are unloaded and reload when shown again; tabs playing sound, with
   unsent form input or keeping the screen on stay loaded. Also from the tab menu and
   `tabs.discard()`.
 * **Home and new tab page:** an address or a local HTML file, used in place or kept as a copy

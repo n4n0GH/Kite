@@ -124,7 +124,7 @@ Matching and ranking are in `fuzzy.js` and `CommandBar.refresh`. A setting's sco
 
 The list is `pages` in `PreferencesWindow.qml`, and each page is a `Component` in that file:
 
-General, Appearance, Browsing, Search Engines, Privacy, Passwords, Content Blocking, Downloads, Site
+General, Appearance, Tabs, Browsing, Search Engines, Privacy, Passwords, Content Blocking, Downloads, Site
 Settings, Plugins & Extensions, and Shortcuts.
 
 Every page is built from the same pieces, defined at the top of `PreferencesWindow.qml`, so they
