@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::Shutdown;
+use std::os::fd::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const SOCKET: &str = "instance.sock";
@@ -19,8 +20,10 @@ const SOCKET: &str = "instance.sock";
 const MAX_REQUEST: u64 = 4 << 20;
 /// A connection that says nothing shouldn't keep the next one waiting for long.
 const READ_TIMEOUT: Duration = Duration::from_secs(2);
-/// Long enough for a Kite that's still starting up.
-const REPLY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Long enough for a Kite that's still starting up, even a cold one from a slow
+/// disk: the connection waits in the socket's queue until it listens, and giving
+/// up means the address is lost.
+const REPLY_TIMEOUT: Duration = Duration::from_secs(60);
 /// The winner binds right after taking the lock, so it's only a moment.
 const CONNECT_TRIES: u32 = 5;
 const CONNECT_WAIT: Duration = Duration::from_millis(100);
@@ -44,13 +47,39 @@ pub struct Instance {
 /// None if another process has the profile, or there is no telling.
 pub fn claim(root: &Path) -> Option<Instance> {
     let lock = crate::profiles::lock(root)?;
-    let path = root.join(SOCKET);
     // (Left by a Kite that ended: with the lock, no one else is using it.)
-    let _ = std::fs::remove_file(&path);
-    // Only fails for something unusual, like a path too long for a socket. Then what's
-    // started later runs beside this one, which is better than not opening at all.
-    let listener = UnixListener::bind(&path).map_err(|e| log::warn!("can't listen at {}: {e}", path.display())).ok();
+    let _ = std::fs::remove_file(root.join(SOCKET));
+    // Only fails for something unusual. Then what's started later can't reach this
+    // one; main.rs says what happens to it.
+    let listener = socket_path(root).and_then(|p| UnixListener::bind(&p.path)).map_err(|e| log::warn!("can't listen in {}: {e}", root.display())).ok();
     Some(Instance { _lock: lock, listener })
+}
+
+/// Whether the Kite that has the profile listens there: one from before this
+/// existed doesn't, and can't be told anything.
+pub fn has_listener(root: &Path) -> bool {
+    root.join(SOCKET).exists()
+}
+
+/// A path to the socket that's short enough however long the profile's is. A socket's
+/// path can't be longer than `SUN_LEN` (108 bytes), which a profile under a long data
+/// directory goes past; through the directory's descriptor it's a few characters, and
+/// the socket still sits in the profile. (Linux, like the credentials check below.)
+/// The directory stays open as long as the path is in use.
+struct SocketPath {
+    _dir: Option<File>,
+    path: PathBuf,
+}
+
+fn socket_path(root: &Path) -> std::io::Result<SocketPath> {
+    // Without /proc (an unusual sandbox), the plain path, which is the usual length.
+    match File::open(root) {
+        Ok(dir) if Path::new("/proc/self/fd").is_dir() => {
+            let path = PathBuf::from(format!("/proc/self/fd/{}/{SOCKET}", dir.as_raw_fd()));
+            Ok(SocketPath { _dir: Some(dir), path })
+        }
+        Ok(_) | Err(_) => Ok(SocketPath { _dir: None, path: root.join(SOCKET) }),
+    }
 }
 
 impl Instance {
@@ -78,7 +107,6 @@ fn answer(mut stream: UnixStream, on_request: &impl Fn(Request)) -> anyhow::Resu
 }
 
 fn peer_uid(stream: &UnixStream) -> Option<u32> {
-    use std::os::fd::AsRawFd;
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
     let got = unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut cred).cast(), &mut len) };
@@ -99,10 +127,10 @@ pub fn hand_off(root: &Path, request: &Request) -> anyhow::Result<()> {
 }
 
 fn connect(root: &Path) -> std::io::Result<UnixStream> {
-    let path = root.join(SOCKET);
+    let socket = socket_path(root)?;
     let mut tries = CONNECT_TRIES;
     loop {
-        match UnixStream::connect(&path) {
+        match UnixStream::connect(&socket.path) {
             Err(_) if tries > 1 => {
                 tries -= 1;
                 std::thread::sleep(CONNECT_WAIT);
@@ -152,6 +180,22 @@ mod tests {
         let (sent, got) = mpsc::channel();
         std::thread::spawn(move || instance.serve(move |r| sent.send(r).unwrap()));
         client.join().unwrap().unwrap();
+        assert_eq!(got.recv().unwrap(), request("https://a.example/"));
+    }
+
+    #[test]
+    fn works_in_a_profile_whose_path_is_too_long_for_a_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        // Well past SUN_LEN (108), as a profile under a long data directory would be.
+        let root = dir.path().join("a".repeat(60)).join("b".repeat(60));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(root.join(SOCKET).as_os_str().len() > 108);
+        let instance = claim(&root).unwrap();
+        assert!(instance.listener.is_some(), "listens even there");
+        assert!(has_listener(&root), "and the socket is in the profile");
+        let (sent, got) = mpsc::channel();
+        std::thread::spawn(move || instance.serve(move |r| sent.send(r).unwrap()));
+        hand_off(&root, &request("https://a.example/")).unwrap();
         assert_eq!(got.recv().unwrap(), request("https://a.example/"));
     }
 

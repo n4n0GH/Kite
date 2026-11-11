@@ -225,11 +225,13 @@ fn main() {
     std::process::exit(code);
 }
 
-/// Takes the profile, or if a Kite has it, gives it the URLs and ends here. Without
-/// that Kite's answer (it could be an older version), this one runs beside it, so that
-/// what was asked to open still opens.
+/// Takes the profile, or if a Kite has it, gives it the URLs and ends here. If that
+/// Kite is from before it could be told (no socket), this one runs beside it, so that
+/// what was asked to open still opens. If it listens but didn't answer, this one ends
+/// instead: two Kites on one profile overwrite each other's data, and that's worse
+/// than an address not opening.
 fn claim_profile(profile: &str, urls: &[String], ignored_options: bool) -> Option<kite_core::instance::Instance> {
-    use kite_core::instance::{claim, hand_off, Request};
+    use kite_core::instance::{claim, hand_off, has_listener, Request};
     let root = match kite_core::Profile::open(profile) {
         Ok(p) => p.root().to_owned(),
         Err(e) => {
@@ -249,9 +251,16 @@ fn claim_profile(profile: &str, urls: &[String], ignored_options: bool) -> Optio
             std::process::exit(0);
         }
         Err(e) => {
-            log::warn!("profile {profile} is in use, and its Kite didn't take this: {e}");
             // (What looked at the lock only for a moment may have been in the way.)
-            claim(&root)
+            if let Some(instance) = claim(&root) {
+                return Some(instance);
+            }
+            if has_listener(&root) {
+                eprintln!("kite: profile {profile} is open in a running Kite, which didn't take this ({e}): try again, or close it first");
+                std::process::exit(1);
+            }
+            log::warn!("profile {profile} is in use by a Kite that can't be told to open anything (an older version?), so this one runs beside it");
+            None
         }
     }
 }
