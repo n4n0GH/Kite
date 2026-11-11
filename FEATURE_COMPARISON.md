@@ -4,7 +4,7 @@ Desktop features, compared on Linux (Kite's only platform).
 
 **Legend:** ✅ built in · ⚠️ partial, hidden or experimental, or only through an extension · ❌ no
 
-The **Kite** column reflects Kite 0.9.6 (2026-11-11).
+The **Kite** column reflects Kite 0.9.7 (2026-11-11).
 The **Chrome** and **Firefox** columns reflect their stable releases as known in mid-2026. Both
 ship changes every four weeks, so check the newest versions before relying on a single row.
 
