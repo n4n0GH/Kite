@@ -6,10 +6,14 @@
 function run() {
     if (globalThis.__kiteVim) globalThis.__kiteVim.stop()
     delete globalThis.__kiteVim
-    if (!/^(https?|file):$/.test(location.protocol)) return
+    // The page's address decides, not a frame's own: a widget's or an ad's frame
+    // is often about:blank, and a key pressed with it focused would otherwise
+    // be lost (here, it's handed up: scrollTop).
     const origins = location.ancestorOrigins
-    const topHost = origins && origins.length ? new URL(origins[origins.length - 1]).hostname : location.hostname
-    if (isExcepted(topHost, KITE_PLUGIN_SETTINGS.exceptions)) return
+    let top
+    try { top = origins && origins.length ? new URL(origins[origins.length - 1]) : location } catch (e) { return }
+    if (!/^(https?|file):$/.test(top.protocol)) return
+    if (isExcepted(top.hostname, KITE_PLUGIN_SETTINGS.exceptions)) return
 
     const STEP = 60
     const PENDING_MS = 1500
@@ -29,11 +33,17 @@ function run() {
         return el
     }
     const NOT_TEXT = new Set(["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"])
+    // Something being typed into. A select, or a dropdown made of a button
+    // (role=combobox: a shop's size or sort picker), keeps the keyboard after it
+    // was picked from with the mouse, but isn't typed into: the keys are the
+    // page's only while its list is open. (Picked from and left focused, it
+    // would otherwise swallow every key, with nothing to show why.)
     function typingIn(el) {
         if (document.designMode === "on") return true
         if (!el || el === document.body) return false
-        if (el.isContentEditable || el.matches("textarea, select, [role=textbox], [role=searchbox], [role=combobox]")) return true
-        return el.matches("input") && !NOT_TEXT.has((el.type || "text").toLowerCase())
+        if (el.isContentEditable || el.matches("textarea, [role=textbox], [role=searchbox]")) return true
+        if (el.matches("input")) return !NOT_TEXT.has((el.type || "text").toLowerCase())
+        return el.matches("select, [role=combobox]") && el.getAttribute("aria-expanded") === "true"
     }
 
     // ---- scrolling ----
@@ -405,11 +415,14 @@ function run() {
         pending = ""
         clearTimeout(pendingTimer)
     }
+    // Insert mode is the page's, in all its frames (the window passes it on with
+    // pass(), as Esc may be pressed in another frame than `i` was): here at once,
+    // so that the keys typed right after `i` are the page's too.
     function execute(command, code) {
         if (SCROLLS[command]) scroll(command, code)
         else if (command === "insert") {
             passing = true
-            kitePluginSend({cmd: "toast", text: "Vim keys off until Esc"})
+            kitePluginSend({cmd: "insert"})
         } else kitePluginSend({cmd: command})
     }
     function onKeyDown(e) {
@@ -419,13 +432,13 @@ function run() {
         const active = deepActive()
         if (e.key === "Escape") {
             clearPending()
-            if (passing) {
-                passing = false
-                kitePluginSend({cmd: "toast", text: "Vim keys on"})
-            } else if (typingIn(active)) {
+            passing = false
+            if (typingIn(active)) {
                 // After the page's own use of Esc, as closing its search box.
                 setTimeout(() => active.blur())
             }
+            // (The window ends insert mode in the other frames, if it was on.)
+            kitePluginSend({cmd: "escape"})
             return
         }
         if (passing || typingIn(active) || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return
@@ -466,6 +479,7 @@ function run() {
 
     globalThis.__kiteVim = {
         hintsCollect, hintsShow, hintsFilter, hintsEnd, hintsPick, scroll,
+        pass(on) { passing = on },
         stop() {
             hintsEnd()
             clearPending()

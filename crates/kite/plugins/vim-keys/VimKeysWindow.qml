@@ -62,6 +62,7 @@ Item {
             if (message.plugin === root.plugin.id && tab === root.win.currentTab) root.handle(tab, message.m)
         }
     }
+    property var inserting: ({})    // tabId → true while its page is in insert mode
     function handle(tab, m) {
         if (Rules.WINDOW_ACTIONS.includes(m.cmd)) { win.runAction(m.cmd); return }
         switch (m.cmd) {
@@ -80,6 +81,20 @@ Item {
             win.toast("Copied " + tab.url, "edit-copy")
             break
         case "toast": win.toast(String(m.text).substring(0, 80), plugin.icon); break
+        // Insert mode (`i`): the keys are the page's, in all its frames, until Esc
+        // in any of them. (Which tabs are in it: a page in it that moves on starts
+        // over; the Esc there would say "on" once more, which is true.)
+        case "insert":
+            inserting[tab.tabId] = true
+            tab.runInFrames("globalThis.__kiteVim && __kiteVim.pass(true)")
+            win.toast("Vim keys off until Esc", plugin.icon)
+            break
+        case "escape":
+            if (!inserting[tab.tabId]) break
+            delete inserting[tab.tabId]
+            tab.runInFrames("globalThis.__kiteVim && __kiteVim.pass(false)")
+            win.toast("Vim keys on", plugin.icon)
+            break
         case "scrollTop": tab.runInMainFrame("globalThis.__kiteVim && __kiteVim.scroll(" + JSON.stringify(String(m.scroll)) + ")"); break
         // As opening a link in the background.
         case "openTab":

@@ -445,6 +445,11 @@ Item {
         pageFocusAsked = true
         web.forceActiveFocus()
         pageFocusAsked = false
+        syncInputMethod()
+    }
+    // (Also as the keyboard comes back to the page by itself: from a dialog or
+    // a menu that closed, which don't ask focusPage.)
+    function syncInputMethod() {
         Qt.callLater(() => { if (web.activeFocus) { Qt.inputMethod.reset(); Qt.inputMethod.update(Qt.ImQueryAll) } })
     }
 
@@ -714,6 +719,7 @@ Item {
                         return
                     }
                     if (activeFocus && wt.window.split) wt.window.activatePane(wt.pane)
+                    if (activeFocus) wt.syncInputMethod()
                 }
                 webChannel: channel
                 webChannelWorld: wt.isExtensionPage ? 0 : 1
