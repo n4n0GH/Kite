@@ -859,6 +859,11 @@ pub unsafe extern "C" fn kite_profile_delete(name: *const c_char) -> KiteBuf {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn kite_profile_rename(from: *const c_char, to: *const c_char) -> KiteBuf {
+    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.rename(s(from), s(to))))
+}
+
+#[no_mangle]
 pub extern "C" fn kite_profiles_ask() -> i32 {
     profiles().is_none_or(|p| p.choices().ask) as i32
 }

@@ -53,6 +53,11 @@ impl Profiles {
         self.base.join("profiles").join(name)
     }
 
+    /// The profile's logs and crash report (`crashlog::dir`), kept beside it.
+    fn logs_dir(&self, name: &str) -> PathBuf {
+        self.base.join("logs").join(name)
+    }
+
     /// The default one always, then the others by name.
     pub fn list(&self) -> Vec<ProfileInfo> {
         let mut names: Vec<String> = std::fs::read_dir(self.base.join("profiles"))
@@ -106,6 +111,45 @@ impl Profiles {
             anyhow::bail!("There is no profile named “{name}”.");
         }
         std::fs::remove_dir_all(dir)?;
+        // Its logs and crash report go with it: they hold addresses it visited.
+        if let Err(e) = std::fs::remove_dir_all(self.logs_dir(name)) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e.into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn rename(&self, from: &str, to: &str) -> anyhow::Result<()> {
+        validate(to)?;
+        if from == DEFAULT {
+            anyhow::bail!("The default profile can't be renamed.");
+        }
+        if self.in_use(from) {
+            anyhow::bail!("“{from}” is open in Kite. Close it first.");
+        }
+        let from_dir = self.dir(from);
+        if !from_dir.is_dir() {
+            anyhow::bail!("There is no profile named “{from}”.");
+        }
+        // A change of letter case only (“work” → “Work”) keeps the one profile;
+        // any other name that's taken is refused, as when creating one.
+        if !to.eq_ignore_ascii_case(from) && (self.dir(to).exists() || self.list().iter().any(|p| p.name.eq_ignore_ascii_case(to))) {
+            anyhow::bail!("A profile named “{to}” already exists.");
+        }
+        std::fs::rename(&from_dir, self.dir(to))?;
+        // Its logs and crash report keep its name. (Any left under the new name
+        // are of a profile deleted by an older Kite, which kept them.)
+        if self.logs_dir(from).is_dir() {
+            if !to.eq_ignore_ascii_case(from) {
+                let _ = std::fs::remove_dir_all(self.logs_dir(to));
+            }
+            let _ = std::fs::rename(self.logs_dir(from), self.logs_dir(to));
+        }
+        // The one offered first follows its new name.
+        if self.choices().last == from {
+            let _ = self.set_choices(&Choices { last: to.to_owned(), ..self.choices() });
+        }
         Ok(())
     }
 
@@ -208,6 +252,44 @@ mod tests {
     }
 
     #[test]
+    fn renames_a_profile_with_its_data_and_the_last_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Profiles::at(dir.path());
+        p.create("Work").unwrap();
+        p.create("Home").unwrap();
+        std::fs::write(dir.path().join("profiles/Work/bookmarks.json"), "{}").unwrap();
+        std::fs::create_dir_all(dir.path().join("logs/Work")).unwrap();
+        std::fs::write(dir.path().join("logs/Work/last-crash.txt"), "boom").unwrap();
+        // (Logs left behind under the new name by an older Kite's deletion.)
+        std::fs::create_dir_all(dir.path().join("logs/Job")).unwrap();
+        std::fs::write(dir.path().join("logs/Job/kite.log"), "old").unwrap();
+        p.set_choices(&Choices { ask: true, last: "Work".into() }).unwrap();
+
+        p.rename("Work", "Job").unwrap();
+        assert_eq!(names(&p), ["default", "Home", "Job"]);
+        assert!(dir.path().join("profiles/Job/bookmarks.json").exists(), "data moved with it");
+        assert!(!dir.path().join("profiles/Work").exists());
+        assert!(dir.path().join("logs/Job/last-crash.txt").exists(), "logs moved with it");
+        assert!(!dir.path().join("logs/Job/kite.log").exists(), "stale logs under the new name are gone");
+        assert!(!dir.path().join("logs/Work").exists());
+        assert_eq!(p.choices().last, "Job", "the last choice follows");
+
+        // Refusals: the default, a name that's taken, one that doesn't exist, a bad name.
+        assert!(p.rename("default", "Main").is_err());
+        assert!(p.rename("Job", "Home").is_err());
+        assert!(p.rename("Job", "../evil").is_err());
+        assert!(p.rename("missing", "x").is_err());
+        // Open profiles can't be renamed.
+        let held = lock(&dir.path().join("profiles/Job")).unwrap();
+        assert!(p.rename("Job", "Gig").is_err());
+        drop(held);
+        // A change of letter case is allowed, logs included.
+        p.rename("Job", "job").unwrap();
+        assert!(names(&p).contains(&"job".to_owned()));
+        assert!(dir.path().join("logs/job/last-crash.txt").exists());
+    }
+
+    #[test]
     fn deleting_keeps_default_and_open_profiles() {
         let dir = tempfile::tempdir().unwrap();
         let p = Profiles::at(dir.path());
@@ -216,6 +298,9 @@ mod tests {
         p.create("Work").unwrap();
         let root = dir.path().join("profiles/Work");
         std::fs::write(root.join("bookmarks.json"), "{}").unwrap();
+        let logs = dir.path().join("logs/Work");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(logs.join("last-crash.txt"), "boom").unwrap();
 
         let held = lock(&root).expect("lock");
         assert!(p.in_use("Work"));
@@ -227,5 +312,9 @@ mod tests {
         assert!(!p.in_use("Work"));
         p.delete("Work").unwrap();
         assert!(!root.exists());
+        assert!(!logs.exists(), "its logs and crash report go with it");
+        // One that never ran has no logs: deleting it is fine all the same.
+        p.create("Fresh").unwrap();
+        p.delete("Fresh").unwrap();
     }
 }

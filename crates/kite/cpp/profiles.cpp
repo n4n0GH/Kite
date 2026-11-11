@@ -22,6 +22,7 @@ void kite_buf_free(KiteBuf b);
 KiteBuf kite_profiles_json();
 KiteBuf kite_profile_create(const char *name);
 KiteBuf kite_profile_delete(const char *name);
+KiteBuf kite_profile_rename(const char *from, const char *to);
 void kite_profile_chosen(const char *name);
 int kite_profiles_ask();
 void kite_profiles_set_ask(int ask);
@@ -47,8 +48,10 @@ public:
         layout->addWidget(list);
         auto *row = new QHBoxLayout;
         auto *add = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), QStringLiteral("New Profile…"));
+        renameBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-rename")), QStringLiteral("Rename…"));
         remove = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-delete")), QStringLiteral("Delete…"));
         row->addWidget(add);
+        row->addWidget(renameBtn);
         row->addWidget(remove);
         row->addStretch();
         layout->addLayout(row);
@@ -62,6 +65,7 @@ public:
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         connect(ask, &QCheckBox::toggled, this, [](bool on) { kite_profiles_set_ask(on); });
         connect(add, &QPushButton::clicked, this, [this] { create(); });
+        connect(renameBtn, &QPushButton::clicked, this, [this] { renameCurrent(); });
         connect(remove, &QPushButton::clicked, this, [this] { removeCurrent(); });
         connect(list, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *i) { if (i->flags() & Qt::ItemIsEnabled) accept(); });
         connect(list, &QListWidget::currentItemChanged, this, [this] { updateButtons(); });
@@ -91,8 +95,10 @@ private:
     void updateButtons()
     {
         const bool any = list->currentItem();
+        const bool notDefault = any && chosen() != QStringLiteral("default");
         buttons->button(QDialogButtonBox::Open)->setEnabled(any);
-        remove->setEnabled(any && chosen() != QStringLiteral("default"));
+        renameBtn->setEnabled(notDefault);
+        remove->setEnabled(notDefault);
     }
     void create()
     {
@@ -135,6 +141,17 @@ private:
         cancel->setFocus();
         return box.exec() == QDialog::Accepted;
     }
+    void renameCurrent()
+    {
+        const QString name = chosen();
+        if (name.isEmpty() || name == QStringLiteral("default")) return;
+        bool ok = false;
+        const QString to = QInputDialog::getText(this, QStringLiteral("Rename Profile"), QStringLiteral("New name:"), QLineEdit::Normal, name, &ok).trimmed();
+        if (!ok || to.isEmpty() || to == name) return;
+        const QString error = take(kite_profile_rename(name.toUtf8().constData(), to.toUtf8().constData()));
+        if (!error.isEmpty()) { QMessageBox::warning(this, QStringLiteral("Rename Profile"), error); return; }
+        reload(to);
+    }
     void removeCurrent()
     {
         const QString name = chosen();
@@ -145,6 +162,7 @@ private:
         reload(QString());
     }
     QListWidget *list;
+    QPushButton *renameBtn;
     QPushButton *remove;
     QDialogButtonBox *buttons;
 };
