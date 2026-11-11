@@ -59,6 +59,12 @@ QQC2.TextField {
     onActiveFocusChanged: {
         if (!activeFocus) { editing = false; popup.close() }
     }
+    // Qt shows the caret for an input method's event (a preedit) as well as for
+    // the focus, but hides it only for the focus; it blinks only with the focus.
+    // So an event that arrives after the page took the keyboard (IBus or Fcitx
+    // through KWin, told late that the bar lost it) leaves a still caret in a
+    // bar that isn't being typed in. Hidden again.
+    onCursorVisibleChanged: if (cursorVisible && !activeFocus) cursorVisible = false
     onTextEdited: {
         editing = true
         selected = -1
