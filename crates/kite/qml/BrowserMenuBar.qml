@@ -11,6 +11,7 @@ import org.kde.kite
 QQC2.MenuBar {
     id: menuBar
     property var win
+    PrivateColors { target: menuBar; active: win.purple; palette: win.purpleColors.chrome }
     readonly property var tab: win.currentTab
     readonly property var app: win.app
     function act(webAction) { if (tab) tab.view.triggerWebAction(webAction) }

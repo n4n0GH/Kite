@@ -18,6 +18,16 @@ QQC2.ApplicationWindow {
     required property var app
     required property int windowId
     property bool privateMode: false
+    // Private windows in purple ("privacy.privateWindowColor"), told apart at a
+    // glance: the chrome by these colors (each part that fixes its own colors
+    // has a PrivateColors), the titlebar by the color scheme Main.qml has
+    // Plasma give the window. Both are kite_core::privatecolors.
+    readonly property bool purple: privateMode && !!app.liveSettings["privacy.privateWindowColor"]
+    readonly property var purpleColors: JSON.parse(Browser.privateWindowColors())
+    PrivateColors { target: bw; active: bw.purple; palette: bw.purpleColors.chrome }
+    PrivateColors { target: headerBox; active: bw.purple; palette: bw.purpleColors.chrome }
+    PrivateColors { target: footerSlot; active: bw.purple; palette: bw.purpleColors.chrome }
+    PrivateColors { target: splitView; active: bw.purple; palette: bw.purpleColors.chrome }
     property alias count: tabModel.count
     property int currentIndex: 0
     property var currentTab: null
@@ -1004,6 +1014,7 @@ QQC2.ApplicationWindow {
 
     // ---- layout ------------------------------------------------------------------------
     header: ColumnLayout {
+        id: headerBox
         spacing: 0
         visible: !bw.contentFullScreen
 
@@ -1047,6 +1058,7 @@ QQC2.ApplicationWindow {
     }
 
     footer: TabStripSlot {
+        id: footerSlot
         browser: bw
         position: "bottom"
         inUse: bw.tabPosition === "bottom" && !bw.contentFullScreen
@@ -1150,6 +1162,7 @@ QQC2.ApplicationWindow {
 
             FindBar {
                 id: findBar
+                win: bw
                 parent: bw.paneArea(bw.activePane)
                 anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                 tab: bw.currentTab

@@ -27,6 +27,7 @@ pub mod formfill;
 pub mod passwords;
 pub mod plugins;
 pub mod privacy;
+pub mod privatecolors;
 pub mod paths;
 pub mod plasma;
 pub mod profiles;

@@ -1224,6 +1224,7 @@ ManagerWindow {
             }
             SectionHeader { text: "Private Windows" }
             Form {
+                Check { Kirigami.FormData.label: "Window:"; text: "Purple chrome"; key: "privacy.privateWindowColor" }
                 Check { Kirigami.FormData.label: "From your browsing:"; text: "Show often visited sites on the start page"; key: "privacy.privateHistoryTiles" }
                 Check { text: "Suggest pages from the history in the address bar"; key: "privacy.privateHistorySuggestions" }
                 Check { text: "Show notifications from pages and downloads"; key: "privacy.privateNotifications" }

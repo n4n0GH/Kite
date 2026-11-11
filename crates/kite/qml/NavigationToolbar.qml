@@ -12,6 +12,7 @@ import org.kde.kite
 QQC2.ToolBar {
     id: toolbar
     property var win
+    PrivateColors { target: toolbar; active: win.purple; palette: win.purpleColors.chrome }
     property ToolbarItems catalog
     position: QQC2.ToolBar.Header
 

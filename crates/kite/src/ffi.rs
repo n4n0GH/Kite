@@ -55,6 +55,7 @@ extern "C" {
     fn kite_cpp_qwebchannel_js() -> *const c_char;
     fn kite_cpp_file_name_filters(accepted_json: *const c_char) -> *const c_char;
     fn kite_cpp_copy_text(text: *const c_char);
+    fn kite_cpp_set_color_scheme_for_new_windows(path: *const c_char);
     fn kite_cpp_site_of(host: *const c_char) -> *const c_char;
     fn kite_cpp_cert_fingerprint(error: *const std::ffi::c_void) -> *const c_char;
     fn kite_cpp_webengine_version() -> *const c_char;
@@ -145,6 +146,11 @@ pub fn site_of(host: &str) -> String {
 /// The fingerprint of the certificate of a QWebEngineCertificateError held by a QVariant.
 pub fn cert_fingerprint(error: *const std::ffi::c_void) -> String {
     unsafe { s(kite_cpp_cert_fingerprint(error)).to_owned() }
+}
+
+pub fn set_color_scheme_for_new_windows(path: &str) {
+    let Ok(path) = CString::new(path) else { return };
+    unsafe { kite_cpp_set_color_scheme_for_new_windows(path.as_ptr()) }
 }
 
 pub fn copy_text(text: &str) {

@@ -86,6 +86,7 @@ pub fn defaults() -> Map<String, Value> {
         "privacy.privateHistoryTiles": false,
         "privacy.privateHistorySuggestions": false,
         "privacy.privateNotifications": false,  // from pages and downloads in private windows
+        "privacy.privateWindowColor": true,     // purple chrome and titlebar, to tell them apart
         "speeddial.pinned": [],
         // The tiles' order after dragging ([url]); others follow.
         "speeddial.order": [],

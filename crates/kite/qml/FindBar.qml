@@ -7,7 +7,9 @@ import org.kde.kirigami as Kirigami
 // Find in page (Falkon's SearchToolBar).
 QQC2.ToolBar {
     id: bar
+    property var win
     property var tab
+    PrivateColors { target: bar; active: !!win && win.purple; palette: win ? win.purpleColors.chrome : ({}) }
     property int matches: 0
     property int activeMatch: 0
     visible: false

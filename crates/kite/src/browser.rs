@@ -693,6 +693,13 @@ pub mod qobject {
         #[cxx_name = "removeAllCookies"]
         fn remove_all_cookies(self: &Browser);
         // Certificate exceptions (kite_core::certs).
+        // Private windows in purple (kite_core::privatecolors).
+        #[qinvokable]
+        #[cxx_name = "privateWindowColors"]
+        fn private_window_colors(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "colorSchemeForNewWindows"]
+        fn color_scheme_for_new_windows(self: &Browser, purple: bool);
         #[qinvokable]
         #[cxx_name = "certFingerprint"]
         fn cert_fingerprint(self: &Browser, error: &QVariant) -> QString;
@@ -2012,6 +2019,25 @@ impl qobject::Browser {
 
     fn remove_all_cookies(&self) {
         crate::ffi::delete_all_cookies();
+    }
+
+    fn private_window_colors(&self) -> QString {
+        q(kite_core::privatecolors::colors_json())
+    }
+
+    fn color_scheme_for_new_windows(&self, purple: bool) {
+        let path = if purple {
+            match kite_core::privatecolors::scheme_path() {
+                Ok(p) => p.to_string_lossy().into_owned(),
+                Err(e) => {
+                    log::warn!("private window color scheme: {e}");
+                    String::new()
+                }
+            }
+        } else {
+            String::new()
+        };
+        crate::ffi::set_color_scheme_for_new_windows(&path);
     }
 
     fn cert_fingerprint(&self, error: &cxx_qt_lib::QVariant) -> QString {

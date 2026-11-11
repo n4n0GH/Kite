@@ -495,6 +495,16 @@ extern "C" const char *kite_cpp_cert_fingerprint(const QVariant *error)
     return out.constData();
 }
 
+// The color scheme Plasma gives the windows created from now on, which KWin
+// colors their titlebars by (kite_core::privatecolors): it's read as a window
+// is created, so Kite sets it around a private window's showing. "" for the
+// desktop's own.
+extern "C" void kite_cpp_set_color_scheme_for_new_windows(const char *path)
+{
+    const QString p = QString::fromUtf8(path);
+    qApp->setProperty("KDE_COLOR_SCHEME_PATH", p.isEmpty() ? QVariant() : QVariant(p));
+}
+
 extern "C" void kite_cpp_copy_text(const char *text)
 {
     QGuiApplication::clipboard()->setText(QString::fromUtf8(text));

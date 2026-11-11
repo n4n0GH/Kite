@@ -298,7 +298,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.privateWindowColor", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
@@ -446,7 +446,10 @@ QtObject {
         windows = windows.concat([w])
         if (opts.geometry) { w.x = opts.geometry[0]; w.y = opts.geometry[1]; w.width = opts.geometry[2]; w.height = opts.geometry[3] }
         Extensions.browserEvent("windowCreated", JSON.stringify({window: w.extInfo()}))
+        // A private window's purple titlebar: Plasma reads the scheme as the window is shown.
+        Browser.colorSchemeForNewWindows(w.purple)
         if (opts.maximized) w.showMaximized(); else w.show()
+        Browser.colorSchemeForNewWindows(false)
         const urls = opts.urls || []
         if (opts.tabs) {
             w.treeRestoring = true

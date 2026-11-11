@@ -11,6 +11,7 @@ import org.kde.kite
 QQC2.TextField {
     id: field
     property var win
+    PrivateColors { target: field; active: win.purple; palette: win.purpleColors.field }
     property var tab
     property bool editing: false
     property var completions: []

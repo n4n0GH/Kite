@@ -9,6 +9,7 @@ import org.kde.kite
 QQC2.ToolBar {
     id: bar
     property var win
+    PrivateColors { target: bar; active: win.purple; palette: win.purpleColors.chrome }
     property var items: []
     function reload() { items = JSON.parse(Browser.bookmarkTree(JSON.parse(Browser.bookmarkRoots()).toolbar)) }
     Component.onCompleted: reload()
