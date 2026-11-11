@@ -28,7 +28,23 @@ extern "C" {
 
 /// How to start Kite again (an AppImage's own file, not the mounted one).
 pub fn own_executable() -> Option<std::path::PathBuf> {
-    std::env::var_os("APPIMAGE").map(Into::into).or_else(|| std::env::current_exe().ok())
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        return Some(appimage.into());
+    }
+    let exe = std::env::current_exe().ok()?;
+    // A binary replaced while Kite runs — a package upgrade, or a rebuild —
+    // leaves /proc/self/exe, and so current_exe(), pointing at "<path> (deleted)",
+    // which can't be started: the Open Profile and Manage Profiles buttons, and a
+    // new window in another profile, each do nothing. The new binary is at the
+    // original path, so the suffix is dropped when a real file is there again.
+    if !exe.exists() {
+        if let Some(real) = exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")).map(std::path::PathBuf::from) {
+            if real.exists() {
+                return Some(real);
+            }
+        }
+    }
+    Some(exe)
 }
 
 /// The profile picker's own process: the chosen profile goes to stdout, or
