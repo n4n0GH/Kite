@@ -89,11 +89,11 @@ Item {
                 Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 18)
                 clip: true
                 function reload() { model = JSON.parse(Browser.namedSessions()) }
-                delegate: Item {
+                // (The rows of the Settings lists: highlighted under the pointer.)
+                delegate: SettingsListRow {
                     id: row
                     required property var modelData
                     width: ListView.view.width
-                    implicitHeight: rowLayout.implicitHeight + Kirigami.Units.smallSpacing * 2
                     component RowButton: QQC2.ToolButton {
                         display: QQC2.AbstractButton.IconOnly
                         QQC2.ToolTip.text: text
@@ -101,8 +101,6 @@ Item {
                         QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                     }
                     RowLayout {
-                        id: rowLayout
-                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: Kirigami.Units.largeSpacing; rightMargin: Kirigami.Units.smallSpacing }
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
