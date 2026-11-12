@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.11" date="2026-11-12">
+      <description>
+        <p>The About dialog shows Kite's icon again.</p>
+      </description>
+    </release>
     <release version="0.9.10" date="2026-11-12">
       <description>
         <p>Kite as a Flatpak, from a repository that keeps it updated. Its application ID is now io.github.n4n0gh.kite.</p>
