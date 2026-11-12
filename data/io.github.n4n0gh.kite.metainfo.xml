@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.12" date="2026-11-12">
+      <description>
+        <p>The extensions button's panel leaves out the Extensions section while WebExtensions are switched off.</p>
+      </description>
+    </release>
     <release version="0.9.11" date="2026-11-12">
       <description>
         <p>The About dialog shows Kite's icon again.</p>
