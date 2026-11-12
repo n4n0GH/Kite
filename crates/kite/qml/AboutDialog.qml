@@ -34,7 +34,7 @@ Kirigami.Dialog {
         spacing: Kirigami.Units.largeSpacing
 
         Kirigami.Icon {
-            source: "qrc:/qt/qml/org/kde/kite/icons/org.kde.kite.svg"
+            source: "qrc:/qt/qml/org/kde/kite/icons/io.github.n4n0gh.kite.svg"
             Layout.preferredWidth: Kirigami.Units.iconSizes.enormous
             Layout.preferredHeight: Layout.preferredWidth
             Layout.alignment: Qt.AlignHCenter
