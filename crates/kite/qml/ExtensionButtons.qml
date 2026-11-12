@@ -96,6 +96,8 @@ RowLayout {
         // Plugins may have been switched elsewhere since it was last open.
         property int pluginStates: 0
         readonly property var activePlugins: { pluginStates; return root.win.app.plugins.filter(p => root.win.app.pluginEnabled(p)) }
+        // With "Enable WebExtensions" off, there is nothing of theirs to show here.
+        readonly property bool extensionsOn: root.win.app.liveSettings["extensions.enabled"] !== false
         onClosed: {
             extMenu.close()
             // (Removing an extension from its menu closes the panel for the dialog, which needs the keyboard.)
@@ -149,10 +151,10 @@ RowLayout {
                 }
             }
             ManageButton { text: "Manage Plugins"; onManage: root.win.app.showPreferences("extensions") }
-            Kirigami.Separator { Layout.fillWidth: true; Layout.topMargin: Kirigami.Units.smallSpacing }
-            SectionTitle { text: "Extensions" }
+            Kirigami.Separator { visible: panel.extensionsOn; Layout.fillWidth: true; Layout.topMargin: Kirigami.Units.smallSpacing }
+            SectionTitle { visible: panel.extensionsOn; text: "Extensions" }
             QQC2.Label {
-                visible: panel.exts.length === 0
+                visible: panel.extensionsOn && panel.exts.length === 0
                 text: panel.installed === 0 ? "No extensions installed"
                     : "No extensions have permission to run in this private window. To allow one, choose Manage Extensions and turn on Private windows in its details."
                 wrapMode: Text.Wrap
@@ -161,6 +163,7 @@ RowLayout {
                 Layout.margins: Kirigami.Units.smallSpacing
             }
             ListView {
+                visible: panel.extensionsOn
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 20)
                 clip: true
@@ -220,7 +223,7 @@ RowLayout {
                     }
                 }
             }
-            ManageButton { text: "Manage Extensions"; onManage: root.win.app.showAddons("installed") }
+            ManageButton { visible: panel.extensionsOn; text: "Manage Extensions"; onManage: root.win.app.showAddons("installed") }
         }
     }
 
