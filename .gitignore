@@ -2,3 +2,5 @@ target/
 dist/
 RELEASE_PREP.md
 .*.kate-swp
+.flatpak-builder/
+build-flatpak/

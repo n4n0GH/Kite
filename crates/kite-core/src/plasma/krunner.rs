@@ -18,8 +18,8 @@ use zbus::blocking::Connection;
 use zbus::zvariant::{OwnedValue, Value};
 
 const PATH: &str = "/krunner";
-const NAME: &str = "org.kde.kite.krunner";
-const FILE_NAME: &str = "org.kde.kite.desktop";
+const NAME: &str = "io.github.n4n0gh.kite.krunner";
+const FILE_NAME: &str = "io.github.n4n0gh.kite.desktop";
 const MIN_LETTERS: usize = 3;
 const MAX_BOOKMARKS: usize = 5;
 const MAX_HISTORY: usize = 5;
@@ -38,11 +38,11 @@ Name=Kite
 Comment=Find Kite's open tabs, bookmarks and history
 X-KDE-ServiceTypes=Plasma/Runner
 Type=Service
-Icon=org.kde.kite
-X-KDE-PluginInfo-Name=org.kde.kite
+Icon=io.github.n4n0gh.kite
+X-KDE-PluginInfo-Name=io.github.n4n0gh.kite
 X-KDE-PluginInfo-EnabledByDefault=true
 X-Plasma-API=DBus
-X-Plasma-DBusRunner-Service=org.kde.kite.krunner*
+X-Plasma-DBusRunner-Service=io.github.n4n0gh.kite.krunner*
 X-Plasma-DBusRunner-Path=/krunner
 X-Plasma-Request-Actions-Once=true
 X-Plasma-Runner-Min-Letter-Count=3
@@ -189,15 +189,25 @@ fn picked(id: &str, token: String) -> Option<Picked> {
     openable(url).then(|| Picked { tab: None, url: Some(url.to_owned()), token })
 }
 
+/// Where KRunner, which runs outside any sandbox, reads the file. In a Flatpak,
+/// XDG_DATA_HOME is the application's own folder, which it never looks in; the
+/// user's real one is reachable there by the manifest's filesystem permission.
 fn data_home() -> Option<PathBuf> {
+    let home = || std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share"));
+    if Path::new("/.flatpak-info").exists() {
+        return home();
+    }
     match std::env::var_os("XDG_DATA_HOME") {
         Some(d) if !d.is_empty() => Some(PathBuf::from(d)),
-        _ => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")),
+        _ => home(),
     }
 }
 
 fn install(data_home: &Path) -> std::io::Result<()> {
     let dir = data_home.join("krunner/dbusplugins");
+    // (The file of Kite's name up to 0.9.9, org.kde.kite, would have KRunner
+    // look for a service nobody has any more.)
+    let _ = std::fs::remove_file(dir.join("org.kde.kite.desktop"));
     let file = dir.join(FILE_NAME);
     if std::fs::read_to_string(&file).is_ok_and(|t| t == RUNNER_FILE) {
         return Ok(());
@@ -226,7 +236,7 @@ fn remote(found: Found) -> RemoteMatch {
     put("category", Value::from(found.category));
     put("urls", Value::from(vec![found.url]));
     put("actions", Value::from(Vec::<String>::new()));
-    (found.id, found.text, "org.kde.kite".to_owned(), found.relevance_class, found.relevance, properties)
+    (found.id, found.text, "io.github.n4n0gh.kite".to_owned(), found.relevance_class, found.relevance, properties)
 }
 
 #[derive(Default)]

@@ -14,6 +14,22 @@ with **native support for Firefox WebExtensions** installed straight from
 
 How Kite compares with Chrome and Firefox: [FEATURE_COMPARISON.md](FEATURE_COMPARISON.md).
 
+## Installing
+
+```sh
+flatpak install --user https://n4n0gh.github.io/Kite/kite.flatpakref
+```
+
+or open <https://n4n0gh.github.io/Kite/> and choose *Install Kite*. Installed this way, Kite is updated
+together with your other applications. Each [release](https://github.com/n4n0GH/Kite/releases) also
+carries `kite.flatpak` as a single file to download, which updates from the same place, and an
+AppImage that needs no Flatpak (see [AppImage](#appimage) below). Each keeps its profiles apart: the
+Flatpak's are in `~/.var/app/io.github.n4n0gh.kite/data/kite`, the AppImage's in `~/.local/share/kite`.
+
+Inside Flatpak's sandbox, a few things are off unless you allow them with Flatseal or `flatpak override`:
+native messaging hosts (KeePassXC's, say), importing from other browsers' profiles, Web MIDI
+(`--device=all`), and placing the picture-in-picture window on Wayland (`--talk-name=org.kde.KWin`).
+
 ## Features
 
 * **Tabs:** the tab bar above or below the address bar, below the page, or as a vertical
@@ -132,8 +148,8 @@ it for your user, without root. `--standalone` and `--install` answer in advance
 terminal it stays standalone.
 
 Installing copies the AppImage to `~/.local/bin/kite` (`KITE_INSTALL_PATH` picks another path) and adds
-`~/.local/share/applications/org.kde.kite.desktop` and
-`~/.local/share/icons/hicolor/scalable/apps/org.kde.kite.svg`. Kite is then in the application menu,
+`~/.local/share/applications/io.github.n4n0gh.kite.desktop` and
+`~/.local/share/icons/hicolor/scalable/apps/io.github.n4n0gh.kite.svg`. Kite is then in the application menu,
 and can be chosen as the default browser in the system settings. To uninstall, delete those three files.
 
 If a Kite AppImage is already installed, the choice is to update it instead: it's looked for in
@@ -157,6 +173,24 @@ The AppImage also carries the build system's glibc and what's tied to it, in `us
 those on systems with an older glibc. Everywhere else it uses the system's, as its graphics drivers
 can need a newer one. Graphics, X11 and sound libraries always come from the system. `KITE_OWN_GLIBC=1`
 or `0` forces either way, for testing.
+
+### Flatpak
+
+```sh
+flatpak-builder --user --install --install-deps-from=flathub --force-clean build-flatpak flatpak/io.github.n4n0gh.kite.yml
+flatpak run io.github.n4n0gh.kite
+```
+
+The manifest, `flatpak/io.github.n4n0gh.kite.yml`, builds on the KDE runtime and Flathub's QtWebEngine base app
+(the runtime has no QtWebEngine of its own), with Rust from the SDK's extension. The build is offline:
+`flatpak/cargo-sources.json` lists every crate, and has to be made again after `Cargo.lock` changes,
+with `flatpak/update-cargo-sources.py`. yt-dlp, for the YouTube Download plugin, is bundled, as nothing
+outside the sandbox can be run.
+
+Publishing a release on GitHub runs `.github/workflows/flatpak.yml`: it builds the Flatpak, attaches
+`kite.flatpak` to the release, and publishes the repository that installed copies update from to
+GitHub Pages, with `flatpak/make-site.sh`. The repository is signed when the secret
+`FLATPAK_GPG_PRIVATE_KEY` holds a GPG private key.
 
 ## Architecture
 

@@ -1,0 +1,112 @@
+# Builds Kite as a Flatpak:
+#
+#   flatpak-builder --user --install --install-deps-from=flathub --force-clean build-flatpak flatpak/io.github.n4n0gh.kite.yml
+#   flatpak run io.github.n4n0gh.kite
+#
+# After Cargo.lock changes, run flatpak/update-cargo-sources.py: the build is
+# offline, with every crate listed in cargo-sources.json.
+
+id: io.github.n4n0gh.kite
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+# The KDE runtime has no QtWebEngine; Flathub's base app has it built for this
+# runtime, with Chromium's sandbox made to work inside Flatpak's.
+base: io.qt.qtwebengine.BaseApp
+base-version: '6.11'
+command: kite
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=network
+  # Sound, and the microphone for pages that may use it.
+  - --socket=pulseaudio
+  # Where downloads go unless told otherwise.
+  - --filesystem=xdg-download
+  # The password manager's keys, in KWallet.
+  - --talk-name=org.kde.kwalletd6
+  - --talk-name=org.kde.kwalletd5
+  # Notifications from pages and downloads.
+  - --talk-name=org.freedesktop.Notifications
+  # The Wake Lock API: keeping the screen on.
+  - --talk-name=org.freedesktop.ScreenSaver
+  # Plasma Integration plugin: downloads in the panel's progress, sending pages
+  # to a phone with KDE Connect, media controls, and KRunner finding what's open.
+  - --talk-name=org.kde.JobViewServer
+  - --talk-name=org.kde.kdeconnect
+  - --own-name=org.mpris.MediaPlayer2.kite
+  - --own-name=org.mpris.MediaPlayer2.kite.*
+  - --own-name=io.github.n4n0gh.kite.krunner.*
+  # KRunner, outside the sandbox, learns of Kite from a file here.
+  - --filesystem=xdg-data/krunner/dbusplugins:create
+  # Geolocation, for pages the user allows it.
+  - --system-talk-name=org.freedesktop.GeoClue2
+  # Not granted, and so not available inside the sandbox: native messaging hosts
+  # (KeePassXC's, say), importing from other browsers' profiles, Web MIDI
+  # (ALSA's sequencer: --device=all), and placing the picture-in-picture window
+  # on Wayland (--talk-name=org.kde.KWin, which would let a compromised browser
+  # script the window manager). Flatseal or `flatpak override` can add any of them.
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /mkspecs
+  - '*.a'
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+modules:
+  # The YouTube Download plugin runs yt-dlp, which must be inside the sandbox.
+  # (ffmpeg is in the runtime.) A release of yt-dlp is a Python program in one
+  # file; bump it when YouTube changes and the plugin stops working.
+  - name: yt-dlp
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 yt-dlp /app/bin/yt-dlp
+    sources:
+      - type: file
+        url: https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp
+        sha256: e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+
+  - name: kite
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/kite/cargo
+        # QtWebEngine is the base app's, under /app, where the Rust build's Qt
+        # helper doesn't look: it asks qmake, which knows the runtime's Qt only,
+        # and insists on finding each module's .prl file in Qt's library folder.
+        # So it's given a qmake (made below) whose library folder holds both.
+        QMAKE: /run/build/kite/qt/qmake
+        CXXFLAGS: -I/app/include -I/app/include/QtWebEngineCore -I/app/include/QtWebEngineQuick
+        RUSTFLAGS: -L native=/app/lib
+    build-commands:
+      - |
+        mkdir -p qt/lib
+        ln -s "$(qmake -query QT_INSTALL_LIBS)"/* qt/lib/
+        ln -sf /app/lib/libQt6WebEngine* /app/lib/*-linux-gnu/libQt6WebEngine*.prl qt/lib/
+        cp /usr/bin/qmake qt/
+        printf '[Paths]\nPrefix=/usr\nArchData=lib\nLibraries=/run/build/kite/qt/lib\nLibraryExecutables=lib/libexec\nPlugins=lib/plugins\nQmlImports=lib/qml\nHostPrefix=/usr\nHostLibraries=%s\nHostLibraryExecutables=lib/libexec\n' "$(qmake -query QT_INSTALL_LIBS)" > qt/qt.conf
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo --offline build --release --locked -p kite
+      - install -Dm755 target/release/kite /app/bin/kite
+      - install -Dm644 data/io.github.n4n0gh.kite.desktop -t /app/share/applications
+      - install -Dm644 data/io.github.n4n0gh.kite.svg -t /app/share/icons/hicolor/scalable/apps
+      - install -Dm644 data/io.github.n4n0gh.kite.metainfo.xml -t /app/share/metainfo
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - .flatpak-builder
+          - build-flatpak
+          - dist
+          - target
+      - cargo-sources.json

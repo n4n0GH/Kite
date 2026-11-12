@@ -39,8 +39,8 @@ fn main() {
     }
     icons.extend(plugin_files.iter().filter(|f| f.ends_with(".js") && !f.ends_with(".test.js")).cloned());
     println!("cargo::rerun-if-changed=icons");
-    // (icons/org.kde.kite.svg is a link to the application's icon.)
-    println!("cargo::rerun-if-changed=../../data/org.kde.kite.svg");
+    // (icons/io.github.n4n0gh.kite.svg is a link to the application's icon.)
+    println!("cargo::rerun-if-changed=../../data/io.github.n4n0gh.kite.svg");
 
     // Wayland's client headers (cpp/pointerlock.cpp), wherever pkg-config says.
     let wayland_includes: Vec<String> = std::process::Command::new("pkg-config")

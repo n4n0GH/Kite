@@ -90,6 +90,8 @@ pub fn spell_dictionary_dir() -> Option<std::path::PathBuf> {
         return Some(d.into());
     }
     [
+        // (In a Flatpak: the QtWebEngine base app's.)
+        "/app/qtwebengine_dictionaries",
         "/usr/share/qt6/qtwebengine_dictionaries",
         "/usr/lib/qt6/qtwebengine_dictionaries",
         "/usr/lib64/qt6/qtwebengine_dictionaries",

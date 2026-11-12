@@ -21,7 +21,9 @@ KITE_SOURCE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 KITE_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 KITE_APPS_DIR=$KITE_DATA_HOME/applications
 KITE_ICON_THEME=$KITE_DATA_HOME/icons/hicolor
-KITE_OWN_ENTRY=$KITE_APPS_DIR/org.kde.kite.desktop
+KITE_OWN_ENTRY=$KITE_APPS_DIR/io.github.n4n0gh.kite.desktop
+# What Kite was called up to 0.9.9: an install from then is updated, and its entry replaced.
+KITE_OLD_ENTRY=$KITE_APPS_DIR/org.kde.kite.desktop
 KITE_NEW_PATH=$(realpath -m "${KITE_INSTALL_PATH:-$HOME/.local/bin/kite}")
 
 # What find_installed finds: the AppImages, as real paths, and the desktop files that
@@ -37,8 +39,11 @@ is_kite_appimage() { # absolute path
     [[ $(od -An -tx1 -j8 -N3 "$1" 2>/dev/null) == ' 41 49 02' ]] || return 1
     local dir status=1
     dir=$(mktemp -d)
-    (cd "$dir" && timeout 30 "$1" --appimage-extract org.kde.kite.desktop) </dev/null >/dev/null 2>&1 || true
-    [[ -L $dir/squashfs-root/org.kde.kite.desktop || -e $dir/squashfs-root/org.kde.kite.desktop ]] && status=0
+    (cd "$dir" && timeout 30 "$1" --appimage-extract '*.kite.desktop') </dev/null >/dev/null 2>&1 || true
+    local name
+    for name in io.github.n4n0gh.kite org.kde.kite; do
+        [[ -L $dir/squashfs-root/$name.desktop || -e $dir/squashfs-root/$name.desktop ]] && status=0
+    done
     rm -rf "$dir"
     return $status
 }
@@ -147,10 +152,10 @@ write_desktop_entry() { # program
             Exec=kite*) printf 'Exec=%s%s\n' "$exec" "${line#Exec=kite}" ;;
             *) printf '%s\n' "$line" ;;
         esac
-    done <"$KITE_SOURCE_ROOT/data/org.kde.kite.desktop" >"$part"
+    done <"$KITE_SOURCE_ROOT/data/io.github.n4n0gh.kite.desktop" >"$part"
     chmod 644 "$part"
     mv -f "$part" "$KITE_OWN_ENTRY"
-    install -m644 "$KITE_SOURCE_ROOT/data/org.kde.kite.svg" "$KITE_ICON_THEME/scalable/apps/"
+    install -m644 "$KITE_SOURCE_ROOT/data/io.github.n4n0gh.kite.svg" "$KITE_ICON_THEME/scalable/apps/"
 }
 
 # Tells the desktop about the new files. Each of these is only on some systems, and
@@ -182,11 +187,15 @@ install_kite() { # new AppImage
     # A desktop file from another tool, like AppImageLauncher, still starts the right
     # file, and a second one of ours would only list Kite twice.
     for i in "${!ENTRIES[@]}"; do
-        [[ ${ENTRIES[$i]} == "$KITE_OWN_ENTRY" ]] && own_target=${ENTRY_TARGETS[$i]}
+        [[ ${ENTRIES[$i]} == "$KITE_OWN_ENTRY" || ${ENTRIES[$i]} == "$KITE_OLD_ENTRY" ]] && own_target=${ENTRY_TARGETS[$i]}
     done
     if [[ -n $own_target || ${#ENTRIES[@]} == 0 ]]; then
         write_desktop_entry "${own_target:-${INSTALLED[0]}}"
         printf 'Wrote %s\n' "$KITE_OWN_ENTRY"
+        if [[ -e $KITE_OLD_ENTRY ]]; then
+            rm -f "$KITE_OLD_ENTRY" "$KITE_ICON_THEME/scalable/apps/org.kde.kite.svg"
+            printf 'Removed %s, the entry of the old name\n' "$KITE_OLD_ENTRY"
+        fi
     else
         printf 'Left the existing desktop file alone: %s\n' "${ENTRIES[0]}"
     fi

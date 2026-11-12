@@ -591,10 +591,10 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     QIcon::setFallbackThemeName(QStringLiteral("kite"));
     QIcon::setFallbackSearchPaths(QIcon::fallbackSearchPaths() << QStringLiteral(":/qt/qml/org/kde/kite/icons/kite/22"));
     QApplication::setApplicationVersion(QString::fromUtf8(version));
-    QApplication::setDesktopFileName(QStringLiteral("org.kde.kite"));
+    QApplication::setDesktopFileName(QStringLiteral("io.github.n4n0gh.kite"));
     // (An installed icon if there is one. Nothing need be installed: where the desktop
     // takes the icon from the window, that's enough for the taskbar.)
-    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("org.kde.kite"), QIcon(QStringLiteral(":/qt/qml/org/kde/kite/icons/org.kde.kite.svg"))));
+    QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("io.github.n4n0gh.kite"), QIcon(QStringLiteral(":/qt/qml/org/kde/kite/icons/io.github.n4n0gh.kite.svg"))));
     QApplication::setQuitOnLastWindowClosed(false);
 
     QQmlApplicationEngine engine;

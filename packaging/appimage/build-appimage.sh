@@ -124,8 +124,8 @@ say "Preparing AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/scalable/apps"
 install -m755 "$BIN" "$APPDIR/usr/bin/kite"
-install -m644 "$ROOT/data/org.kde.kite.desktop" "$APPDIR/usr/share/applications/"
-install -m644 "$ROOT/data/org.kde.kite.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+install -m644 "$ROOT/data/io.github.n4n0gh.kite.desktop" "$APPDIR/usr/share/applications/"
+install -m644 "$ROOT/data/io.github.n4n0gh.kite.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
 
 # Things Kite loads at runtime that no QML file imports, so the QML scanner
 # can't see them: the org.kde.desktop Qt Quick Controls style (set in
@@ -288,8 +288,8 @@ done
 (cd "$WORK" && "$LINUXDEPLOY" --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/kite" \
     --custom-apprun "$APPRUN" \
-    --desktop-file "$APPDIR/usr/share/applications/org.kde.kite.desktop" \
-    --icon-file "$APPDIR/usr/share/icons/hicolor/scalable/apps/org.kde.kite.svg" \
+    --desktop-file "$APPDIR/usr/share/applications/io.github.n4n0gh.kite.desktop" \
+    --icon-file "$APPDIR/usr/share/icons/hicolor/scalable/apps/io.github.n4n0gh.kite.svg" \
     "${deps_only[@]}" "${nss_modules[@]}" \
     --plugin qt)
 use_plain_cpu_builds

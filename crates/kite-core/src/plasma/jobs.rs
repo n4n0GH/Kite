@@ -18,7 +18,7 @@ const SERVER: &str = "org.kde.JobViewServer";
 const SERVER_PATH: &str = "/JobViewServer";
 const SERVER_INTERFACE: &str = "org.kde.JobViewServerV2";
 const VIEW_INTERFACE: &str = "org.kde.JobViewV3";
-const DESKTOP_ENTRY: &str = "org.kde.kite";
+const DESKTOP_ENTRY: &str = "io.github.n4n0gh.kite";
 // In the capabilities of a view.
 const KILLABLE: i32 = 1;
 const SUSPENDABLE: i32 = 2;

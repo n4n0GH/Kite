@@ -19,7 +19,7 @@ use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 const PATH: &str = "/org/mpris/MediaPlayer2";
 const NAME: &str = "org.mpris.MediaPlayer2.kite";
-const DESKTOP_ENTRY: &str = "org.kde.kite";
+const DESKTOP_ENTRY: &str = "io.github.n4n0gh.kite";
 
 /// What the desktop asks of the player, for the page to do.
 #[derive(Serialize, Clone, PartialEq, Debug)]

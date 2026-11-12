@@ -1,0 +1,85 @@
+# Builds Kite as a Flatpak when a release is published, attaches the bundle
+# to the release, and publishes the Flatpak repository that installed copies
+# update from (served by GitHub Pages).
+#
+# Can also be started by hand from the Actions page. The bundle is then an
+# artifact of the run; the repository is only published when asked to.
+
+name: Flatpak
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this build to the Flatpak repository that users update from
+        type: boolean
+        default: false
+
+env:
+  # Where GitHub Pages serves the repository. Installed copies remember it.
+  SITE_URL: https://n4n0gh.github.io/Kite
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    container:
+      # Has flatpak-builder and the KDE runtime of this version; keep in step
+      # with runtime-version in the manifest.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: kite.flatpak
+          manifest-path: flatpak/io.github.n4n0gh.kite.yml
+          branch: stable
+          upload-artifact: false
+          # Reused as long as the manifest and the crates it lists are unchanged.
+          cache-key: flatpak-builder-${{ hashFiles('flatpak/*.yml', 'flatpak/*.json') }}
+
+      # Replaces the bundle with one that updates from the repository, and
+      # prepares the repository for publishing. Signed if the secret is set.
+      - name: Prepare repository and bundle
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: |
+          rm -f kite.flatpak
+          flatpak/make-site.sh repo site "$SITE_URL" stable
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kite-flatpak
+          path: kite.flatpak
+
+      - name: Attach the bundle to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: kite.flatpak
+          fail_on_unmatched_files: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publish:
+    name: Publish repository
+    if: github.event_name == 'release' || inputs.publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
