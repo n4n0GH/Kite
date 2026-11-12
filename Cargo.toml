@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/kite-core", "crates/kite"]
 
 [workspace.package]
-version = "0.9.9"
+version = "0.9.10"
 edition = "2021"
 license = "GPL-3.0-or-later"
 

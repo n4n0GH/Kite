@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.10" date="2026-11-12">
+      <description>
+        <p>Kite as a Flatpak, from a repository that keeps it updated. Its application ID is now io.github.n4n0gh.kite.</p>
+      </description>
+    </release>
     <release version="0.9.9" date="2026-11-11">
       <description>
         <p>Private windows can have purple window chrome. Vim keys no longer go quiet with the keyboard in a widget frame or a picker. Profiles can be renamed from the picker. A YouTube Download plugin saves videos with yt-dlp. The built-in blocker works like uBlock Origin, with an element picker.</p>
