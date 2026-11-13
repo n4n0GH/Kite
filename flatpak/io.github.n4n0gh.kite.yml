@@ -28,6 +28,9 @@ finish-args:
   - --socket=pulseaudio
   # Where downloads go unless told otherwise.
   - --filesystem=xdg-download
+  # The settings of Plasma's global theme (the icon theme, say), which aren't in
+  # kdeglobals (that one the runtime lets be read); main.rs has KDE's libraries look here.
+  - --filesystem=xdg-config/kdedefaults:ro
   # The password manager's keys, in KWallet.
   - --talk-name=org.kde.kwalletd6
   - --talk-name=org.kde.kwalletd5

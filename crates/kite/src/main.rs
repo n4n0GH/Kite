@@ -113,6 +113,27 @@ fn work_in_home() {
     let _ = std::env::set_current_dir(home);
 }
 
+/// In a Flatpak, the settings of Plasma's global theme (the icon theme, say), as on the
+/// host: they're in `kdedefaults` in the configuration folder, which Plasma lists in
+/// `XDG_CONFIG_DIRS`. Flatpak sets that variable anew, so KDE's libraries see only
+/// `kdeglobals`, and without an icon theme named there, they draw Breeze's. (The
+/// manifest lets the folder be read.)
+fn plasma_defaults_in_flatpak() {
+    if !std::path::Path::new("/.flatpak-info").exists() {
+        return;
+    }
+    let Some(defaults) = directories::BaseDirs::new().map(|d| d.config_dir().join("kdedefaults")) else { return };
+    if !defaults.is_dir() {
+        return;
+    }
+    let dirs = std::env::var_os("XDG_CONFIG_DIRS").filter(|d| !d.is_empty()).unwrap_or_else(|| "/etc/xdg".into());
+    let mut all = vec![defaults.clone()];
+    all.extend(std::env::split_paths(&dirs).filter(|d| *d != defaults));
+    if let Ok(joined) = std::env::join_paths(all) {
+        std::env::set_var("XDG_CONFIG_DIRS", joined);
+    }
+}
+
 fn main() {
     crash::init_logging();
     work_in_home();
@@ -224,6 +245,8 @@ fn main() {
             std::env::set_var("QTWEBENGINE_DICTIONARIES_PATH", dir);
         }
     }
+
+    plasma_defaults_in_flatpak();
 
     let args: Vec<CString> = qt_args.into_iter().map(|a| CString::new(a).unwrap_or_default()).collect();
     let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr() as *mut c_char).collect();
