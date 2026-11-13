@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.13" date="2026-11-13">
+      <description>
+        <p>The Flatpak follows the desktop's colors when they change while Kite is open, such as a switch between a light and a dark theme.</p>
+      </description>
+    </release>
     <release version="0.9.12" date="2026-11-12">
       <description>
         <p>The extensions button's panel leaves out the Extensions section while WebExtensions are switched off.</p>
