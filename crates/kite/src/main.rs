@@ -247,6 +247,7 @@ fn main() {
     }
 
     plasma_defaults_in_flatpak();
+    kite_core::desktopcolors::watch(ffi::set_desktop_color_scheme);
 
     let args: Vec<CString> = qt_args.into_iter().map(|a| CString::new(a).unwrap_or_default()).collect();
     let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr() as *mut c_char).collect();

@@ -56,6 +56,7 @@ extern "C" {
     fn kite_cpp_file_name_filters(accepted_json: *const c_char) -> *const c_char;
     fn kite_cpp_copy_text(text: *const c_char);
     fn kite_cpp_set_color_scheme_for_new_windows(path: *const c_char);
+    fn kite_cpp_set_desktop_color_scheme(path: *const c_char);
     fn kite_cpp_site_of(host: *const c_char) -> *const c_char;
     fn kite_cpp_cert_fingerprint(error: *const std::ffi::c_void) -> *const c_char;
     fn kite_cpp_webengine_version() -> *const c_char;
@@ -151,6 +152,13 @@ pub fn cert_fingerprint(error: *const std::ffi::c_void) -> String {
 pub fn set_color_scheme_for_new_windows(path: &str) {
     let Ok(path) = CString::new(path) else { return };
     unsafe { kite_cpp_set_color_scheme_for_new_windows(path.as_ptr()) }
+}
+
+/// The desktop's colors changed inside a Flatpak (kite_core::desktopcolors):
+/// the scheme file with the new ones. From any thread.
+pub fn set_desktop_color_scheme(path: &std::path::Path) {
+    let Ok(path) = CString::new(path.to_string_lossy().as_bytes()) else { return };
+    unsafe { kite_cpp_set_desktop_color_scheme(path.as_ptr()) }
 }
 
 pub fn copy_text(text: &str) {

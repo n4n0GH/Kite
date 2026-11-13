@@ -15,6 +15,7 @@ pub mod certview;
 pub mod config;
 pub mod crashlog;
 pub mod db;
+pub mod desktopcolors;
 pub mod downloads;
 pub mod external;
 pub mod favicons;

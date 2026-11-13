@@ -128,7 +128,9 @@ fn desktop_scheme() -> Option<String> {
 pub fn scheme_path() -> anyhow::Result<PathBuf> {
     let base = crate::paths::base_dir()?;
     let path = base.join(SCHEME_FILE);
-    let text = scheme_text(&desktop_scheme().unwrap_or_default());
+    // (In a Flatpak, after the desktop's colors changed: those.)
+    let desktop = crate::desktopcolors::current().and_then(|p| std::fs::read_to_string(p).ok()).or_else(desktop_scheme);
+    let text = scheme_text(&desktop.unwrap_or_default());
     // (KWin watches the file: only a change is written.)
     if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
         std::fs::create_dir_all(&base)?;
