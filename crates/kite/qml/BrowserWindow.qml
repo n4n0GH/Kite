@@ -1302,6 +1302,8 @@ QQC2.ApplicationWindow {
     signal tabClosed(int tabId)
     // (For plugins: a tab of this window, new or come from another one.)
     signal tabOpened(var tab)
+    // (For plugins: a tab's page finished loading.)
+    signal pageLoaded(var tab)
     // What plugins add to a page's context menu, for what it was opened on (`info`, as
     // extensions get it). A plugin's window item offers them with contextItems(info):
     // a list of {title, iconName, run} or {title, iconName, children}.

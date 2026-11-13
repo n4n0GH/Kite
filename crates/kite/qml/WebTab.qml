@@ -818,6 +818,7 @@ Item {
                         Browser.recordVisit(u, title, wt.window.privateMode)
                         wt.sendUpdate({status: "complete"})
                         wt.focusPageAfterLoad()
+                        wt.window.pageLoaded(wt)
                         break
                     case WebEngineView.LoadFailedStatus:
                         wt.navEvent("onErrorOccurred", {url: u, error: info.errorString})

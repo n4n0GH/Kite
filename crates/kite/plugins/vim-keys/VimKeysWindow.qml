@@ -47,6 +47,22 @@ Item {
         if (s) eachOpenTab(s.sourceCode)
     }
     Component.onCompleted: installInOpenTabs()
+    // A page that should have the keys and doesn't: said in the log, with whether
+    // the profile still has the script for new pages, and given them. (It has
+    // happened, in every tab at once, with nothing to say why.)
+    function checkPage(tab) {
+        const site = Rules.siteOf(tab.url)
+        if (!site || Rules.isExcepted(site, app.pluginSetting(plugin, "exceptions"))) return
+        const address = String(tab.url)
+        tab.view.runJavaScript("!!globalThis.__kiteVim", 1, there => {
+            if (there !== false || String(tab.url) !== address) return
+            const s = app.pluginScripts().find(x => x.name.startsWith("kite:plugin:" + plugin.id + ":"))
+            const kept = s ? tab.view.profile.userScripts.find(s.name) : []
+            console.warn("vim-keys: no keys on " + site + " after it loaded; the profile has " + kept.length + " of its script"
+                + (kept.length === 1 ? (kept[0].sourceCode === s.sourceCode ? ", as it should be" : ", an older one") : "") + ". Given again.")
+            if (s) tab.runInFrames(s.sourceCode)
+        })
+    }
     Component.onDestruction: eachOpenTab("globalThis.__kiteVim && __kiteVim.stop(); delete globalThis.__kiteVim")
     Connections {
         target: Browser
@@ -58,6 +74,7 @@ Item {
     // ---- what pages ask ----
     Connections {
         target: root.win
+        function onPageLoaded(tab) { root.checkPage(tab) }
         function onPluginMessage(tab, message) {
             if (message.plugin === root.plugin.id && tab === root.win.currentTab) root.handle(tab, message.m)
         }

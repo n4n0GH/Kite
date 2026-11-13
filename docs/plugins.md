@@ -124,7 +124,8 @@ The plugin's app item, if it has one, is `app.pluginAppItem(plugin.id)`. It's ma
 items, so look it up once they're all there (`Qt.callLater` in `Component.onCompleted`).
 
 `win.tabOpened(tab)` tells it when a tab is added (those already open are in `win.tabItems`), and
-`win.tabClosed(tabId)` when one closes. What it shows over a tab's page goes in `tab.pageArea`.
+`win.tabClosed(tabId)` when one closes, and `win.pageLoaded(tab)` each time a tab's page has finished
+loading. What it shows over a tab's page goes in `tab.pageArea`.
 
 ### The settings page
 
