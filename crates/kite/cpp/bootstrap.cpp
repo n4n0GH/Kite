@@ -24,6 +24,8 @@
 #include <atomic>
 #include <QStyleHints>
 
+#include "imeguard.h"
+
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
 namespace QtWebEngineQuick { void initialize(); }
@@ -602,6 +604,7 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     kite_init_dns();
     app.installEventFilter(new KiteInputFilter(&app));
     app.installEventFilter(new KiteScaleFilter(&app));
+    app.installEventFilter(new KiteImeGuard(&app));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.

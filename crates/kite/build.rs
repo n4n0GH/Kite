@@ -51,6 +51,8 @@ fn main() {
         .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().filter_map(|f| f.strip_prefix("-I")).map(str::to_owned).collect())
         .unwrap_or_else(|| vec!["/usr/include/wayland".to_owned()]);
     println!("cargo::rerun-if-changed=cpp/wayland");
+    // (Included by cpp/bootstrap.cpp.)
+    println!("cargo::rerun-if-changed=cpp/imeguard.h");
 
     let builder = CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml));
     // SAFETY: only adds include directories.
