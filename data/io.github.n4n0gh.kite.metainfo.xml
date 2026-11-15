@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.17" date="2026-11-15">
+      <description>
+        <p>Show in Folder opens the file manager with the downloaded file selected. In the settings, the spell checking languages and the search engines are lists like the saved logins, with a button to remove each entry and one to remove all.</p>
+      </description>
+    </release>
     <release version="0.9.16" date="2026-11-15">
       <description>
         <p>The downloads button opens a panel with the downloads under way, which can be paused and cancelled there; the full list moved into the Library. Toolbar buttons are all as tall as the address bar and stay pressed in while their menu is open.</p>
