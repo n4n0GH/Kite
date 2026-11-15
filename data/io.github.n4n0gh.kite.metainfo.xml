@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.15" date="2026-11-15">
+      <description>
+        <p>The custom rules in the Content Blocking settings can be scrolled, so rules past the end of the field can be reached.</p>
+      </description>
+    </release>
     <release version="0.9.14" date="2026-11-14">
       <description>
         <p>A possible fix for Vim keys, and a site's own keyboard shortcuts, doing nothing on a newly opened page while an input method such as IBus is running.</p>
