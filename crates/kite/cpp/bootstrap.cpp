@@ -25,6 +25,7 @@
 #include <QStyleHints>
 
 #include "imeguard.h"
+#include "popupfocus.h"
 
 // The QtWebEngineQuick headers are not always packaged (openSUSE ships the
 // runtime only), so declare the single exported entry point we need.
@@ -619,3 +620,4 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     g_engine = nullptr;
     return code;
 }
+    app.installEventFilter(new KitePopupFocus(&app));

@@ -53,6 +53,7 @@ fn main() {
     println!("cargo::rerun-if-changed=cpp/wayland");
     // (Included by cpp/bootstrap.cpp.)
     println!("cargo::rerun-if-changed=cpp/imeguard.h");
+    println!("cargo::rerun-if-changed=cpp/popupfocus.h");
 
     let builder = CxxQtBuilder::new_qml_module(QmlModule::new("org.kde.kite").qml_files(qml));
     // SAFETY: only adds include directories.
