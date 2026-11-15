@@ -495,6 +495,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "wakeLockScript"]
         fn wake_lock_script(self: &Browser) -> QString;
+        /// "Line wrap" in a page's source without the tab dying (js/view_source.js).
+        #[qinvokable]
+        #[cxx_name = "viewSourceScript"]
+        fn view_source_script(self: &Browser) -> QString;
         /// Page-world script providing pointer lock, in every frame (js/pointerlock.js).
         #[qinvokable]
         #[cxx_name = "pointerLockScript"]
@@ -1589,6 +1593,9 @@ impl qobject::Browser {
 
     fn wake_lock_script(&self) -> QString {
         q(include_str!("js/wakelock.js"))
+    }
+    fn view_source_script(&self) -> QString {
+        q(include_str!("js/view_source.js"))
     }
     fn pointer_lock_script(&self) -> QString {
         q(include_str!("js/pointerlock.js"))

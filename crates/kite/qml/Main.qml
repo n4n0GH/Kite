@@ -749,6 +749,9 @@ QtObject {
             // in one).
             wanted.push({name: "kite:pointerLock", sourceCode: Browser.pointerLockScript(), worldId: 0, runsOnSubFrames: true, injectionPoint: 0})
             wanted.push({name: "kite:pointerLockRelay", sourceCode: Browser.pointerLockRelayScript(), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
+            // "Line wrap" in a page's source, which would kill the tab (QtWebEngine lacks
+            // what the engine's own checkbox asks for).
+            wanted.push({name: "kite:viewSource", sourceCode: Browser.viewSourceScript(), worldId: 1, runsOnSubFrames: false, injectionPoint: 0})
             // Kite's right-click menu on pages that keep it from the user.
             wanted.push({name: "kite:contextMenu", sourceCode: Browser.contextMenuScript(!!setting("web.unblockContextMenu")), worldId: 1, runsOnSubFrames: true, injectionPoint: 0})
             // And selecting and copying text.
