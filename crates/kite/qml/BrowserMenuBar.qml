@@ -95,7 +95,7 @@ QQC2.MenuBar {
     }
     BarMenu {
         title: "&Tools"
-        QQC2.MenuItem { text: "&Downloads"; icon.name: "download"; onTriggered: menuBar.app.showDownloads() }
+        QQC2.MenuItem { text: "&Downloads"; icon.name: "download"; onTriggered: menuBar.app.showLibrary("downloads") }
         QQC2.MenuItem { text: "E&xtensions"; icon.name: "kite-extension"; onTriggered: menuBar.app.showAddons() }
         QQC2.MenuItem { text: "&Passwords"; icon.name: "dialog-password"; onTriggered: menuBar.app.showPreferences("passwords") }
         QQC2.MenuSeparator {}

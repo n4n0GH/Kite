@@ -5,7 +5,7 @@ import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 
-// Falkon's BrowsingLibrary: History and Bookmarks managers.
+// Falkon's BrowsingLibrary: History, Bookmarks and Downloads.
 ManagerWindow {
     id: w
     property string page: "history"
@@ -13,8 +13,10 @@ ManagerWindow {
     width: Kirigami.Units.gridUnit * 52
     height: Kirigami.Units.gridUnit * 36
     pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.ToolBar
-    pageStack.initialPage: page === "bookmarks" ? bookmarksPage : historyPage
-    onPageChanged: pageStack.replace(page === "bookmarks" ? bookmarksPage : historyPage)
+    function pageComponent() { return page === "bookmarks" ? bookmarksPage : page === "downloads" ? downloadsPage : historyPage }
+    pageStack.initialPage: pageComponent()
+    // (Not for the page it's opened with, which comes before there is one to replace.)
+    onPageChanged: if (pageStack.depth > 0) pageStack.replace(pageComponent())
 
     function openUrl(u, bg) { app.openUrl(u, bg ? "background" : "tab") }
 
@@ -25,7 +27,8 @@ ManagerWindow {
         showHeaderWhenCollapsed: true
         actions: [
             Kirigami.Action { text: "History"; icon.name: "view-history"; checked: w.page === "history"; onTriggered: w.page = "history" },
-            Kirigami.Action { text: "Bookmarks"; icon.name: "bookmarks"; checked: w.page === "bookmarks"; onTriggered: w.page = "bookmarks" }
+            Kirigami.Action { text: "Bookmarks"; icon.name: "bookmarks"; checked: w.page === "bookmarks"; onTriggered: w.page = "bookmarks" },
+            Kirigami.Action { text: "Downloads"; icon.name: "download"; checked: w.page === "downloads"; onTriggered: w.page = "downloads" }
         ]
     }
 
@@ -272,6 +275,49 @@ ManagerWindow {
                         else if (modelData.type === "url") w.openUrl(modelData.url, false)
                     }
                     TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: if (row.modelData.url) w.openUrl(row.modelData.url, true) }
+                }
+            }
+        }
+    }
+
+    // Falkon's DownloadManager. (Those under way are also in the toolbar's panel, DownloadsButton.)
+    Component {
+        id: downloadsPage
+        Kirigami.ScrollablePage {
+            id: dp
+            title: "Downloads"
+            property var items: JSON.parse(Browser.downloads())
+            Connections { target: Browser; function onDownloadsChanged() { dp.items = JSON.parse(Browser.downloads()) } }
+            actions: [
+                Kirigami.Action { text: "Open Folder"; icon.name: "folder-open"; onTriggered: Qt.openUrlExternally("file://" + w.app.setting("downloads.directory")) },
+                Kirigami.Action { text: "Clear List"; icon.name: "edit-clear-list"; enabled: dp.items.some(i => i.state !== "in_progress"); onTriggered: Browser.clearDownloads() }
+            ]
+            ListView {
+                model: dp.items
+                Kirigami.PlaceholderMessage { anchors.centerIn: parent; visible: dp.items.length === 0; icon.name: "download"; text: "No downloads" }
+                delegate: QQC2.ItemDelegate {
+                    required property var modelData
+                    width: ListView.view.width
+                    contentItem: RowLayout {
+                        spacing: Kirigami.Units.largeSpacing
+                        Kirigami.Icon { source: modelData.mime ? modelData.mime.replace("/", "-") : "unknown"; fallback: "unknown"; Layout.preferredWidth: Kirigami.Units.iconSizes.medium; Layout.preferredHeight: Layout.preferredWidth }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            QQC2.Label { text: modelData.path.substring(modelData.path.lastIndexOf("/") + 1); textFormat: Text.PlainText; elide: Text.ElideMiddle; Layout.fillWidth: true; font.bold: true }
+                            QQC2.ProgressBar { visible: modelData.state === "in_progress"; Layout.fillWidth: true; from: 0; to: Math.max(1, modelData.total); value: modelData.received; indeterminate: modelData.total <= 0 }
+                            QQC2.Label {
+                                font: Kirigami.Theme.smallFont; opacity: 0.75
+                                text: modelData.state === "in_progress" ? w.app.formatBytes(modelData.received) + " of " + w.app.formatBytes(modelData.total)
+                                    : modelData.state === "complete" ? w.app.formatBytes(modelData.total) + " — " + Browser.hostOf(modelData.url)
+                                    : modelData.state === "cancelled" ? "Cancelled" : "Failed"
+                            }
+                        }
+                        QQC2.ToolButton { icon.name: "document-open-symbolic"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally("file://" + modelData.path); QQC2.ToolTip.text: "Open"; QQC2.ToolTip.visible: hovered }
+                        QQC2.ToolButton { icon.name: "folder-open"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally("file://" + modelData.path.substring(0, modelData.path.lastIndexOf("/"))); QQC2.ToolTip.text: "Show in folder"; QQC2.ToolTip.visible: hovered }
+                        QQC2.ToolButton { icon.name: "edit-delete-remove"; visible: modelData.state !== "in_progress"; onClicked: Browser.removeDownload(modelData.id); QQC2.ToolTip.text: "Remove from list"; QQC2.ToolTip.visible: hovered }
+                    }
+                    onDoubleClicked: if (modelData.state === "complete") Qt.openUrlExternally("file://" + modelData.path)
                 }
             }
         }

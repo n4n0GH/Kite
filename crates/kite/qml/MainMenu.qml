@@ -81,7 +81,7 @@ QQC2.Menu {
             }
         }
     }
-    QQC2.MenuItem { text: "Downloads"; icon.name: "download"; onTriggered: app.showDownloads() }
+    QQC2.MenuItem { text: "Downloads"; icon.name: "download"; onTriggered: app.showLibrary("downloads") }
     QQC2.MenuSeparator {}
 
     QQC2.Menu {

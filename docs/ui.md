@@ -10,15 +10,14 @@ All paths are under `crates/kite/qml/`, except for plugins. QML files are compil
 | Browser window | `BrowserWindow.qml` | `Main.newWindow` |
 | Settings | `PreferencesWindow.qml` | `Main.showPreferences(page)` |
 | Extensions | `AddonsWindow.qml` | `Main.showAddons` |
-| Library (history and bookmarks) | `LibraryWindow.qml` | `Main.showLibrary(page)` |
-| Downloads | `DownloadsWindow.qml` | `Main.showDownloads` |
+| Library (history, bookmarks and downloads) | `LibraryWindow.qml` | `Main.showLibrary(page)` |
 | JavaScript popups | `PopupWindow.qml` | `WebTab.onNewWindowRequested` |
 | Extension options | `ExtensionOptionsDialog.qml` | `Main` |
 | Extension login flow | `AuthFlow.qml` | `Main` |
 | Picture-in-picture | `plugins/pip/PipWindow.qml` | `Main.startPip` |
 | Profile picker | `crates/kite/cpp/profiles.cpp` | `kite --pick-profile`, its own process |
 
-Settings, Extensions, Library and Downloads are based on `ManagerWindow.qml`, and only one of each is
+Settings, Extensions and Library are based on `ManagerWindow.qml`, and only one of each is
 open at a time (`Main.showSingleton`).
 
 ## The browser window
@@ -30,7 +29,8 @@ BrowserWindow.qml
 │  ├─ TabStripSlot           tab bar, when above the address bar
 │  ├─ NavigationToolbar      built from the "toolbar.items" setting
 │  │  ├─ LocationBar         address bar and its icons
-│  │  └─ ExtensionButtons    extensions button and pinned extensions
+│  │  ├─ ExtensionButtons    extensions button and pinned extensions
+│  │  └─ DownloadsButton     downloads button and its panel of those under way
 │  ├─ BookmarksBar
 │  └─ TabStripSlot           tab bar, when below the address bar
 ├─ SideTabs (left and right) vertical tab list (TabStrip inside)

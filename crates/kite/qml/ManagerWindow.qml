@@ -1,7 +1,7 @@
 import QtQuick
 import org.kde.kirigami as Kirigami
 
-// A window besides the browser's (add-ons, library, downloads, settings).
+// A window besides the browser's (add-ons, library, settings).
 //
 // Kirigami gives each of its windows an application-wide shortcut for the
 // standard Quit key that closes that window. With one open, the key would have

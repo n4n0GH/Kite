@@ -966,7 +966,7 @@ QQC2.ApplicationWindow {
         case "historySidebar": showSidebar("history"); break
         case "bookmarksLibrary": app.showLibrary("bookmarks"); break
         case "historyLibrary": app.showLibrary("history"); break
-        case "downloads": app.showDownloads(); break
+        case "downloads": app.showLibrary("downloads"); break
         case "addons": app.showAddons(); break
         case "settings": app.showPreferences(); break
         default:

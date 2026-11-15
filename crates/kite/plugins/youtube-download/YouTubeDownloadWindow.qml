@@ -155,7 +155,7 @@ Item {
                 QQC2.Button {
                     visible: !!root.job && root.job.state === "done"
                     text: "Open"
-                    icon.name: "document-open"
+                    icon.name: "document-open-symbolic"
                     onClicked: { root.store.showFile(root.job.file); popup.close() }
                 }
                 QQC2.Button {

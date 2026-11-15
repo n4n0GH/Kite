@@ -98,18 +98,9 @@ QQC2.ToolBar {
     }
     Component {
         id: downloadsItem
-        Button {
-            icon.name: "download"; tip: "Downloads"
-            onClicked: { toolbar.win.downloadsActive = 0; toolbar.win.app.showDownloads() }
-            function pulse() { badgeAnimation.restart() }
+        DownloadsButton {
+            win: toolbar.win
             Component.onCompleted: toolbar.win.downloadsButton = this
-            Rectangle {
-                visible: toolbar.win.downloadsActive > 0
-                width: Kirigami.Units.smallSpacing * 2; height: width; radius: width / 2
-                color: Kirigami.Theme.highlightColor
-                anchors { right: parent.right; top: parent.top; margins: Kirigami.Units.smallSpacing }
-                SequentialAnimation on scale { id: badgeAnimation; running: false; NumberAnimation { to: 2; duration: 150 } NumberAnimation { to: 1; duration: 150 } }
-            }
         }
     }
     Component {

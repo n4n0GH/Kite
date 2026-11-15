@@ -1182,6 +1182,13 @@ QtObject {
             {label: "Open Folder", run: () => Qt.openUrlExternally(fileUrl(path.substring(0, path.lastIndexOf("/")) || "/"))},
         ], setting("downloads.notificationTimeout"))
     }
+    // A size for people: "3.4 MB"; "?" when it isn't known.
+    function formatBytes(n) {
+        if (n <= 0) return "?"
+        const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
+        return n.toFixed(i ? 1 : 0) + " " + u[i]
+    }
     function onDownloadRequested(download) {
         const url = download.url.toString()
         // Firefox add-ons: install instead of saving.
@@ -1335,7 +1342,6 @@ QtObject {
     property Component _authComp: Component { AuthFlow {} }
 
     property Component libraryComponent: Component { LibraryWindow {} }
-    property Component downloadsComponent: Component { DownloadsWindow {} }
     property Component blockedComponent: Component { BlockedRequestsWindow {} }
     property Component preferencesComponent: Component { PreferencesWindow {} }
     property Component addonsComponent: Component { AddonsWindow {} }
@@ -1354,7 +1360,6 @@ QtObject {
         return w
     }
     function showLibrary(page) { return showSingleton("library", libraryComponent, {page: page || "history"}) }
-    function showDownloads() { return showSingleton("downloads", downloadsComponent) }
     function showBlockedRequests(host) { return showSingleton("blocked", blockedComponent, {host: host}) }
     function showPreferences(page) { return showSingleton("preferences", preferencesComponent, {page: page || "general"}) }
     function showPluginSettings(plugin) { showPreferences("extensions").openPluginSettings(plugin) }
