@@ -994,31 +994,60 @@ ManagerWindow {
           SectionHeader { text: "Spelling" }
           Form {
             Check { id: spellOn; Kirigami.FormData.label: "Spelling:"; text: "Check spelling while typing"; key: "web.spellcheck" }
-            // One per installed dictionary (a language without one would do nothing).
-            Flow {
+            // The languages checked, as a list (like the saved logins); a new one comes from
+            // those with an installed dictionary (one without would do nothing).
+            ColumnLayout {
                 id: spellLangs
                 Kirigami.FormData.label: "Languages:"
+                Kirigami.FormData.labelAlignment: Qt.AlignTop
                 Layout.fillWidth: true
                 Layout.maximumWidth: Kirigami.Units.gridUnit * 24
-                spacing: Kirigami.Units.largeSpacing
+                spacing: Kirigami.Units.smallSpacing
                 visible: available.length > 0
                 enabled: spellOn.checked
                 readonly property var available: JSON.parse(Browser.spellDictionaries())
                 // What's chosen, as the dictionaries are named ("en-US" finds en_US).
                 readonly property var chosen: JSON.parse(Browser.resolveSpellLanguages(JSON.stringify(w.get("web.spellcheckLanguages"))))
-                Repeater {
-                    model: spellLangs.available
-                    delegate: QQC2.CheckBox {
-                        required property string modelData
-                        text: modelData
-                        checked: spellLangs.chosen.includes(modelData)
-                        onToggled: w.set("web.spellcheckLanguages", checked ? spellLangs.chosen.concat([modelData]) : spellLangs.chosen.filter(l => l !== modelData))
+                readonly property var addable: available.filter(l => !chosen.includes(l))
+                RowLayout {
+                    QQC2.ComboBox {
+                        id: spellAdd
+                        Layout.preferredWidth: Kirigami.Units.gridUnit * 10
+                        Accessible.name: "Language to add"
+                        model: spellLangs.addable
+                        enabled: count > 0
+                        displayText: count > 0 ? currentText : "All are in the list"
+                    }
+                    QQC2.Button {
+                        text: "Add"
+                        icon.name: "list-add"
+                        enabled: spellAdd.count > 0 && spellAdd.currentIndex >= 0
+                        onClicked: w.set("web.spellcheckLanguages", spellLangs.chosen.concat([spellAdd.currentText]))
                     }
                 }
+                QQC2.Label { visible: spellLangs.chosen.length === 0; text: "No languages, so nothing is checked."; opacity: 0.7 }
+                // (Rows back to back, as a list. Hidden when empty: a layout left without
+                // items keeps the height it had.)
+                ColumnLayout {
+                    visible: spellLangs.chosen.length > 0
+                    Layout.fillWidth: true
+                    spacing: 0
+                    Repeater {
+                        model: spellLangs.chosen
+                        delegate: ListRow {
+                            required property string modelData
+                            RowLayout {
+                                QQC2.Label { text: modelData; Layout.fillWidth: true; elide: Text.ElideRight }
+                                RowButton { icon.name: "edit-delete"; text: "Remove " + modelData; onClicked: w.set("web.spellcheckLanguages", spellLangs.chosen.filter(l => l !== modelData)) }
+                            }
+                        }
+                    }
+                }
+                QQC2.Button { visible: spellLangs.chosen.length > 0; text: "Remove All"; icon.name: "edit-delete"; onClicked: w.set("web.spellcheckLanguages", []) }
             }
             Hint {
                 text: spellLangs.available.length > 0
-                    ? "The languages of the dictionaries installed on this computer. More come with your distribution's QtWebEngine dictionary packages."
+                    ? "The menu offers the languages with a dictionary installed on this computer. More come with your distribution's QtWebEngine dictionary packages."
                     : "No spelling dictionaries were found, so nothing is checked. Your distribution's QtWebEngine dictionary packages add them."
             }
 
