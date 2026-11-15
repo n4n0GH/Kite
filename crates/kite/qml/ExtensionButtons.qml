@@ -45,6 +45,14 @@ RowLayout {
         delegate: QQC2.ToolButton {
             id: btn
             required property var modelData
+            // As tall as the toolbar, like its other buttons and the address bar.
+            Layout.fillHeight: true
+            // Drawn pressed in while its popup is open.
+            readonly property bool popupOpen: root.win.extensionPopupAt === btn
+            checkable: popupOpen
+            checked: popupOpen
+            // (A click on a checkable button switches it by itself; it follows the popup again.)
+            onToggled: checked = Qt.binding(() => btn.popupOpen)
             enabled: modelData.enabled !== false
             icon.source: modelData.icon || ""
             icon.name: modelData.icon ? "" : "kite-extension"
@@ -52,7 +60,7 @@ RowLayout {
             display: QQC2.AbstractButton.IconOnly
             text: modelData.title
             QQC2.ToolTip.text: modelData.title
-            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.visible: hovered && !popupOpen
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             onClicked: root.trigger(modelData, btn)
             TapHandler { acceptedButtons: Qt.RightButton; onTapped: { panel.close(); root.openMenu(btn.modelData.ext, true, true, btn, 0, btn.height) } }
@@ -65,9 +73,13 @@ RowLayout {
         icon.name: "kite-extension"
         display: QQC2.AbstractButton.IconOnly
         text: "Extensions"
+        Layout.fillHeight: true
+        // Pressed in while its panel is open, or the popup of an extension kept in the panel.
+        readonly property bool popupOpen: panel.opened || root.win.extensionPopupAt === puzzle
         checkable: true
-        checked: panel.opened
-        QQC2.ToolTip.text: "Extensions"; QQC2.ToolTip.visible: hovered && !panel.opened; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        checked: popupOpen
+        onToggled: checked = Qt.binding(() => puzzle.popupOpen)
+        QQC2.ToolTip.text: "Extensions"; QQC2.ToolTip.visible: hovered && !popupOpen; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
         onClicked: {
             extMenu.close()
             // An extension's popup opened from the panel sits on this button:

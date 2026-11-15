@@ -50,23 +50,34 @@ QQC2.ToolBar {
         }
     }
 
-    // A plain toolbar button.
+    // A plain toolbar button. (Each fills the toolbar's height, as the address bar
+    // does: the Loader above sizes it, and those in a row of their own ask for it.)
     component Button: QQC2.ToolButton {
         property string tip
         display: QQC2.AbstractButton.IconOnly
         text: tip
         QQC2.ToolTip.text: tip; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
     }
+    // A button with a menu: drawn pressed in for as long as the menu is open at it.
+    component MenuButton: Button {
+        id: withMenu
+        property bool menuOpen: false
+        checkable: menuOpen
+        checked: menuOpen
+        // (A click on a checkable button switches it by itself; it follows the menu again.)
+        onToggled: checked = Qt.binding(() => withMenu.menuOpen)
+        QQC2.ToolTip.visible: hovered && !menuOpen
+    }
 
     readonly property var tab: win.currentTab
 
     Component {
         id: backItem
-        Button { icon.name: "go-previous"; tip: "Back"; enabled: !!toolbar.tab && toolbar.tab.view.canGoBack; onClicked: toolbar.tab.view.goBack(); onPressAndHold: toolbar.win.showHistoryMenu(true, this) }
+        MenuButton { id: backButton; icon.name: "go-previous"; tip: "Back"; enabled: !!toolbar.tab && toolbar.tab.view.canGoBack; menuOpen: toolbar.win.historyMenuAt === backButton; onClicked: toolbar.tab.view.goBack(); onPressAndHold: toolbar.win.showHistoryMenu(true, backButton) }
     }
     Component {
         id: forwardItem
-        Button { icon.name: "go-next"; tip: "Forward"; enabled: !!toolbar.tab && toolbar.tab.view.canGoForward; onClicked: toolbar.tab.view.goForward(); onPressAndHold: toolbar.win.showHistoryMenu(false, this) }
+        MenuButton { id: forwardButton; icon.name: "go-next"; tip: "Forward"; enabled: !!toolbar.tab && toolbar.tab.view.canGoForward; menuOpen: toolbar.win.historyMenuAt === forwardButton; onClicked: toolbar.tab.view.goForward(); onPressAndHold: toolbar.win.showHistoryMenu(false, forwardButton) }
     }
     Component {
         id: reloadItem
@@ -105,7 +116,7 @@ QQC2.ToolBar {
     }
     Component {
         id: menuItem
-        Button { id: menuButton; icon.name: "application-menu"; tip: "Open Menu"; onClicked: toolbar.win.openMainMenu(menuButton) }
+        MenuButton { id: menuButton; icon.name: "application-menu"; tip: "Open Menu"; menuOpen: toolbar.win.mainMenuAt === menuButton; onClicked: toolbar.win.openMainMenu(menuButton) }
     }
     Component {
         id: newTabItem
@@ -121,9 +132,10 @@ QQC2.ToolBar {
     }
     Component {
         id: bookmarksItem
-        Button {
+        MenuButton {
             id: bookmarksButton
             icon.name: "bookmarks"; tip: "Bookmarks"
+            menuOpen: bookmarksMenu.visible
             onClicked: bookmarksMenu.opened ? bookmarksMenu.close() : bookmarksMenu.popup(bookmarksButton, 0, bookmarksButton.height)
             QQC2.Menu {
                 id: bookmarksMenu
@@ -158,13 +170,14 @@ QQC2.ToolBar {
         id: zoomItem
         RowLayout {
             spacing: 0
-            Button { icon.name: "zoom-out"; tip: "Zoom Out"; onClicked: toolbar.tab.zoomStep(-1) }
+            Button { icon.name: "zoom-out"; tip: "Zoom Out"; Layout.fillHeight: true; onClicked: toolbar.tab.zoomStep(-1) }
             QQC2.ToolButton {
+                Layout.fillHeight: true
                 text: toolbar.tab ? Math.round(toolbar.tab.view.zoomFactor * 100) + "%" : "100%"
                 onClicked: toolbar.tab.resetZoom()
                 QQC2.ToolTip.text: "Reset Zoom"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             }
-            Button { icon.name: "zoom-in"; tip: "Zoom In"; onClicked: toolbar.tab.zoomStep(1) }
+            Button { icon.name: "zoom-in"; tip: "Zoom In"; Layout.fillHeight: true; onClicked: toolbar.tab.zoomStep(1) }
         }
     }
     Component {

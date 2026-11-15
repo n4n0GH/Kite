@@ -531,10 +531,17 @@ QQC2.ApplicationWindow {
     property var downloadsButton: null
     readonly property ToolbarItems toolbarCatalog: ToolbarItems {}
     function showHistoryMenu(back, item) { historyMenu.showFor(back, item) }
+    // The toolbar button a menu or an extension's popup is open at (null: none), which
+    // is drawn pressed in for as long.
+    readonly property Item historyMenuAt: historyMenu.visible ? historyMenu.parent : null
+    readonly property Item mainMenuAt: _mainMenu && _mainMenu.visible ? _mainMenu.parent : null
+    readonly property Item extensionPopupAt: extPopup.visible ? extPopup.anchorItem : null
+    property var _mainMenu: null
     // The menu button toggles the menu: presses on it don't close the menu
     // (MainMenu's closePolicy), so they'd otherwise close and reopen it.
     function openMainMenu(item) {
         const menu = part(mainMenuPart)
+        _mainMenu = menu
         if (menu.opened && menu.parent === item) menu.close()
         else menu.popup(item, 0, item.height)
     }
