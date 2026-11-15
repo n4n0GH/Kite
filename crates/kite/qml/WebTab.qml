@@ -774,7 +774,8 @@ Item {
                     const s = wt.faviconOut ? icon.toString().replace(/^image:\/\/favicon\//, "") : icon.toString()
                     // (Reader view: a kite: page has none; the site's is kept.)
                     if (wt.isReader) { wt.showSiteIcon(); return }
-                    wt.window.setTabProperty(wt.tabId, "icon", wt.faviconOut ? wt.outIcon(s) : s)
+                    // (Drawn through Kite's own provider, never Qt's: bootstrap.cpp, KiteFaviconProvider.)
+                    wt.window.setTabProperty(wt.tabId, "icon", wt.faviconOut ? wt.outIcon(s) : s.replace(/^image:\/\/favicon\//, "image://kitefavicon/"))
                     wt.sendUpdate({favIconUrl: s.startsWith("image://favicon/") ? s.substring(16) : s})
                     // Remember it for the speed dial (not from private windows).
                     if (s.startsWith("image://favicon/") && !wt.window.privateMode && /^https?:/.test(url.toString())) Browser.saveFavicon(url.toString(), s, web.objectName)

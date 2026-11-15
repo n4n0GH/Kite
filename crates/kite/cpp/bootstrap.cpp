@@ -534,6 +534,74 @@ extern "C" void kite_cpp_save_favicon(const char *pageUrl, const char *iconUrl, 
     }, Qt::QueuedConnection);
 }
 
+// The icons Kite's own interface draws (image://kitefavicon/..., what WebTab
+// makes of a view's image://favicon/ address): Qt's provider asked on Kite's
+// terms.
+//
+// Saving an icon (above) isn't the only way to Qt's provider. Every icon item
+// showing a tab's icon asks it too, each time it is drawn afresh (tab search,
+// a tab in a new window, a change of colors), and gets the answer from the
+// first view in the list whose icon has that address. A view that was unloaded
+// keeps the address, has no favicon helper for good, and is put back in the list
+// by Qt whenever a script is run in it: such a request, with no other tab of
+// the site ahead of it in the list, read its icon and crashed Kite
+// (WebContentsAdapter::icon(), 2026-11-15, from an icon's updatePolish).
+//
+// So the interface never asks Qt's provider itself. It asks this one, which
+// takes every view Kite has unloaded out of the list again, and only then
+// passes the request on, on the thread the list belongs to.
+class KiteFaviconResponse : public QQuickImageResponse {
+public:
+    QQuickTextureFactory *textureFactory() const override { return QQuickTextureFactory::textureFactoryForImage(m_image); }
+    void done(const QImage &image)
+    {
+        m_image = image;
+        emit finished();
+    }
+
+private:
+    QImage m_image;
+};
+
+class KiteFaviconProvider : public QQuickAsyncImageProvider {
+public:
+    // (Called on the interface's thread by an icon, on a loader's by an image.)
+    QQuickImageResponse *requestImageResponse(const QString &id, const QSize &requestedSize) override
+    {
+        auto *response = new KiteFaviconResponse;
+        const QPointer<KiteFaviconResponse> waiting(response);
+        // Never answered before the caller has the response in hand.
+        QMetaObject::invokeMethod(qApp, [id, requestedSize, waiting] { ask(id, requestedSize, waiting); }, Qt::QueuedConnection);
+        return response;
+    }
+
+private:
+    static void ask(const QString &id, const QSize &requestedSize, const QPointer<KiteFaviconResponse> &waiting)
+    {
+        if (!waiting) return;
+        auto *qt = g_engine ? dynamic_cast<QQuickAsyncImageProvider *>(g_engine->imageProvider(QStringLiteral("favicon"))) : nullptr;
+        if (!qt) {
+            waiting->done(QImage());
+            return;
+        }
+        g_faviconOut.removeAll(nullptr);
+        for (const auto &view : std::as_const(g_faviconOut)) FaviconProviderHelper::instance()->detach(view);
+        // (Qt's provider reads the list before this returns.)
+        QQuickImageResponse *answer = qt->requestImageResponse(id, requestedSize);
+        QObject::connect(answer, &QQuickImageResponse::finished, qApp, [answer, waiting] {
+            QImage image;
+            if (answer->errorString().isEmpty()) {
+                if (QQuickTextureFactory *factory = answer->textureFactory()) {
+                    image = factory->image();
+                    delete factory;
+                }
+            }
+            answer->deleteLater();
+            if (waiting) waiting->done(image);
+        }, Qt::QueuedConnection);
+    }
+};
+
 // All Qt and QML output (including web page consoles, see Main.qml
 // logConsole) goes to Kite's logger, filtered with RUST_LOG. Qt's default
 // handler would send it to the journal whenever stderr isn't a terminal.
@@ -602,10 +670,12 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
 
     QQmlApplicationEngine engine;
     g_engine = &engine;
+    engine.addImageProvider(QStringLiteral("kitefavicon"), new KiteFaviconProvider);
     kite_init_dns();
     app.installEventFilter(new KiteInputFilter(&app));
     app.installEventFilter(new KiteScaleFilter(&app));
     app.installEventFilter(new KiteImeGuard(&app));
+    app.installEventFilter(new KitePopupFocus(&app));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     // Install network hooks on each profile as soon as QML creates it.
@@ -620,4 +690,3 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     g_engine = nullptr;
     return code;
 }
-    app.installEventFilter(new KitePopupFocus(&app));
