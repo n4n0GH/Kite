@@ -92,9 +92,18 @@ const zwp_relative_pointer_v1_listener s_relativeListener = {relMotion};
 
 } // namespace
 
+// The one the QML engine made (it's a singleton there).
+static PointerLock *s_instance = nullptr;
+
+wl_surface *PointerLock::pointerSurface()
+{
+    return s_instance ? s_instance->m_surface : nullptr;
+}
+
 PointerLock::PointerLock(QObject *parent)
     : QObject(parent)
 {
+    s_instance = this;
     // Movement goes to the page about as often as the screen refreshes, or
     // faster: what came in meanwhile is added up.
     m_flush.setSingleShot(true);
@@ -109,6 +118,7 @@ PointerLock::PointerLock(QObject *parent)
 
 PointerLock::~PointerLock()
 {
+    if (s_instance == this) s_instance = nullptr;
     end(QString());
     if (m_relativeManager) zwp_relative_pointer_manager_v1_destroy(m_relativeManager);
     if (m_constraints) zwp_pointer_constraints_v1_destroy(m_constraints);

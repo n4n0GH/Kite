@@ -19,6 +19,7 @@ pub mod desktopcolors;
 pub mod downloads;
 pub mod external;
 pub mod favicons;
+pub mod filemanager;
 pub mod history;
 pub mod instance;
 pub mod kwallet;

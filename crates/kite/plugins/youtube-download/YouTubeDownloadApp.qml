@@ -55,7 +55,7 @@ Item {
             if (state === "done") {
                 const file = d.file
                 root.app.showNotification("Video saved", file.substring(file.lastIndexOf("/") + 1), "", () => root.showFile(file), null,
-                                          [{label: "Show in Folder", run: () => root.showFolder(file)}])
+                                          [{label: "Show in Folder", run: token => root.showFolder(file, token)}])
             } else if (state === "failed") {
                 root.app.showNotification("Video not saved", d.title + ": " + root.find(url).error, "", null, null, [])
             }
@@ -78,5 +78,6 @@ Item {
     function forget(url) { const d = find(url); if (!d || d.state !== "running") downloads = downloads.filter(x => x.url !== url) }
 
     function showFile(path) { Qt.openUrlExternally("file://" + path) }
-    function showFolder(path) { Qt.openUrlExternally("file://" + path.substring(0, path.lastIndexOf("/"))) }
+    // (`token`: from a notification's button, see Main.showNotification.)
+    function showFolder(path, token) { root.app.showInFolder(path, token) }
 }

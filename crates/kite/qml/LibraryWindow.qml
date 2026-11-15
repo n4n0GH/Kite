@@ -314,7 +314,7 @@ ManagerWindow {
                             }
                         }
                         QQC2.ToolButton { icon.name: "document-open-symbolic"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally("file://" + modelData.path); QQC2.ToolTip.text: "Open"; QQC2.ToolTip.visible: hovered }
-                        QQC2.ToolButton { icon.name: "folder-open"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally("file://" + modelData.path.substring(0, modelData.path.lastIndexOf("/"))); QQC2.ToolTip.text: "Show in folder"; QQC2.ToolTip.visible: hovered }
+                        QQC2.ToolButton { icon.name: "folder-open"; visible: modelData.state === "complete"; onClicked: w.app.showInFolder(modelData.path); QQC2.ToolTip.text: "Show in folder"; QQC2.ToolTip.visible: hovered }
                         QQC2.ToolButton { icon.name: "edit-delete-remove"; visible: modelData.state !== "in_progress"; onClicked: Browser.removeDownload(modelData.id); QQC2.ToolTip.text: "Remove from list"; QQC2.ToolTip.visible: hovered }
                     }
                     onDoubleClicked: if (modelData.state === "complete") Qt.openUrlExternally("file://" + modelData.path)

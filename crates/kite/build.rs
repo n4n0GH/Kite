@@ -42,7 +42,7 @@ fn main() {
     // (icons/io.github.n4n0gh.kite.svg is a link to the application's icon.)
     println!("cargo::rerun-if-changed=../../data/io.github.n4n0gh.kite.svg");
 
-    // Wayland's client headers (cpp/pointerlock.cpp), wherever pkg-config says.
+    // Wayland's client headers (cpp/pointerlock.cpp, cpp/activation.cpp), wherever pkg-config says.
     let wayland_includes: Vec<String> = std::process::Command::new("pkg-config")
         .args(["--cflags-only-I", "wayland-client"])
         .output()
@@ -77,12 +77,16 @@ fn main() {
         // (The header has the QML singleton PointerLock, for moc.)
         .cpp_file("cpp/pointerlock.h")
         .cpp_file("cpp/pointerlock.cpp")
+        // (As above: the QML singleton WindowActivation.)
+        .cpp_file("cpp/activation.h")
+        .cpp_file("cpp/activation.cpp")
         .files(["src/browser.rs", "src/extensions.rs", "src/passwords.rs", "src/formfill.rs", "src/ytdlp.rs"])
         .build();
 
     // QtWebEngineQuick::initialize() and QQuickWebEngineProfile — link the
     // runtime library directly since a -devel package may be absent.
     println!("cargo::rustc-link-arg=-l:libQt6WebEngineQuick.so.6");
-    // Pointer lock talks to the Wayland compositor itself (cpp/pointerlock.cpp).
+    // Pointer lock and activation tokens talk to the Wayland compositor themselves
+    // (cpp/pointerlock.cpp, cpp/activation.cpp).
     println!("cargo::rustc-link-arg=-l:libwayland-client.so.0");
 }

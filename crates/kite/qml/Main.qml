@@ -1081,7 +1081,8 @@ QtObject {
             return null
         case "downloads.open": case "downloads.show": {
             const rec = JSON.parse(Browser.downloads()).find(r => r.id === a[0])
-            if (rec) Qt.openUrlExternally("file://" + (method === "downloads.show" ? rec.path.replace(/\/[^/]*$/, "") : rec.path))
+            if (rec && method === "downloads.show") showInFolder(rec.path)
+            else if (rec) Qt.openUrlExternally("file://" + rec.path)
             return null
         }
         case "downloads.showDefaultFolder": Qt.openUrlExternally("file://" + setting("downloads.directory")); return null
@@ -1172,6 +1173,16 @@ QtObject {
     signal downloadEnded(int id, var download, string state)
     property var claimedDownloads: ({})
     function fileUrl(path) { return "file://" + encodeURI(path).replace(/[?#]/g, encodeURIComponent) }
+    // Show in Folder: the file manager at the file's folder, with the file selected
+    // (kite_core::filemanager). `token`: the activation token that came with a
+    // notification's button, when that is where the request is from; else one is
+    // asked for here, so the file manager's window may come to the front on Wayland.
+    function showInFolder(path, token) { Browser.showInFolder(path, token || WindowActivation.token()) }
+    property Connections _showInFolderConn: Connections {
+        target: Browser
+        // No file manager that takes a file to select: its folder, at least.
+        function onShowInFolderFailed(path) { Qt.openUrlExternally(app.fileUrl(path.substring(0, path.lastIndexOf("/")) || "/")) }
+    }
     // `nameless`: from a private window, whose file names stay out of the desktop's
     // notification history. (What the buttons open isn't told to it.)
     function notifyDownloadComplete(path, nameless) {
@@ -1179,7 +1190,7 @@ QtObject {
         const open = () => Qt.openUrlExternally(fileUrl(path))
         showNotification("Download complete", nameless ? "" : path.substring(path.lastIndexOf("/") + 1), "", open, null, [
             {label: "Open", run: open},
-            {label: "Open Folder", run: () => Qt.openUrlExternally(fileUrl(path.substring(0, path.lastIndexOf("/")) || "/"))},
+            {label: "Open Folder", run: token => showInFolder(path, token)},
         ], setting("downloads.notificationTimeout"))
     }
     // A size for people: "3.4 MB"; "?" when it isn't known.
@@ -1295,8 +1306,9 @@ QtObject {
     property Component notificationCloserComponent: Component {
         Timer { property var notification; running: true; onTriggered: if (notification) notification.close() }
     }
-    // `buttons`: a list of {label, run}. `timeoutSeconds`: how long it stays
-    // (0 or none: as the desktop's settings say).
+    // `buttons`: a list of {label, run}; `run` is given the activation token the
+    // desktop sent along with the click, or "" (for showInFolder). `timeoutSeconds`:
+    // how long it stays (0 or none: as the desktop's settings say).
     function showNotification(title, text, iconUrl, onClick, onClose, buttons, timeoutSeconds) {
         const n = notificationComponent.createObject(app, {title: title, text: text})
         if (timeoutSeconds > 0) {
@@ -1310,7 +1322,7 @@ QtObject {
         }
         for (const b of buttons || []) {
             const action = notificationActionComponent.createObject(n, {label: b.label})
-            action.activated.connect(b.run)
+            action.activated.connect(() => b.run(n.xdgActivationToken || ""))
             n.actions.push(action)
         }
         if (onClose) n.closed.connect(onClose)

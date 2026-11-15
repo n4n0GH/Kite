@@ -42,6 +42,10 @@ public:
     // End the lock (or the request), if there is one.
     Q_INVOKABLE void unlock();
 
+    // The window surface the mouse pointer is over, or null (none of Kite's, not on
+    // Wayland, or before the first tab). For activation.cpp.
+    static wl_surface *pointerSurface();
+
     // Wayland callbacks (pointerlock.cpp).
     void pointerEntered(wl_surface *surface) { m_surface = surface; }
     void pointerLeft(wl_surface *surface) { if (m_surface == surface) m_surface = nullptr; }

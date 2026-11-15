@@ -765,6 +765,17 @@ pub mod qobject {
         #[cxx_name = "adblockStatus"]
         fn adblock_status(self: Pin<&mut Browser>, message: QString);
 
+        /// Show in Folder: ask the file manager for the file's folder with the
+        /// file selected (kite_core::filemanager). `token`: a Wayland
+        /// activation token for its window (WindowActivation.token()), or "".
+        #[qinvokable]
+        #[cxx_name = "showInFolder"]
+        fn show_in_folder(self: Pin<&mut Browser>, path: &QString, token: &QString);
+        /// Nothing took that request: the folder is all that can be opened.
+        #[qsignal]
+        #[cxx_name = "showInFolderFailed"]
+        fn show_in_folder_failed(self: Pin<&mut Browser>, path: QString);
+
         // misc helpers
         #[qinvokable]
         #[cxx_name = "tempFile"]
@@ -1848,6 +1859,17 @@ impl qobject::Browser {
             }
             _ => {}
         }
+    }
+    fn show_in_folder(self: Pin<&mut Self>, path: &QString, token: &QString) {
+        let (path, token) = (path.to_string(), token.to_string());
+        let thread = self.qt_thread();
+        // (It waits for the file manager, which may have to start.)
+        std::thread::spawn(move || {
+            if let Err(e) = kite_core::filemanager::show_item(std::path::Path::new(&path), &token) {
+                log::info!("Show in Folder, opening the folder instead: {e}");
+                let _ = thread.queue(move |o| o.show_in_folder_failed(q(&path)));
+            }
+        });
     }
     fn midi_stop(&self, tab_id: i32) {
         midi_sessions().remove(&tab_id);
