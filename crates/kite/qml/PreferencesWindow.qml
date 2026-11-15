@@ -1683,17 +1683,20 @@ ManagerWindow {
             }
 
             SectionHeader { text: "Custom Rules" }
-            QQC2.TextArea {
-                id: rules
+            QQC2.ScrollView {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Kirigami.Units.gridUnit * 8
-                font.family: "monospace"
-                placeholderText: "||ads.example.com^\nexample.org##.banner"
-                // (Not bound: setting it again while typing would move the cursor.)
-                Component.onCompleted: text = w.get("adblock.customRules")
-                onTextChanged: if (text !== w.get("adblock.customRules")) w.set("adblock.customRules", text)
-                // (A rule added from a page's Block Element while this is open.)
-                Connections { target: w.app; function onCustomFiltersChanged() { rules.text = w.get("adblock.customRules") } }
+                Layout.preferredHeight: Kirigami.Units.gridUnit * 12
+                QQC2.TextArea {
+                    id: rules
+                    font.family: "monospace"
+                    wrapMode: TextEdit.NoWrap
+                    placeholderText: "||ads.example.com^\nexample.org##.banner"
+                    // (Not bound: setting it again while typing would move the cursor.)
+                    Component.onCompleted: text = w.get("adblock.customRules")
+                    onTextChanged: if (text !== w.get("adblock.customRules")) w.set("adblock.customRules", text)
+                    // (A rule added from a page's Block Element while this is open.)
+                    Connections { target: w.app; function onCustomFiltersChanged() { rules.text = w.get("adblock.customRules") } }
+                }
             }
             Hint { Layout.maximumWidth: -1; text: "Adblock Plus syntax, one rule per line. The filters are rebuilt when you apply." }
 
