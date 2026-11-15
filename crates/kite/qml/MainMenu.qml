@@ -49,8 +49,8 @@ QQC2.Menu {
     QQC2.Menu {
         id: historyMenu
         title: "History"
-        icon.name: "view-history"
-        QQC2.MenuItem { text: "Show All History"; icon.name: "view-history"; onTriggered: app.showLibrary("history") }
+        icon.name: "document-open-recent"
+        QQC2.MenuItem { text: "Show All History"; icon.name: "document-open-recent"; onTriggered: app.showLibrary("history") }
         QQC2.MenuItem { text: "History Sidebar"; icon.name: "view-sidetree"; onTriggered: win.showSidebar("history") }
         QQC2.MenuItem { text: "Clear Recent History…"; icon.name: "edit-clear-history"; onTriggered: app.showPreferences("privacy") }
         QQC2.MenuSeparator {}

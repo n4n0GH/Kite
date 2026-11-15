@@ -152,7 +152,7 @@ QQC2.ToolBar {
     }
     Component {
         id: historyItem
-        Button { icon.name: "view-history"; tip: "History"; onClicked: toolbar.win.app.showLibrary("history") }
+        Button { icon.name: "document-open-recent"; tip: "History"; onClicked: toolbar.win.app.showLibrary("history") }
     }
     Component {
         id: sidebarItem

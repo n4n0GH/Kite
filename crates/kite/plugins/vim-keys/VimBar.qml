@@ -19,7 +19,7 @@ CommandBar {
         const out = [{title: t, icon: "search", detail: "Go or search", first: true, run: () => bar.openIt(t)}]
         for (const c of completions) {
             const url = c.url
-            out.push({title: Browser.displayUrl(url), icon: c.type === "bookmark" ? "bookmarks" : "view-history", detail: c.title, run: () => bar.openIt(url)})
+            out.push({title: Browser.displayUrl(url), icon: c.type === "bookmark" ? "bookmarks" : "document-open-recent", detail: c.title, run: () => bar.openIt(url)})
         }
         for (const s of suggestions) {
             const term = s

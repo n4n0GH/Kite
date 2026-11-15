@@ -19,7 +19,7 @@ QtObject {
         {id: "newWindow", name: "New Window", icon: "window-new"},
         {id: "privateWindow", name: "New Private Window", icon: "view-private"},
         {id: "bookmarks", name: "Bookmarks", icon: "bookmarks"},
-        {id: "history", name: "History", icon: "view-history"},
+        {id: "history", name: "History", icon: "document-open-recent"},
         {id: "sidebar", name: "Sidebar", icon: "view-sidetree"},
         {id: "print", name: "Print", icon: "document-print"},
         {id: "find", name: "Find in Page", icon: "edit-find"},

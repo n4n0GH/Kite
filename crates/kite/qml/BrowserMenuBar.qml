@@ -79,7 +79,7 @@ QQC2.MenuBar {
         QQC2.MenuItem { text: "&Forward"; icon.name: "go-next"; enabled: !!menuBar.tab && menuBar.tab.view.canGoForward; onTriggered: menuBar.tab.view.goForward() }
         QQC2.MenuItem { text: "&Home"; icon.name: "go-home"; onTriggered: menuBar.tab.load(menuBar.app.homeUrl()) }
         QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "Show &All History"; icon.name: "view-history"; onTriggered: menuBar.app.showLibrary("history") }
+        QQC2.MenuItem { text: "Show &All History"; icon.name: "document-open-recent"; onTriggered: menuBar.app.showLibrary("history") }
         QQC2.MenuItem { text: "Reopen Closed &Tab"; icon.name: "edit-undo"; onTriggered: menuBar.win.reopenClosedTab(0) }
         QQC2.MenuItem { text: "&Clear Recent History…"; icon.name: "edit-clear-history"; onTriggered: menuBar.app.showPreferences("privacy") }
     }

@@ -354,7 +354,7 @@ QQC2.TextField {
                     spacing: Kirigami.Units.largeSpacing
                     Kirigami.Icon {
                         Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth
-                        source: modelData.type === "bookmark" ? "bookmarks" : modelData.type === "history" ? "view-history" : "search"
+                        source: modelData.type === "bookmark" ? "bookmarks" : modelData.type === "history" ? "document-open-recent" : "search"
                     }
                     // The address first: it's what's being typed.
                     QQC2.Label {

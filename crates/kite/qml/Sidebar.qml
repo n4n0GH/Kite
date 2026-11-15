@@ -77,7 +77,7 @@ QQC2.Pane {
                 width: list.rowWidth
                 visible: modelData.type !== "separator"
                 height: visible ? implicitHeight : 0
-                icon.name: modelData.type === "folder" ? "folder-bookmark" : modelData.type === "up" ? "go-up" : root.mode === "history" ? "view-history" : "text-html"
+                icon.name: modelData.type === "folder" ? "folder-bookmark" : modelData.type === "up" ? "go-up" : root.mode === "history" ? "document-open-recent" : "text-html"
                 text: modelData.title || modelData.url || ""
                 QQC2.ToolTip.text: modelData.url || ""
                 QQC2.ToolTip.visible: hovered && !!modelData.url

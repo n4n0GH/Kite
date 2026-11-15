@@ -40,7 +40,7 @@ ManagerWindow {
         collapsed: true
         showHeaderWhenCollapsed: true
         actions: [
-            Kirigami.Action { text: "History"; icon.name: "view-history"; checked: w.page === "history"; onTriggered: w.page = "history" },
+            Kirigami.Action { text: "History"; icon.name: "document-open-recent"; checked: w.page === "history"; onTriggered: w.page = "history" },
             Kirigami.Action { text: "Bookmarks"; icon.name: "bookmarks"; checked: w.page === "bookmarks"; onTriggered: w.page = "bookmarks" },
             Kirigami.Action { text: "Downloads"; icon.name: "download"; checked: w.page === "downloads"; onTriggered: w.page = "downloads" }
         ]
@@ -87,7 +87,7 @@ ManagerWindow {
                 model: hp.rows
                 section.property: "day"
                 section.delegate: Kirigami.ListSectionHeader { required property string section; width: ListView.view.width; text: section }
-                Kirigami.PlaceholderMessage { anchors.centerIn: parent; visible: hp.rows.length === 0; text: "No history"; icon.name: "view-history" }
+                Kirigami.PlaceholderMessage { anchors.centerIn: parent; visible: hp.rows.length === 0; text: "No history"; icon.name: "document-open-recent" }
                 delegate: QQC2.ItemDelegate {
                     required property var modelData
                     readonly property string day: new Date(modelData.date).toLocaleDateString(Qt.locale(), Locale.LongFormat)
