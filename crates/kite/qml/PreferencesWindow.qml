@@ -1211,35 +1211,86 @@ ManagerWindow {
                 engines = list
                 w.stage("engines", () => Browser.saveEngines(JSON.stringify(list)))
             }
-            function change(index, field, value) {
-                if (engines[index][field] === value) return
-                const list = engines.slice()
-                list[index] = Object.assign({}, list[index], {[field]: value})
-                edited(list)
+            // Those the search field leaves, each with its place in the list.
+            readonly property var shown: {
+                const f = seSearch.text.trim().toLowerCase()
+                return engines.map((engine, index) => ({engine: engine, index: index}))
+                    .filter(r => f === "" || [r.engine.name, r.engine.url, r.engine.shortcut].some(t => (t || "").toLowerCase().includes(f)))
             }
             Hint {
                 Layout.maximumWidth: -1
-                text: "Type a shortcut followed by a space and your search in the location bar, e.g. “w KDE”. Use %s where the search terms go."
+                text: "Type a shortcut followed by a space and your search in the location bar, e.g. “w KDE”."
             }
-            Repeater {
-                model: se.engines
-                delegate: RowLayout {
+            // (Laid out as the saved logins are, on the Passwords page.)
+            RowLayout {
+                // (It may shrink: its own minimum would widen the page's column.)
+                Kirigami.SearchField { id: seSearch; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 6 }
+                QQC2.Button { text: "Add"; icon.name: "list-add"; onClicked: { seEdit.index = -1; seEdit.open() } }
+            }
+            QQC2.Label {
+                visible: se.engines.length === 0
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: "No search engines. Left like this, Kite brings back the ones it came with."
+                opacity: 0.7
+            }
+            // (Rows back to back, as a list. Hidden when empty: a layout left without
+            // items keeps the height it had.)
+            ColumnLayout {
+              visible: se.shown.length > 0
+              Layout.fillWidth: true
+              spacing: 0
+              Repeater {
+                model: se.shown
+                delegate: ListRow {
                     required property var modelData
-                    required property int index
-                    Layout.fillWidth: true
-                    QQC2.TextField { text: modelData.name; Layout.preferredWidth: Kirigami.Units.gridUnit * 8; onEditingFinished: se.change(index, "name", text) }
-                    QQC2.TextField { text: modelData.url; Layout.fillWidth: true; onEditingFinished: se.change(index, "url", text) }
-                    QQC2.TextField { text: modelData.shortcut; Layout.preferredWidth: Kirigami.Units.gridUnit * 3; placeholderText: "key"; onEditingFinished: se.change(index, "shortcut", text) }
-                    QQC2.ToolButton {
-                        icon.name: "edit-delete"
-                        text: "Remove"
-                        display: QQC2.AbstractButton.IconOnly
-                        onClicked: se.edited(se.engines.filter((_, i) => i !== index))
-                        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    RowLayout {
+                        QQC2.Label { text: modelData.engine.name; Layout.preferredWidth: Kirigami.Units.gridUnit * 11; elide: Text.ElideRight; font.bold: true }
+                        QQC2.Label { text: modelData.engine.shortcut || "(no shortcut)"; opacity: modelData.engine.shortcut ? 1 : 0.7; Layout.preferredWidth: Kirigami.Units.gridUnit * 5; elide: Text.ElideRight }
+                        QQC2.Label { text: modelData.engine.url; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                        RowButton { icon.name: "document-edit"; text: "Edit search engine"; onClicked: { seEdit.index = modelData.index; seEdit.open() } }
+                        RowButton { icon.name: "edit-delete"; text: "Remove search engine"; onClicked: se.edited(se.engines.filter((_, i) => i !== modelData.index)) }
                     }
                 }
+              }
             }
-            QQC2.Button { text: "Add Search Engine"; icon.name: "list-add"; onClicked: se.edited(se.engines.concat([{name: "New engine", url: "https://example.com/search?q=%s", shortcut: "", suggestions_url: "", post_data: ""}])) }
+            // (No question first, as the logins have: nothing is removed before Apply.)
+            QQC2.Button { visible: se.engines.length > 0; text: "Remove All Search Engines"; icon.name: "edit-delete"; onClicked: se.edited([]) }
+
+            Kirigami.Dialog {
+                id: seEdit
+                // Which of se.engines; -1: a new one.
+                property int index: -1
+                readonly property bool usable: seName.text.trim() !== "" && seUrl.text.trim() !== ""
+                title: index >= 0 ? "Edit Search Engine" : "Add Search Engine"
+                standardButtons: Kirigami.Dialog.NoButton
+                padding: Kirigami.Units.largeSpacing
+                onOpened: {
+                    const e = index >= 0 ? se.engines[index] : null
+                    seName.text = e ? e.name : ""; seUrl.text = e ? e.url : ""; seKey.text = e ? e.shortcut : ""
+                    seName.forceActiveFocus()
+                }
+                function save() {
+                    if (!usable) return
+                    const d = {name: seName.text.trim(), url: seUrl.text.trim(), shortcut: seKey.text.trim()}
+                    const list = se.engines.slice()
+                    // (What isn't edited here, an engine's suggestions address, stays as it was.)
+                    if (index >= 0) list[index] = Object.assign({}, list[index], d)
+                    else list.push(Object.assign({suggestions_url: "", post_data: ""}, d))
+                    se.edited(list)
+                    close()
+                }
+                customFooterActions: [
+                    Kirigami.Action { text: "Save"; icon.name: "document-save"; enabled: seEdit.usable; onTriggered: seEdit.save() },
+                    Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: seEdit.close() }
+                ]
+                Kirigami.FormLayout {
+                    QQC2.TextField { id: seName; Kirigami.FormData.label: "Name:"; Layout.preferredWidth: Kirigami.Units.gridUnit * 20; onAccepted: seEdit.save() }
+                    QQC2.TextField { id: seUrl; Kirigami.FormData.label: "Address:"; placeholderText: "https://example.com/search?q=%s"; onAccepted: seEdit.save() }
+                    Hint { text: "With %s where the search terms go." }
+                    QQC2.TextField { id: seKey; Kirigami.FormData.label: "Shortcut:"; placeholderText: "For the location bar, like w"; onAccepted: seEdit.save() }
+                }
+            }
         }
     }
 
