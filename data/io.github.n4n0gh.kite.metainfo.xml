@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.16" date="2026-11-15">
+      <description>
+        <p>The downloads button opens a panel with the downloads under way, which can be paused and cancelled there; the full list moved into the Library. Toolbar buttons are all as tall as the address bar and stay pressed in while their menu is open.</p>
+      </description>
+    </release>
     <release version="0.9.15" date="2026-11-15">
       <description>
         <p>The custom rules in the Content Blocking settings can be scrolled, so rules past the end of the field can be reached.</p>
