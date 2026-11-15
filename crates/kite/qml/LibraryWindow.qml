@@ -12,6 +12,12 @@ ManagerWindow {
     title: "Library — Kite"
     width: Kirigami.Units.gridUnit * 52
     height: Kirigami.Units.gridUnit * 36
+    // Narrower than this, what can't shrink (a row's buttons, a bar's fields) wouldn't fit, and
+    // would be drawn past the window's edge and under the list's scrollbar. Everything else
+    // in a row or a bar gives way: text is shortened, and BarButtons lose their text.
+    // (More with the sidebar's names showing: the window grows when they're brought out.)
+    minimumWidth: Kirigami.Units.gridUnit * (globalDrawer.collapsed ? 28 : 34)
+    minimumHeight: Kirigami.Units.gridUnit * 16
     pageStack.globalToolBar.style: Kirigami.ApplicationHeaderStyle.ToolBar
     function pageComponent() { return page === "bookmarks" ? bookmarksPage : page === "downloads" ? downloadsPage : historyPage }
     pageStack.initialPage: pageComponent()
@@ -19,6 +25,14 @@ ManagerWindow {
     onPageChanged: if (pageStack.depth > 0) pageStack.replace(pageComponent())
 
     function openUrl(u, bg) { app.openUrl(u, bg ? "background" : "tab") }
+
+    // A button in a page's bar. While the page is too narrow for the whole bar (compact), it's
+    // only its icon, with its text as the tooltip.
+    component BarButton: QQC2.Button {
+        property bool compact: false
+        display: compact ? QQC2.AbstractButton.IconOnly : QQC2.AbstractButton.TextBesideIcon
+        QQC2.ToolTip.text: text; QQC2.ToolTip.visible: compact && hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+    }
 
     globalDrawer: Kirigami.GlobalDrawer {
         modal: false
@@ -53,11 +67,13 @@ ManagerWindow {
             Connections { target: Browser; function onHistoryChanged() { hp.reload() } }
             header: QQC2.ToolBar {
                 RowLayout {
+                    id: historyBar
                     anchors.fill: parent
-                    Kirigami.SearchField { id: search; Layout.fillWidth: true; onTextChanged: hp.reload() }
+                    readonly property bool compact: hp.width < Kirigami.Units.gridUnit * 32
+                    Kirigami.SearchField { id: search; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 5; onTextChanged: hp.reload() }
                     QQC2.ComboBox { id: range; model: ["All time", "Today", "Last 7 days", "Last 30 days"]; onActivated: hp.reload() }
-                    QQC2.Button { text: "Delete Selected"; icon.name: "edit-delete"; enabled: Object.keys(hp.selected).length > 0; onClicked: Browser.deleteHistory(JSON.stringify(Object.keys(hp.selected).map(Number))) }
-                    QQC2.Button { text: "Clear All History…"; icon.name: "edit-clear-history"; onClicked: confirmClear.open() }
+                    BarButton { compact: historyBar.compact; text: "Delete Selected"; icon.name: "edit-delete"; enabled: Object.keys(hp.selected).length > 0; onClicked: Browser.deleteHistory(JSON.stringify(Object.keys(hp.selected).map(Number))) }
+                    BarButton { compact: historyBar.compact; text: "Clear All History…"; icon.name: "edit-clear-history"; onClicked: confirmClear.open() }
                 }
             }
             Kirigami.PromptDialog {
@@ -113,6 +129,14 @@ ManagerWindow {
                 path = reset ? [{id: id, title: title}] : path.concat([{id: id, title: title}])
                 reload()
             }
+            // Back to a folder on the way here. (Here and not in the path's button: a new path
+            // replaces the button, and what it was doing ends with it.)
+            function backTo(index) {
+                const way = path.slice(0, index + 1)
+                folder = way[index].id
+                path = way
+                reload()
+            }
             Component.onCompleted: reload()
             Connections { target: Browser; function onBookmarksChanged() { bp.reload() } }
             header: ColumnLayout {
@@ -120,17 +144,20 @@ ManagerWindow {
                 QQC2.ToolBar {
                     Layout.fillWidth: true
                     RowLayout {
+                        id: bookmarksBar
                         anchors.fill: parent
+                        readonly property bool compact: bp.width < Kirigami.Units.gridUnit * 41
                         QQC2.ComboBox {
                             model: bp.roots.roots
                             textRole: "title"
                             onActivated: i => bp.enter(bp.roots.roots[i].id, bp.roots.roots[i].title, true)
                         }
-                        Kirigami.SearchField { id: search; Layout.fillWidth: true; onTextChanged: bp.reload() }
-                        QQC2.Button { text: "New Folder"; icon.name: "folder-new"; onClicked: { newFolder.text = ""; folderDialog.open() } }
-                        QQC2.Button { text: "Separator"; icon.name: "distribute-vertical-center"; onClicked: Browser.addSeparator(bp.folder) }
-                        QQC2.Button {
+                        Kirigami.SearchField { id: search; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 5; onTextChanged: bp.reload() }
+                        BarButton { compact: bookmarksBar.compact; text: "New Folder"; icon.name: "folder-new"; onClicked: { newFolder.text = ""; folderDialog.open() } }
+                        BarButton { compact: bookmarksBar.compact; text: "Separator"; icon.name: "distribute-vertical-center"; onClicked: Browser.addSeparator(bp.folder) }
+                        BarButton {
                             id: importButton
+                            compact: bookmarksBar.compact
                             text: "Import…"
                             icon.name: "document-import"
                             onClicked: importMenu.popup(importButton, 0, importButton.height)
@@ -140,20 +167,35 @@ ManagerWindow {
                                 QQC2.MenuItem { text: "From a File…"; icon.name: "document-open"; onTriggered: importDialog.open() }
                             }
                         }
-                        QQC2.Button { text: "Export…"; icon.name: "document-export"; onClicked: exportDialog.open() }
+                        BarButton { compact: bookmarksBar.compact; text: "Export…"; icon.name: "document-export"; onClicked: exportDialog.open() }
                     }
                 }
-                RowLayout {
+                // The way to the folder shown. Deep in, it's longer than the window: it then shows
+                // its end, and the wheel or a drag brings back its start. (As a row of its own
+                // width it would widen the whole header, and push the bar's buttons out.)
+                ListView {
+                    id: pathRow
+                    Layout.fillWidth: true
                     Layout.margins: Kirigami.Units.smallSpacing
                     visible: search.text === ""
-                    Repeater {
-                        model: bp.path
-                        delegate: QQC2.ToolButton {
-                            required property var modelData; required property int index
-                            text: modelData.title
-                            icon.name: index === 0 ? "bookmarks" : "go-next"
-                            onClicked: { bp.path = bp.path.slice(0, index + 1); bp.folder = modelData.id; bp.reload() }
-                        }
+                    orientation: ListView.Horizontal
+                    boundsBehavior: Flickable.StopAtBounds
+                    clip: true
+                    spacing: Kirigami.Units.smallSpacing
+                    model: bp.path
+                    function showEnd() { if (contentWidth > width) positionViewAtEnd() }
+                    onContentWidthChanged: showEnd()
+                    onWidthChanged: showEnd()
+                    delegate: QQC2.ToolButton {
+                        required property var modelData; required property int index
+                        text: modelData.title
+                        icon.name: index === 0 ? "bookmarks" : "go-next"
+                        onClicked: bp.backTo(index)
+                        // (A horizontal list has no height of its own.)
+                        Component.onCompleted: pathRow.implicitHeight = Math.max(pathRow.implicitHeight, implicitHeight)
+                    }
+                    WheelHandler {
+                        onWheel: e => pathRow.contentX = Math.max(pathRow.originX, Math.min(pathRow.originX + pathRow.contentWidth - pathRow.width, pathRow.contentX - (e.angleDelta.y || e.angleDelta.x)))
                     }
                 }
             }
@@ -308,6 +350,7 @@ ManagerWindow {
                             QQC2.ProgressBar { visible: modelData.state === "in_progress"; Layout.fillWidth: true; from: 0; to: Math.max(1, modelData.total); value: modelData.received; indeterminate: modelData.total <= 0 }
                             QQC2.Label {
                                 font: Kirigami.Theme.smallFont; opacity: 0.75
+                                elide: Text.ElideRight; Layout.fillWidth: true
                                 text: modelData.state === "in_progress" ? w.app.formatBytes(modelData.received) + " of " + w.app.formatBytes(modelData.total)
                                     : modelData.state === "complete" ? w.app.formatBytes(modelData.total) + " — " + Browser.hostOf(modelData.url)
                                     : modelData.state === "cancelled" ? "Cancelled" : "Failed"
