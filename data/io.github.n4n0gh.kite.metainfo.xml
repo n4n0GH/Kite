@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.18" date="2026-11-15">
+      <description>
+        <p>Fixes a crash when a tab's icon was drawn after tabs had been unloaded, dropdowns on pages closing at once on Wayland, and the tab crashing on Line wrap in a page's source. The Library keeps its lists and bars inside a narrow window, and history has a new icon.</p>
+      </description>
+    </release>
     <release version="0.9.17" date="2026-11-15">
       <description>
         <p>Show in Folder opens the file manager with the downloaded file selected. In the settings, the spell checking languages and the search engines are lists like the saved logins, with a button to remove each entry and one to remove all.</p>
