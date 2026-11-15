@@ -279,6 +279,8 @@ Item {
     property bool readerAvailable: false
     function sourceOf(u) { return u.startsWith("kite:reader?") ? (Browser.readerSource(u) || u) : u }
     function canRead() { return isReader || /^https?:/i.test(url) }
+    // Whether its page is another page's source (which has no source of its own to show).
+    readonly property bool showsSource: /^view-source:/i.test(String(url))
     function showSiteIcon() { window.setTabProperty(tabId, "icon", Browser.cachedFavicon(sourceOf(web.url.toString()))) }
 
     // ---- same-document navigations (pushState / fragment) ----

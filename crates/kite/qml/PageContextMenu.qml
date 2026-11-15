@@ -179,7 +179,7 @@ QQC2.Menu {
     property Component sepComp: Component { QQC2.MenuSeparator {} }
 
     QQC2.MenuSeparator {}
-    QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; enabled: !!menu.tab && !menu.tab.showsSource; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
     // (Where the blocker isn't working here, nor would a rule.)
     QQC2.MenuItem {
         text: "Block Element…"
