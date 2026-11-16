@@ -46,6 +46,7 @@ const TOGGLES = [
     {page: "privacy", prefix: "Private windows", text: "Show often visited sites on the start page", key: "privacy.privateHistoryTiles"},
     {page: "privacy", prefix: "Private windows", text: "Suggest pages from the history in the address bar", key: "privacy.privateHistorySuggestions"},
     {page: "privacy", prefix: "Private windows", text: "Show notifications from pages and downloads", key: "privacy.privateNotifications"},
+    {page: "privacy", prefix: "Private windows", text: "Purple chrome", key: "privacy.privateWindowColor"},
     {page: "privacy", text: "Use per-site cookie rules", key: "privacy.siteCookieRules"},
     {page: "privacy", text: "Send Global Privacy Control", key: "privacy.globalPrivacyControl"},
     {page: "privacy", text: "Send “Do Not Track”", key: "web.doNotTrack"},
