@@ -226,6 +226,16 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setSiteSetting"]
         fn set_site_setting(self: Pin<&mut Browser>, host: &QString, key: &QString, value: i32);
+        /// What a site was told when it asked to open links of a kind (mailto:,
+        /// magnet:…), kept with its settings. `url`: its address for such links,
+        /// as the request gave it. 0 = forget, 1 = allow, 2 = block.
+        #[qinvokable]
+        #[cxx_name = "setLinkHandler"]
+        fn set_link_handler(self: Pin<&mut Browser>, scheme: &QString, url: &QString, decision: i32);
+        /// Where a link goes that a site was allowed to open, "" if none was.
+        #[qinvokable]
+        #[cxx_name = "linkHandlerTarget"]
+        fn link_handler_target(self: &Browser, url: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "allSiteSettings"]
         fn all_site_settings(self: &Browser) -> QString;
@@ -1404,6 +1414,24 @@ impl qobject::Browser {
         let _ = kite_core::sitesettings::clear_if_empty(&db, &host.to_string());
         drop(db);
         app().privacy.load_site_rules(&app().shared);
+    }
+    fn set_link_handler(self: Pin<&mut Self>, scheme: &QString, url: &QString, decision: i32) {
+        let a = app();
+        if a.private {
+            return;
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        if let Err(e) = kite_core::sitesettings::set_handler(&a.shared.db(), &scheme.to_string(), &url.to_string(), decision as i64, now) {
+            log::warn!("A site's answer about links wasn't kept: {e}");
+        }
+    }
+    fn link_handler_target(&self, url: &QString) -> QString {
+        let url = url.to_string();
+        // (Asked for every address a tab goes to: for most, nothing to look up.)
+        if !url.split_once(':').is_some_and(|(scheme, _)| kite_core::sitesettings::link_scheme_allowed(&scheme.to_ascii_lowercase())) {
+            return QString::default();
+        }
+        q(kite_core::sitesettings::link_target(&app().shared.db(), &url).ok().flatten().unwrap_or_default())
     }
     fn all_site_settings(&self) -> QString {
         let list = kite_core::sitesettings::all(&app().shared.db()).unwrap_or_default();

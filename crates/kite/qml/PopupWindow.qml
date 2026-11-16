@@ -56,6 +56,13 @@ Window {
             // never handed to the desktop straight away.
             onNavigationRequested: request => {
                 const u = request.url.toString()
+                // (A link of a kind a site was allowed to open: as in a tab, WebTab.qml.)
+                const handler = w.opener && w.opener.window && !w.opener.window.privateMode ? Browser.linkHandlerTarget(u) : ""
+                if (handler !== "" && (request.isMainFrame || request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation)) {
+                    request.reject()
+                    Qt.callLater(() => { view.url = handler })
+                    return
+                }
                 if (!Browser.isExternalUrl(u)) return
                 request.reject()
                 if (request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation) w.externalPrompt = u

@@ -125,7 +125,7 @@ instead (`qml/ExtBridge.qml`).
 | `history`, `bookmarks`, `favicons`, `downloads` | What their names say. Bookmarks use Falkon's format |
 | `session` | The last session, closed tabs and windows, named sessions |
 | `search` | Search engines and address bar input (address or search?) |
-| `sitesettings`, `privacy` | Per-site settings; tracking parameters and HTTPS upgrades |
+| `sitesettings`, `privacy` | Per-site settings, with what a site was told when it asked to open links of a kind (mailto:, magnet:) and where such links then go, as QtWebEngine keeps neither past the session; tracking parameters and HTTPS upgrades |
 | `adblock`, `safebrowsing` | The built-in content blocker: filter lists, uBO's scriptlets (`resources/`), and what each page gets (`page_plan`), which `WebTab.prepareAdblock` puts in the view's scripts before the page exists; dangerous-site protection |
 | `passwords`, `kwallet`, `formfill` | Saved logins and their backends; saved addresses |
 | `certs`, `certview` | Accepted certificate exceptions; the `kite:certificate` page |

@@ -847,6 +847,15 @@ Item {
                 onNavigationRequested: request => {
                     const u = request.url.toString()
                     wt.app.prepareAdblock(web.profile, u, wt.window.privateMode)
+                    // A link of a kind a site was allowed to open (mailto:, say)
+                    // goes to that site: see onRegisterProtocolHandlerRequested.
+                    const handler = wt.linkHandlerFor(u)
+                    if (handler !== "" && (request.isMainFrame || request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation)) {
+                        request.reject()
+                        // Not from inside this handler (that re-enters Chromium).
+                        Qt.callLater(() => { web.url = handler })
+                        return
+                    }
                     if (Browser.isExternalUrl(u)) {
                         request.reject()
                         if (request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation) wt.externalPrompt = u
@@ -881,6 +890,12 @@ Item {
                     pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window, app: wt.app, site: Browser.hostOf(wt.url)})
                 }
                 onNewWindowRequested: request => {
+                    // (A link a site was allowed to open: that site's page, in the new tab.)
+                    const handler = wt.linkHandlerFor(request.requestedUrl.toString())
+                    if (handler !== "") {
+                        if (request.userInitiated) wt.window.openTab(handler, {background: request.destination === WebEngineNewWindowRequest.InNewBackgroundTab && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, fromLink: true, container: wt.container})
+                        return
+                    }
                     // (No tab for a link to another program: as above.)
                     if (Browser.isExternalUrl(request.requestedUrl.toString())) {
                         if (request.userInitiated) wt.externalPrompt = request.requestedUrl.toString()
@@ -935,15 +950,28 @@ Item {
 
                 // A site asking to open links of a kind (mailto:, magnet:, web+…):
                 // asked in the permission bar, never granted unasked, as the
-                // site would then get every such link, from any page.
+                // site would then get every such link, from any page. The answer
+                // is kept with the site's settings, and it is Kite that takes
+                // such links to the site (linkHandlerTarget, in
+                // onNavigationRequested). QtWebEngine forgets both an allowed and
+                // a blocked site when Kite closes, so it is told no every time.
+                // (Which also has it pass over the same request until then: a
+                // site set back to "Ask" asks again once Kite was restarted.)
                 onRegisterProtocolHandlerRequested: request => {
-                    if (wt.window.privateMode || !wt.app.setting("privacy.protocolHandlers")) { request.reject(); return }
-                    const site = wt.promptOrigin(request.origin.toString())
-                    if (wt.pendingPermissions.some(p => p.protocolHandler === request.scheme)) { request.reject(); return }
-                    wt.pendingPermissions = wt.pendingPermissions.concat([{origin: site, originUrl: request.origin.toString(), protocolHandler: request.scheme, permission: {
-                        permissionType: "protocolHandler:" + request.scheme,
-                        grant: () => request.accept(),
-                        deny: () => request.reject(),
+                    const scheme = request.scheme, url = request.origin.toString()
+                    request.reject()
+                    if (wt.window.privateMode || !wt.app.setting("privacy.protocolHandlers")) return
+                    const known = (JSON.parse(Browser.siteSettings(Browser.hostOf(url))).handlers || {})[scheme]
+                    if (known) {
+                        // (Its address for such links may be another by now.)
+                        if (known.decision === 1) Browser.setLinkHandler(scheme, url, 1)
+                        return
+                    }
+                    if (wt.pendingPermissions.some(p => p.protocolHandler === scheme)) return
+                    wt.pendingPermissions = wt.pendingPermissions.concat([{origin: wt.promptOrigin(url), originUrl: url, protocolHandler: scheme, permission: {
+                        permissionType: "protocolHandler:" + scheme,
+                        grant: () => wt.answerLinkHandler(scheme, url, 1),
+                        deny: () => wt.answerLinkHandler(scheme, url, 2),
                     }}])
                 }
 
@@ -1133,6 +1161,15 @@ Item {
         return names[type] || "use a browser feature"
     }
     function dropPermission(i) { const l = pendingPermissions.slice(); l.splice(i, 1); pendingPermissions = l }
+
+    // Links a site asked to open (onRegisterProtocolHandlerRequested): the
+    // answer, kept with the site's settings; and where such a link goes, "" if
+    // no site was allowed it. Private windows have no such sites.
+    function answerLinkHandler(scheme, url, decision) {
+        Browser.setLinkHandler(scheme, url, decision)
+        app.siteSettingsEdited(Browser.hostOf(url))
+    }
+    function linkHandlerFor(u) { return window.privateMode ? "" : Browser.linkHandlerTarget(u) }
 
     // Screen Wake Lock (crates/kite/src/js/wakelock.js): prompt in the
     // permission bar, remember the answer per site for the session, keep the

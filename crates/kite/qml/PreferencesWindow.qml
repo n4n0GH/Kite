@@ -1969,7 +1969,7 @@ ManagerWindow {
                 if (s.user_agent) parts.push("Own user agent")
                 if (s.css) parts.push("Custom CSS")
                 if (s.js) parts.push("Custom JavaScript")
-                if (!parts.length && (s.javascript || s.images || s.notifications || s.geolocation || s.midi || s.midi_sysex)) parts.push("Permissions")
+                if (!parts.length && (s.javascript || s.images || s.notifications || s.geolocation || s.midi || s.midi_sysex || Object.keys(s.handlers || {}).length)) parts.push("Permissions")
                 return parts.join(" · ") || "Nothing set"
             }
 
