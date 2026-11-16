@@ -48,7 +48,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |
 | Profiles | ✅ | ✅ | ✅ | Kite: a picker at startup and a Profiles menu; each runs in its own process. |
-| Private windows | ✅ | ✅ | ✅ | |
+| Private windows | ✅ | ✅ | ✅ | Kite's are purple, bars and title bar, unless switched off. |
 
 ## Address bar and navigation
 
@@ -60,6 +60,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Bookmark keywords | ✅ | ⚠️ | ✅ | Chrome uses site search shortcuts instead. |
 | Site info popup with permissions | ✅ | ✅ | ✅ | |
 | Page info window (technical details, media, all permissions, security) | ✅ | ❌ | ✅ | Chrome has the site popup and its settings page only. |
+| A site as the handler of links like `mailto:` (asked once, the answer kept) | ✅ | ✅ | ✅ | |
 | Per-site settings button in the address bar | ✅ | ❌ | ❌ | Kite's gear opens the site's own settings. |
 | Per-site zoom | ✅ | ✅ | ✅ | |
 | Smooth scrolling setting | ✅ | ⚠️ | ✅ | Chrome: behind a flag. |
@@ -138,8 +139,9 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Bookmarks and history sidebar | ✅ | ⚠️ | ✅ | Chrome's side panel has bookmarks and reading list. |
 | Delete single pages from the history sidebar | ✅ | ❌ | ✅ | Chrome's history side panel varies by version. |
 | Bookmark import and export | ✅ | ✅ | ✅ | Kite imports HTML (as Chrome and Firefox export it) or Falkon's bookmarks.json, and exports HTML. |
-| Import straight from an installed browser | ❌ | ✅ | ✅ | Kite needs an exported file. |
-| Download manager | ✅ | ✅ | ✅ | |
+| Import straight from an installed browser | ⚠️ | ✅ | ✅ | Kite: bookmarks, on the welcome page of a new profile (`kite:welcome`); anything else needs an exported file. |
+| Download manager | ✅ | ✅ | ✅ | Kite: a panel on the toolbar button and the list in the Library. |
+| Show a downloaded file in the file manager, selected | ✅ | ✅ | ✅ | |
 | Hand downloads to an external download manager | ✅ | ⚠️ | ⚠️ | Kite: a program and its arguments, as in Falkon. Chrome and Firefox: through an extension. |
 | Printing with the system dialog | ✅ | ⚠️ | ✅ | Chrome has its own print preview, with the system dialog a step away. |
 | Ask where to save | ✅ | ✅ | ✅ | |

@@ -35,6 +35,8 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
 * **Tabs:** the tab bar above or below the address bar, below the page, or as a vertical
   list on either side (hidden with a single tab if wanted); pinned tabs, scroll arrows and
   wheel scrolling, drag to reorder, links/images/text dropped on the bar open in new tabs.
+  A tab opened from a link goes beside the tab it came from, and closing it goes back there;
+  the tabs are Kite's own or drawn by the application style (Settings → Tabs).
 * **Tree-style tabs (optional, for vertical lists):** links open as children of their tab,
   shown nested with guide lines; trees collapse, move and close as a whole, and dragging a tab
   sideways changes its level (Settings or right-click the tab bar).
@@ -63,7 +65,8 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   and YouTube Download, a button in the address bar on YouTube videos that saves them with
   [yt-dlp](https://github.com/yt-dlp/yt-dlp) (when it's installed), in the quality you choose.
 * **Profiles:** each with its own bookmarks, history, logins and extensions; a picker at startup when
-  there are several, and a Profiles menu to open another or manage them (`--profile` still works).
+  there are several, where they can be renamed too, and a Profiles menu to open another or manage
+  them (`--profile` still works).
 * **Plasma Integration:** control what's playing with Plasma's media controls and media
   keys (MPRIS), follow, pause and open downloads in the notification area, find tabs,
   bookmarks and history from KRunner, share with KDE's share menu (the Web Share API), and
@@ -85,6 +88,9 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
 * **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules,
   fingerprint protection and user agent, from Settings or the address bar. A zoom back at the
   default isn't kept as a site's own.
+* **Links for a site:** a site that asks to open links of a kind (a webmail for `mailto:`, say) is
+  allowed or blocked once, and that is kept: such links then go to it, until you change the answer
+  in Page Info.
 * **Page info:** a window with a page's technical details (type, encoding, size, meta tags), its
   pictures and media with a preview, to save one by one or all at once, every permission its site
   can be given, and its connection,
@@ -105,8 +111,9 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   [uBlock Origin](https://github.com/gorhill/uBlock); `packaging/update-adblock-resources.py` refreshes
   them). Paused while an extension such as uBlock Origin does the blocking.
 * **Passwords:** see below.
-* **Downloads:** a download list with pause and resume; notifications when one finishes, with a
-  timeout of your choice; or an external download manager (like Falkon's: a program and its
+* **Downloads:** a panel on the toolbar button with the downloads under way, to pause or cancel,
+  and the full list in the Library; Show in Folder opens the file manager with the file selected;
+  notifications when one finishes, with a timeout of your choice; or an external download manager (like Falkon's: a program and its
   arguments, `%d` for the address), which private windows and saved pages leave out.
 * **Settings:** laid out like System Settings, with changes waiting for Apply (or Cancel) at the
   bottom; leaving a page with changes asks first. Spell checking uses the system's QtWebEngine
@@ -301,7 +308,8 @@ suggestions. Downloads are listed until the last private window closes, never sa
 (the files themselves stay). Their start page and address bar show only the tiles and bookmarks
 you added, unless Settings → Privacy says to show pages from the history there too. Only extensions allowed there run or see anything (below). Things
 done on purpose are kept: bookmarks, site settings and
-content blocker exceptions.
+content blocker exceptions. A private window's bars and title bar are purple, to tell it from the
+others (Settings → Privacy turns that off).
 
 ## Reader view
 
