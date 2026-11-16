@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.1" date="2026-11-16">
+      <description>
+        <p>Open tabs use less memory: about 10 MiB less each in Kite itself, as a tab's menus, prompts and popups are made when first needed, and about 4 MiB less per page, as pages are no longer gone through for scrollbars of their own. A scrollbar a page draws itself now gets the overlay look when pointed at or scrolled. A performance report against Falkon and Firefox is in the documentation.</p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-11-16">
       <description>
         <p>Page Info: a window with a page's technical details and meta tags, its pictures and media to preview and save (one by one or all at once), every permission its site can be given, and its connection, history and cookies. The address bar's site popup now lists only the permissions a site is allowed or is using.</p>
