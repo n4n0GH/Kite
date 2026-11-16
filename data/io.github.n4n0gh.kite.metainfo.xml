@@ -35,6 +35,12 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.0" date="2026-11-16">
+      <description>
+        <p>Page Info: a window with a page's technical details and meta tags, its pictures and media to preview and save (one by one or all at once), every permission its site can be given, and its connection, history and cookies. The address bar's site popup now lists only the permissions a site is allowed or is using.</p>
+        <p>A site allowed or blocked from opening links like mailto: is no longer asked about again after a restart. Show in Folder no longer freezes Kite or opens a second file manager when the file manager is slow to start; the Flatpak asks the file manager directly, for which it may now talk to org.freedesktop.FileManager1.</p>
+      </description>
+    </release>
     <release version="0.9.18" date="2026-11-15">
       <description>
         <p>Fixes a crash when a tab's icon was drawn after tabs had been unloaded, dropdowns on pages closing at once on Wayland, and the tab crashing on Line wrap in a page's source. The Library keeps its lists and bars inside a narrow window, and history has a new icon.</p>
