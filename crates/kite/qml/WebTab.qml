@@ -1171,6 +1171,52 @@ Item {
     }
     function linkHandlerFor(u) { return window.privateMode ? "" : Browser.linkHandlerTarget(u) }
 
+    // ---- Site permissions (the Page Info window; the address bar's site popup
+    // shows the ones allowed or in use) ----
+    // The kinds QtWebEngine stores per origin, Kite's own session decision for
+    // keeping the screen on (Wake Lock), Web MIDI, and what the site was told
+    // when it asked to open links of a kind (mailto:…). Camera, microphone and
+    // screen sharing are asked for every time. None for a page that is no site's.
+    function sitePermissions() {
+        const m = isExtensionPage ? null : url.match(/^https?:\/\/[^/?#]+/i)
+        if (!m) return []
+        const P = WebEnginePermission.PermissionType
+        const kinds = [
+            {type: P.Geolocation, name: "Location", icon: "mark-location"},
+            {type: P.Notifications, name: "Notifications", icon: "notifications"},
+            {type: P.ClipboardReadWrite, name: "Clipboard", icon: "edit-paste"},
+            {type: P.LocalFontsAccess, name: "Local fonts", icon: "preferences-desktop-font"},
+        ]
+        const list = kinds.map(k => ({name: k.name, icon: k.icon, perm: web.profile.queryPermission(m[0], k.type)}))
+        const site = Browser.hostOf(url)
+        list.push({name: "Keep screen on", icon: "video-display", wakeLock: true, key: (window.privateMode ? "private:" : "") + site})
+        list.push({name: "MIDI devices", icon: "audio-midi", midi: true, sysex: false, site: site})
+        list.push({name: "Full control of MIDI devices", icon: "audio-midi", midi: true, sysex: true, site: site})
+        const handlers = window.privateMode ? {} : JSON.parse(Browser.siteSettings(site)).handlers || {}
+        for (const scheme of Object.keys(handlers).sort()) list.push({name: "Open all " + scheme + ": links", icon: "insert-link", handler: true, scheme: scheme, url: handlers[scheme].url})
+        return list
+    }
+    // 0 = ask, 1 = allow, 2 = block
+    function permissionState(p) {
+        if (p.wakeLock) { const d = app.wakeLockSites[p.key]; return d === undefined ? 0 : d ? 1 : 2 }
+        if (p.midi) return midiChoice(p.site, p.sysex)
+        if (p.handler) { const h = (JSON.parse(Browser.siteSettings(Browser.hostOf(p.url))).handlers || {})[p.scheme]; return h ? h.decision : 0 }
+        const S = WebEnginePermission.State
+        return p.perm.state === S.Granted ? 1 : p.perm.state === S.Denied ? 2 : 0
+    }
+    function setPermissionState(p, i) {
+        if (p.wakeLock) { if (i === 0) app.forgetWakeLock(p.key); else app.rememberWakeLock(p.key, i === 1); return }
+        if (p.midi) { setMidiChoice(p.site, p.sysex, i); return }
+        if (p.handler) { answerLinkHandler(p.scheme, p.url, i); return }
+        if (i === 1) p.perm.grant(); else if (i === 2) p.perm.deny(); else p.perm.reset()
+    }
+    // Whether the page makes use of it right now, as far as Kite is the one to know.
+    function permissionInUse(p) {
+        if (p.wakeLock) return wakeLockHeld
+        if (p.midi) return midiSite !== "" && (!p.sysex || midiSysex)
+        return false
+    }
+
     // Screen Wake Lock (crates/kite/src/js/wakelock.js): prompt in the
     // permission bar, remember the answer per site for the session, keep the
     // screen on while the page holds a lock.

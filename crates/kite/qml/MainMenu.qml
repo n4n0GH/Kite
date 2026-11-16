@@ -95,6 +95,7 @@ QQC2.Menu {
         QQC2.MenuItem { text: "Split View"; icon.name: "view-split-left-right"; checkable: true; checked: win.split; onTriggered: win.toggleSplit() }
         QQC2.MenuItem { visible: app.readerViewAvailable; height: visible ? implicitHeight : 0; text: "Reader View"; icon.name: "view-readermode"; enabled: win.currentTab && win.currentTab.canRead(); onTriggered: win.runAction("reader-view.toggle") }
         QQC2.MenuItem { text: "Page Source"; icon.name: "text-html"; enabled: !!win.currentTab && !win.currentTab.showsSource; onTriggered: win.openTab("view-source:" + win.currentTab.url, {background: false, afterCurrent: true}) }
+        QQC2.MenuItem { text: "Page Info"; icon.name: "documentinfo"; enabled: !!win.currentTab; onTriggered: app.showPageInfo(win.currentTab) }
         QQC2.MenuItem { text: "Developer Tools"; icon.name: "utilities-terminal"; onTriggered: win.currentTab.showDevTools() }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Bookmarks Sidebar"; checkable: true; checked: win.sidebar === "bookmarks"; onTriggered: win.showSidebar("bookmarks") }

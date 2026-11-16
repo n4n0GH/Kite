@@ -433,60 +433,40 @@ QQC2.TextField {
         // Filled before the popup shows (onOpened runs after it has appeared).
         onAboutToShow: { site = JSON.parse(Browser.siteSettings(Browser.hostOf(field.tab.url))); loadPermissions() }
 
-        // Site permissions: the kinds QtWebEngine stores per origin, and
-        // Kite's own session decision for keeping the screen on (Wake Lock).
-        // Camera, microphone and screen sharing are asked for every time.
+        // The site's permissions that are allowed or in use right now (all of
+        // them, to change: the Page Info window; what they are: WebTab's
+        // sitePermissions).
         property var permissions: []
+        property bool hasPermissions: false
         function loadPermissions() {
             const t = field.tab
-            const m = t && field.extName === "" ? t.url.match(/^https?:\/\/[^/?#]+/i) : null
-            if (!m) { permissions = []; return }
-            const P = WebEnginePermission.PermissionType
-            const kinds = [
-                {type: P.Geolocation, name: "Location", icon: "mark-location"},
-                {type: P.Notifications, name: "Notifications", icon: "notifications"},
-                {type: P.ClipboardReadWrite, name: "Clipboard", icon: "edit-paste"},
-                {type: P.LocalFontsAccess, name: "Local fonts", icon: "preferences-desktop-font"},
-            ]
-            const list = kinds.map(k => ({name: k.name, icon: k.icon, perm: t.view.profile.queryPermission(m[0], k.type)}))
-            list.push({name: "Keep screen on", icon: "video-display", wakeLock: true, key: (field.win.privateMode ? "private:" : "") + Browser.hostOf(t.url)})
-            const site = Browser.hostOf(t.url)
-            list.push({name: "MIDI devices", icon: "audio-midi", midi: true, sysex: false, site: site})
-            list.push({name: "Full control of MIDI devices", icon: "audio-midi", midi: true, sysex: true, site: site})
-            permissions = list
-        }
-        // kite:certificate for an https address.
-        function certificatePage(u) {
-            const m = u.match(/^https:\/\/(?:[^\/?#@]*@)?(\[[^\]]+\]|[^:\/?#]+)(?::(\d+))?/i)
-            return "kite:certificate?host=" + encodeURIComponent(m ? m[1].replace(/^\[|\]$/g, "") : "") + (m && m[2] ? "&port=" + m[2] : "")
-        }
-        // 0 = ask, 1 = allow, 2 = block
-        function stateOf(p) {
-            if (p.wakeLock) { const d = field.win.app.wakeLockSites[p.key]; return d === undefined ? 0 : d ? 1 : 2 }
-            if (p.midi) return field.tab.midiChoice(p.site, p.sysex)
-            const S = WebEnginePermission.State
-            return p.perm.state === S.Granted ? 1 : p.perm.state === S.Denied ? 2 : 0
-        }
-        function setState(p, i) {
-            if (p.wakeLock) { if (i === 0) field.win.app.forgetWakeLock(p.key); else field.win.app.rememberWakeLock(p.key, i === 1); return }
-            if (p.midi) { field.tab.setMidiChoice(p.site, p.sysex, i); return }
-            if (i === 1) p.perm.grant(); else if (i === 2) p.perm.deny(); else p.perm.reset()
+            const all = t ? t.sitePermissions() : []
+            hasPermissions = all.length > 0
+            permissions = all.filter(p => t.permissionState(p) === 1 || t.permissionInUse(p))
         }
         contentItem: ColumnLayout {
             Kirigami.Heading { level: 4; text: field.extName !== "" ? field.extName : Browser.hostOf(field.tab ? field.tab.url : ""); elide: Text.ElideRight; Layout.fillWidth: true }
+            QQC2.Label {
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                text: field.extName !== "" ? "This page is provided by an extension." : field.tab && field.tab.isSecure ? "Your connection to this site is encrypted." : "Your connection to this site is not encrypted. Information you submit could be viewed by others."
+            }
             RowLayout {
                 Layout.fillWidth: true
-                QQC2.Label {
-                    Layout.fillWidth: true; wrapMode: Text.Wrap
-                    text: field.extName !== "" ? "This page is provided by an extension." : field.tab && field.tab.isSecure ? "Your connection to this site is encrypted." : "Your connection to this site is not encrypted. Information you submit could be viewed by others."
-                }
                 // The site's certificates, in a tab of their own.
                 QQC2.Button {
                     text: "View Certificate"
                     icon.name: "certificate-server"
                     visible: field.extName === "" && field.tab && /^https:/i.test(field.tab.url)
-                    onClicked: { field.win.openTab(siteInfo.certificatePage(field.tab.url), {background: false, afterCurrent: true}); siteInfo.close() }
+                    onClicked: { field.win.openTab(field.win.app.certificatePage(field.tab.url), {background: false, afterCurrent: true}); siteInfo.close() }
                 }
+                // What the page is made of, and all the site may be allowed (PageInfoWindow.qml).
+                QQC2.Button {
+                    text: "Page Info…"
+                    icon.name: "documentinfo"
+                    visible: !!field.tab
+                    onClicked: { field.win.app.showPageInfo(field.tab, "general"); siteInfo.close() }
+                }
+                Item { Layout.fillWidth: true }
             }
             Kirigami.Separator { Layout.fillWidth: true }
             QQC2.CheckBox {
@@ -495,8 +475,8 @@ QQC2.TextField {
                 checked: !field.shieldAllowed
                 onToggled: { Browser.adblockAllow(Browser.hostOf(field.tab.url), !checked); field.shieldAllowed = !checked; field.tab.view.reload() }
             }
-            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.permissions.length > 0 }
-            Kirigami.Heading { level: 5; text: "Permissions"; visible: siteInfo.permissions.length > 0 }
+            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.hasPermissions }
+            Kirigami.Heading { level: 5; text: "Permissions"; visible: siteInfo.hasPermissions }
             Repeater {
                 model: siteInfo.permissions
                 delegate: RowLayout {
@@ -505,24 +485,30 @@ QQC2.TextField {
                     spacing: Kirigami.Units.smallSpacing
                     Kirigami.Icon { source: modelData.icon; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
                     QQC2.Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                    QQC2.Label { text: "In use"; visible: field.tab && field.tab.permissionInUse(modelData); font: Kirigami.Theme.smallFont; opacity: 0.75 }
                     QQC2.ComboBox {
                         model: ["Ask", "Allow", "Block"]
-                        currentIndex: siteInfo.stateOf(modelData)
-                        onActivated: i => siteInfo.setState(modelData, i)
+                        currentIndex: field.tab.permissionState(modelData)
+                        onActivated: i => field.tab.setPermissionState(modelData, i)
                     }
                 }
             }
-            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.permissions.length > 0 }
-            QQC2.Button { text: "Clear zoom setting"; visible: siteInfo.site.zoom > 0; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.setSiteSetting(h, "zoom", -1); field.win.app.siteSettingsChanged(h); siteInfo.close() } }
-            // Zoom, dark mode, CSS and JavaScript of the site (Settings).
-            QQC2.Button {
-                text: "Site Settings…"
-                icon.name: "configure"
-                visible: field.extName === "" && Browser.hostOf(field.tab ? field.tab.url : "") !== ""
-                onClicked: { field.win.app.showSiteSettings(Browser.hostOf(field.tab.url)); siteInfo.close() }
+            QQC2.Label {
+                Layout.fillWidth: true; wrapMode: Text.Wrap; opacity: 0.75
+                visible: siteInfo.hasPermissions && siteInfo.permissions.length === 0
+                text: "This site isn't allowed anything it would have to ask for."
             }
+            // Every permission there is, to allow or block ahead of being asked.
+            QQC2.Button {
+                text: "All Permissions…"
+                icon.name: "dialog-object-properties"
+                visible: siteInfo.hasPermissions
+                onClicked: { field.win.app.showPageInfo(field.tab, "permissions"); siteInfo.close() }
+            }
+            Kirigami.Separator { Layout.fillWidth: true; visible: siteInfo.hasPermissions }
+            QQC2.Button { text: "Clear zoom setting"; visible: siteInfo.site.zoom > 0; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.setSiteSetting(h, "zoom", -1); field.win.app.siteSettingsChanged(h); siteInfo.close() } }
             // Keeps the site's custom CSS and JavaScript (written by the user).
-            QQC2.Button { text: "Clear site data and permissions…"; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.resetSiteSettings(h); field.win.app.forgetMidi(h); field.win.app.siteSettingsChanged(h); for (const p of siteInfo.permissions) siteInfo.setState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear") } }
+            QQC2.Button { text: "Clear site data and permissions…"; icon.name: "edit-clear-history"; onClicked: { const h = Browser.hostOf(field.tab.url); Browser.resetSiteSettings(h); field.win.app.forgetMidi(h); field.win.app.siteSettingsChanged(h); for (const p of field.tab.sitePermissions()) field.tab.setPermissionState(p, 0); siteInfo.close(); field.win.toast("Site settings cleared", "edit-clear-history") } }
         }
     }
 }

@@ -40,7 +40,7 @@ interface and the state that belongs to it, such as which tabs a window has.
 | `crates/kite-core/src/webext/js/` | The `browser.*` API and the scripts injected into pages |
 | `crates/kite-core/examples/` | Developer tools: `amo-install`, `dnr-check`, `kwallet-check` |
 | `crates/kite/src/` | The QML singletons and the C ABI |
-| `crates/kite/src/js/` | Page scripts: fingerprint protection, wake lock, Web MIDI, scrollbars, Google sign-in identity |
+| `crates/kite/src/js/` | Page scripts: fingerprint protection, wake lock, Web MIDI, scrollbars, Google sign-in identity, what the Page Info window asks a page |
 | `crates/kite/cpp/` | The C++ layer |
 | `crates/kite/qml/` | The interface, see [ui.md](ui.md) |
 | `crates/kite/plugins/` | Plugins that ship with Kite, see [plugins.md](plugins.md) |

@@ -180,6 +180,7 @@ QQC2.Menu {
 
     QQC2.MenuSeparator {}
     QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; enabled: !!menu.tab && !menu.tab.showsSource; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    QQC2.MenuItem { text: "View Page Info"; icon.name: "documentinfo"; enabled: !!menu.tab; onTriggered: menu.tab.app.showPageInfo(menu.tab) }
     // (Where the blocker isn't working here, nor would a rule.)
     QQC2.MenuItem {
         text: "Block Element…"

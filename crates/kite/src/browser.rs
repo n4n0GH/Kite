@@ -481,6 +481,14 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "midiEvent"]
         fn midi_event(self: Pin<&mut Browser>, tab_id: i32, event: QString);
+        /// What the Page Info window asks a page (js/pageinfo.js), and what
+        /// Kite itself knows of the page's site: {visits, pages, cookies}.
+        #[qinvokable]
+        #[cxx_name = "pageInfoScript"]
+        fn page_info_script(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "pageSiteFacts"]
+        fn page_site_facts(self: &Browser, url: &QString) -> QString;
         /// Page-world script providing navigator.requestMIDIAccess (js/webmidi.js).
         #[qinvokable]
         #[cxx_name = "webMidiScript"]
@@ -1908,6 +1916,19 @@ impl qobject::Browser {
     }
     fn midi_stop(&self, tab_id: i32) {
         midi_sessions().remove(&tab_id);
+    }
+    fn page_info_script(&self) -> QString {
+        q(include_str!("js/pageinfo.js"))
+    }
+    fn page_site_facts(&self, url: &QString) -> QString {
+        let host = kite_core::util::host_of(&url.to_string());
+        let a = app();
+        let (visits, pages) = kite_core::history::site_visits(&a.shared.db(), &host).unwrap_or_default();
+        let site = crate::ffi::site_of(&host);
+        let site = if site.is_empty() { host.clone() } else { site };
+        let cookies = a.shared.cookies().clone();
+        let cookies = kite_core::shared::cookies_by_site(&cookies, &crate::ffi::site_of).into_iter().find(|(s, _)| *s == site).map_or(0, |(_, list)| list.len());
+        js(&json!({"host": host, "site": site, "visits": visits, "pages": pages, "cookies": cookies}))
     }
     fn web_midi_script(&self) -> QString {
         q(include_str!("js/webmidi.js"))

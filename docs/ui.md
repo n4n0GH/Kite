@@ -11,6 +11,8 @@ All paths are under `crates/kite/qml/`, except for plugins. QML files are compil
 | Settings | `PreferencesWindow.qml` | `Main.showPreferences(page)` |
 | Extensions | `AddonsWindow.qml` | `Main.showAddons` |
 | Library (history, bookmarks and downloads) | `LibraryWindow.qml` | `Main.showLibrary(page)` |
+| Page Info (a tab's page: what it is made of, its pictures and media, all its site's permissions, its connection and what Kite keeps of the site), laid out like the Library | `PageInfoWindow.qml` | `Main.showPageInfo(tab, section)` |
+| Media saver, never shown: a view of the page's profile that fetches what Page Info's Media list is asked to save (`mediafile.js` names the files) | `MediaSaver.qml` | `Main.saveMedia(profile, items)` |
 | JavaScript popups | `PopupWindow.qml` | `WebTab.onNewWindowRequested` |
 | Extension options | `ExtensionOptionsDialog.qml` | `Main` |
 | Extension login flow | `AuthFlow.qml` | `Main` |
@@ -79,7 +81,7 @@ separately**. A new command needs adding to each one where it belongs.
 | What the user sees | Defined as |
 |---|---|
 | Suggestions under the address | `popup` |
-| Security icon: site info, "Your connection to this site is encrypted", View Certificate, permissions | `siteInfo` |
+| Security icon: site info, "Your connection to this site is encrypted", View Certificate, the permissions the site is allowed or is using, All Permissions and Page Info | `siteInfo` |
 | Key icon: saved logins | `keyMenu` |
 | Shield icon: content blocker | `shieldMenu` |
 | Star: add or edit a bookmark | `bookmarkPopup` |

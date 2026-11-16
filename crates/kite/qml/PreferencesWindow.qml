@@ -403,6 +403,13 @@ ManagerWindow {
         standardButtons: Kirigami.Dialog.Close
     }
 
+    // The stored cookies (Privacy → Manage Cookies), from elsewhere: the Page Info window.
+    function showCookies() {
+        leavePage(() => {
+            if (pageStack.depth > 1) pageStack.pop(pageStack.initialPage)
+            pageStack.push(cookiesPage)
+        })
+    }
     // A plugin's settings: a submenu each, so the list stays a list.
     function openPluginSettings(plugin) {
         leavePage(() => {

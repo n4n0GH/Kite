@@ -65,6 +65,22 @@ pub fn get(db: &Connection, url: &str) -> anyhow::Result<Option<HistoryEntry>> {
         .optional()?)
 }
 
+/// How often pages of a site were visited, and how many of its pages: for the
+/// Page Info window. `host` as in the pages' addresses, whatever the port.
+pub fn site_visits(db: &Connection, host: &str) -> anyhow::Result<(i64, i64)> {
+    if host.is_empty() {
+        return Ok((0, 0));
+    }
+    // (% and _ mean something to LIKE; \ keeps them what they are.)
+    let host = host.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    Ok(db.query_row(
+        "SELECT COALESCE(SUM(count), 0), COUNT(*) FROM history
+         WHERE url LIKE ?1 ESCAPE '\\' OR url LIKE ?2 ESCAPE '\\' OR url LIKE ?3 ESCAPE '\\' OR url LIKE ?4 ESCAPE '\\'",
+        params![format!("http://{host}/%"), format!("https://{host}/%"), format!("http://{host}:%"), format!("https://{host}:%")],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?)
+}
+
 /// Search history. Every whitespace separated term must match url or title.
 /// `start`/`end` bound the visit time (ms); 0 means unbounded.
 pub fn search(db: &Connection, text: &str, start: i64, end: i64, limit: usize) -> anyhow::Result<Vec<HistoryEntry>> {
@@ -229,6 +245,19 @@ pub fn clear(db: &Connection) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visits_are_counted_for_a_site_and_no_other() {
+        let db = crate::db::open_in_memory().unwrap();
+        for url in ["https://a.org/", "https://a.org/", "https://a.org/x?y", "http://a.org:8080/z", "https://b.a.org/", "https://a.org.evil.example/", "https://xa.org/", "https://a_org/"] {
+            add_visit(&db, url, "t").unwrap();
+        }
+        assert_eq!(site_visits(&db, "a.org").unwrap(), (4, 3), "visits, pages");
+        assert_eq!(site_visits(&db, "b.a.org").unwrap(), (1, 1));
+        assert_eq!(site_visits(&db, "a%").unwrap(), (0, 0));
+        assert_eq!(site_visits(&db, "a_org").unwrap(), (1, 1), "an underscore is no wildcard");
+        assert_eq!(site_visits(&db, "").unwrap(), (0, 0));
+    }
     #[test]
     fn visits_and_completion() {
         let db = crate::db::open_in_memory().unwrap();

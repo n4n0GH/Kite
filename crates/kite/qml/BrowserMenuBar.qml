@@ -72,6 +72,7 @@ QQC2.MenuBar {
         QQC2.MenuItem { text: "S&plit View"; icon.name: "view-split-left-right"; checkable: true; checked: menuBar.win.split; onTriggered: menuBar.win.toggleSplit() }
         QQC2.MenuItem { visible: menuBar.app.readerViewAvailable; height: visible ? implicitHeight : 0; text: "R&eader View"; icon.name: "view-readermode"; enabled: menuBar.tab && menuBar.tab.canRead(); onTriggered: menuBar.win.runAction("reader-view.toggle") }
         QQC2.MenuItem { text: "Page So&urce"; icon.name: "text-html"; enabled: !!menuBar.tab && !menuBar.tab.showsSource; onTriggered: menuBar.win.openTab("view-source:" + menuBar.tab.url, {background: false, afterCurrent: true}) }
+        QQC2.MenuItem { text: "Page &Info"; icon.name: "documentinfo"; enabled: !!menuBar.tab; onTriggered: menuBar.app.showPageInfo(menuBar.tab) }
     }
     BarMenu {
         title: "Hi&story"

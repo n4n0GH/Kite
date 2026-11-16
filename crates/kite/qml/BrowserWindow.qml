@@ -963,6 +963,7 @@ QQC2.ApplicationWindow {
         case "zoomOut": if (t) t.zoomStep(-1); break
         case "zoomReset": if (t) t.resetZoom(); break
         case "viewSource": if (t && !t.showsSource) openTab("view-source:" + t.url, {background: false, afterCurrent: true}); break
+        case "pageInfo": if (t) app.showPageInfo(t); break
         case "print": printTab(); break
         case "savePage": saveDialog.open(); break
         case "openFile": openDialog.open(); break

@@ -85,6 +85,10 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
 * **Site settings:** per-site zoom, forced dark mode, custom CSS and JavaScript, cookie rules,
   fingerprint protection and user agent, from Settings or the address bar. A zoom back at the
   default isn't kept as a site's own.
+* **Page info:** a window with a page's technical details (type, encoding, size, meta tags), its
+  pictures and media with a preview, to save one by one or all at once, every permission its site
+  can be given, and its connection,
+  history and cookies. The address bar's site popup lists only what the site is allowed or is using.
 * **Cookies and certificates:** stored cookies to look through and remove, by site; certificate
   exceptions to accept one certificate for good, and to take that back (Settings → Privacy).
 * **Privacy:** third-party cookies blocked by default, Global Privacy Control, tracking

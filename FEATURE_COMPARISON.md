@@ -59,6 +59,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Several search engines, shortcuts | ✅ | ✅ | ✅ | |
 | Bookmark keywords | ✅ | ⚠️ | ✅ | Chrome uses site search shortcuts instead. |
 | Site info popup with permissions | ✅ | ✅ | ✅ | |
+| Page info window (technical details, media, all permissions, security) | ✅ | ❌ | ✅ | Chrome has the site popup and its settings page only. |
 | Per-site settings button in the address bar | ✅ | ❌ | ❌ | Kite's gear opens the site's own settings. |
 | Per-site zoom | ✅ | ✅ | ✅ | |
 | Smooth scrolling setting | ✅ | ⚠️ | ✅ | Chrome: behind a flag. |

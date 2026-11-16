@@ -249,6 +249,8 @@ QtObject {
         {id: "zoomOut", group: "Page", name: "Zoom out", keys: ["Ctrl+-"]},
         {id: "zoomReset", group: "Page", name: "Reset zoom", keys: ["Ctrl+0"]},
         {id: "viewSource", group: "Page", name: "View page source", keys: ["Ctrl+U"]},
+        // (No keys of its own: Firefox's, Ctrl+I, is italics wherever a page has text to write.)
+        {id: "pageInfo", group: "Page", name: "View page info", keys: []},
         {id: "print", group: "Page", name: "Print", keys: ["Ctrl+P"]},
         {id: "savePage", group: "Page", name: "Save page", keys: ["Ctrl+S"]},
         {id: "openFile", group: "Page", name: "Open file", keys: ["Ctrl+O"]},
@@ -1205,10 +1207,13 @@ QtObject {
     }
     function onDownloadRequested(download) {
         const url = download.url.toString()
+        // One for a file the Page Info window was asked to save (MediaSaver.qml)?
+        // Then it goes where that was told to put it.
+        const media = mediaSaver ? mediaSaver.claim(download) : null
         // Firefox add-ons: install instead of saving.
         // (From a site other than addons.mozilla.org only if the setting lets
         // sites offer add-ons; otherwise the file downloads like any other.)
-        if ((url.endsWith(".xpi") || download.mimeType === "application/x-xpinstall") &&
+        if (!media && (url.endsWith(".xpi") || download.mimeType === "application/x-xpinstall") &&
             (/^https:\/\/addons\.mozilla\.org\//.test(url) || setting("extensions.siteInstalls"))) {
             download.cancel()
             Extensions.installFromUrl(url)
@@ -1225,6 +1230,12 @@ QtObject {
         // gets the address, Kite lets the download go. Not for what only Kite can
         // fetch (a saved page, blob: and data: addresses), nor from private
         // windows, as the program would keep its own record of the files.
+        if (media) {
+            download.downloadDirectory = media.path.substring(0, media.path.lastIndexOf("/"))
+            download.downloadFileName = media.path.substring(media.path.lastIndexOf("/") + 1)
+            startDownload(download)
+            return
+        }
         if (setting("downloads.external") && /^https?:/i.test(url) && !download.isSavePageDownload && !_privateDownloads.includes(download)) {
             const handed = JSON.parse(Browser.startExternalDownload(url, download.suggestedFileName || download.downloadFileName))
             if (handed.name) {
@@ -1284,6 +1295,24 @@ QtObject {
         // (Interrupted, as by a lost connection, it never counts as finished.)
         download.stateChanged.connect(() => { if (download.state === WebEngineDownloadRequest.DownloadInterrupted) end() })
         if (activeWindow) activeWindow.downloadStarted()
+    }
+
+    // Files for what a page shows (the Page Info window's Media list). `items`:
+    // [{url, path, unique}], see MediaSaver.qml; `profile`: the page's, which
+    // fetches them. Several at once are told of together, when all are there.
+    property Component _mediaSaverComp: Component { MediaSaver {} }
+    property var mediaSaver: null
+    function saveMedia(profile, items) {
+        if (!mediaSaver) {
+            mediaSaver = _mediaSaverComp.createObject(app, {app: app})
+            mediaSaver.finished.connect((saved, failed, folder, quiet) => {
+                if (!quiet || !setting("downloads.notifications")) return
+                const text = (saved === 1 ? "1 file" : saved + " files") + " in " + folder.substring(folder.lastIndexOf("/") + 1) + (failed > 0 ? "; " + failed + " couldn't be saved" : "")
+                const open = () => Qt.openUrlExternally(fileUrl(folder))
+                showNotification("Media saved", text, "", open, null, [{label: "Open Folder", run: open}], setting("downloads.notificationTimeout"))
+            })
+        }
+        mediaSaver.save(profile, items)
     }
 
     // ---- notifications ------------------------------------------------------------
@@ -1358,6 +1387,7 @@ QtObject {
 
     property Component libraryComponent: Component { LibraryWindow {} }
     property Component blockedComponent: Component { BlockedRequestsWindow {} }
+    property Component pageInfoComponent: Component { PageInfoWindow {} }
     property Component preferencesComponent: Component { PreferencesWindow {} }
     property Component addonsComponent: Component { AddonsWindow {} }
     property var _singletons: ({})
@@ -1376,6 +1406,14 @@ QtObject {
     }
     function showLibrary(page) { return showSingleton("library", libraryComponent, {page: page || "history"}) }
     function showBlockedRequests(host) { return showSingleton("blocked", blockedComponent, {host: host}) }
+    // What a tab's page is made of, and what its site may do; `section`: "general",
+    // "media", "permissions" or "security". One window, for the tab asked about last.
+    function showPageInfo(tab, section) { return showSingleton("pageInfo", pageInfoComponent, {tab: tab, section: section || "general"}) }
+    // kite:certificate for an https address.
+    function certificatePage(u) {
+        const m = u.match(/^https:\/\/(?:[^\/?#@]*@)?(\[[^\]]+\]|[^:\/?#]+)(?::(\d+))?/i)
+        return "kite:certificate?host=" + encodeURIComponent(m ? m[1].replace(/^\[|\]$/g, "") : "") + (m && m[2] ? "&port=" + m[2] : "")
+    }
     function showPreferences(page) { return showSingleton("preferences", preferencesComponent, {page: page || "general"}) }
     function showPluginSettings(plugin) { showPreferences("extensions").openPluginSettings(plugin) }
     function showAddons(page) { return showSingleton("addons", addonsComponent, {page: page || "installed"}) }
