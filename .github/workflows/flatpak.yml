@@ -35,6 +35,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The image has the SDK installed in a layer below the one a container
+      # writes to. Updating a runtime moves its folder aside, which Docker's
+      # file system refuses for a folder from below ("Invalid cross-device
+      # link"), so the build ended there whenever Flathub had a newer SDK than
+      # the image (0.10.1's did). A copy made here is the container's own.
+      - name: Make the installed runtimes updatable
+        run: |
+          if ! mountpoint -q /var/lib/flatpak; then
+            cp -a /var/lib/flatpak /var/lib/flatpak.own
+            rm -rf /var/lib/flatpak
+            mv /var/lib/flatpak.own /var/lib/flatpak
+          fi
+
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: kite.flatpak
