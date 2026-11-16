@@ -328,7 +328,7 @@ Item {
     TapHandler { acceptedButtons: Qt.LeftButton; acceptedModifiers: Qt.ShiftModifier; onTapped: if (!root.collapsedTab) root.browser.clickTab(root.index, Qt.ShiftModifier) }
     TapHandler { acceptedButtons: Qt.MiddleButton; onTapped: if (!root.collapsedTab) root.browser.closeTab(root.index) }
     // Exclusive, so the tab bar's own menu doesn't open as well.
-    TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.collapsedTab ? root.browser.openGroupMenu(root.group, root) : menu.popup() }
+    TapHandler { acceptedButtons: Qt.RightButton; gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.collapsedTab ? root.browser.openGroupMenu(root.group, root) : root.openMenu() }
 
     Connections {
         target: root.tabList
@@ -421,109 +421,119 @@ Item {
         }
     }
 
-    QQC2.Menu {
-        id: menu
-        // The tabs it acts on: the selection, if this tab is in it.
-        property var targets: [root.tabId]
-        readonly property int n: targets.length
-        readonly property string tabsWord: n > 1 ? n + " Tabs" : "Tab"
-        // The targets that can be unloaded now (not shown, playing sound, …).
-        property var unloadable: []
-        onAboutToShow: {
-            targets = root.browser.actionTabs(root.tabId)
-            unloadable = targets.filter(id => { const t = root.browser.tabById(id); return t && t.keepLoadedReason() === "" })
-        }
-        function inGroup() { return targets.some(id => root.browser.groupOf(id) !== "") }
-        QQC2.MenuItem { text: "New Tab"; icon.name: "list-add"; onTriggered: root.browser.openTab(root.browser.app.newTabUrl(), {index: root.index + 1}) }
-        QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "Reload Tab"; icon.name: "view-refresh"; onTriggered: root.browser.tabById(root.tabId).view.reload() }
-        QQC2.MenuItem { id: duplicateItem; text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: t.container, index: root.index + 1}) } }
-        // Split view: the tab to the other pane (starting split view).
-        QQC2.MenuItem {
-            text: root.browser.split ? (menu.n > 1 ? "Move " + menu.n + " Tabs to Other Side" : "Move to Other Side") : (menu.n > 1 ? "Open " + menu.n + " Tabs in Split View" : "Open in Split View")
-            icon.name: "view-split-left-right"
-            enabled: root.browser.split || root.browser.count > menu.n
-            onTriggered: root.browser.moveTabsToOtherPane(menu.targets)
-        }
-        // Tab groups.
-        QQC2.MenuSeparator {}
-        QQC2.MenuItem {
-            id: newGroupItem
-            visible: !root.pinned && (menu.n > 1 || !root.group)
-            height: visible ? implicitHeight : 0
-            text: "Add " + menu.tabsWord + " to New Group"
-            icon.name: "folder-new"
-            onTriggered: { const gid = root.browser.newGroupFor(menu.targets); if (gid) root.browser.renameGroup(gid) }
-        }
-        Instantiator {
-            // The other groups of the tab's pane.
-            // (The groups not holding all of the tabs already.)
-            model: { root.browser.groupsVersion; menu.targets; return root.pinned ? [] : Object.keys(root.browser.tabGroups).filter(g => root.browser.paneOf(root.browser.groupTabs(g)[0]) === root.pane && menu.targets.some(id => root.browser.groupOf(id) !== g)) }
-            delegate: QQC2.MenuItem {
-                required property string modelData
-                text: (menu.n > 1 ? "Add " + menu.n + " Tabs to “" : "Add to “") + (root.browser.tabGroups[modelData] || {}).name + "”"
-                icon.name: "tag"
-                icon.color: (root.browser.tabGroups[modelData] || {}).color
-                // (Once the menu is closed: this changes the groups it lists, which
-                // would remove this very item while it is being triggered.)
-                onTriggered: {
-                    const targets = menu.targets, group = modelData, browser = root.browser
-                    menu.close()
-                    Qt.callLater(() => browser.addTabsToGroup(targets, group))
-                }
+    // The tab's menu, made when it is first asked for: a menu of this size
+    // for every tab was a quarter of what an open tab cost in memory.
+    property var _menu: null
+    function openMenu() {
+        if (!_menu) _menu = menuComponent.createObject(root)
+        _menu.popup()
+    }
+    Component {
+        id: menuComponent
+        QQC2.Menu {
+            id: menu
+            // The tabs it acts on: the selection, if this tab is in it.
+            property var targets: [root.tabId]
+            readonly property int n: targets.length
+            readonly property string tabsWord: n > 1 ? n + " Tabs" : "Tab"
+            // The targets that can be unloaded now (not shown, playing sound, …).
+            property var unloadable: []
+            onAboutToShow: {
+                targets = root.browser.actionTabs(root.tabId)
+                unloadable = targets.filter(id => { const t = root.browser.tabById(id); return t && t.keepLoadedReason() === "" })
             }
-            onObjectAdded: (i, o) => { let at = 0; for (let j = 0; j < menu.count; ++j) if (menu.itemAt(j) === newGroupItem) at = j + 1; menu.insertItem(at + i, o) }
-            onObjectRemoved: (i, o) => menu.removeItem(o)
+            function inGroup() { return targets.some(id => root.browser.groupOf(id) !== "") }
+            QQC2.MenuItem { text: "New Tab"; icon.name: "list-add"; onTriggered: root.browser.openTab(root.browser.app.newTabUrl(), {index: root.index + 1}) }
+            QQC2.MenuSeparator {}
+            QQC2.MenuItem { text: "Reload Tab"; icon.name: "view-refresh"; onTriggered: root.browser.tabById(root.tabId).view.reload() }
+            QQC2.MenuItem { id: duplicateItem; text: "Duplicate Tab"; icon.name: "tab-duplicate"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: t.container, index: root.index + 1}) } }
+            // Split view: the tab to the other pane (starting split view).
+            QQC2.MenuItem {
+                text: root.browser.split ? (menu.n > 1 ? "Move " + menu.n + " Tabs to Other Side" : "Move to Other Side") : (menu.n > 1 ? "Open " + menu.n + " Tabs in Split View" : "Open in Split View")
+                icon.name: "view-split-left-right"
+                enabled: root.browser.split || root.browser.count > menu.n
+                onTriggered: root.browser.moveTabsToOtherPane(menu.targets)
+            }
+            // Tab groups.
+            QQC2.MenuSeparator {}
+            QQC2.MenuItem {
+                id: newGroupItem
+                visible: !root.pinned && (menu.n > 1 || !root.group)
+                height: visible ? implicitHeight : 0
+                text: "Add " + menu.tabsWord + " to New Group"
+                icon.name: "folder-new"
+                onTriggered: { const gid = root.browser.newGroupFor(menu.targets); if (gid) root.browser.renameGroup(gid) }
+            }
+            Instantiator {
+                // The other groups of the tab's pane.
+                // (The groups not holding all of the tabs already.)
+                model: { root.browser.groupsVersion; menu.targets; return root.pinned ? [] : Object.keys(root.browser.tabGroups).filter(g => root.browser.paneOf(root.browser.groupTabs(g)[0]) === root.pane && menu.targets.some(id => root.browser.groupOf(id) !== g)) }
+                delegate: QQC2.MenuItem {
+                    required property string modelData
+                    text: (menu.n > 1 ? "Add " + menu.n + " Tabs to “" : "Add to “") + (root.browser.tabGroups[modelData] || {}).name + "”"
+                    icon.name: "tag"
+                    icon.color: (root.browser.tabGroups[modelData] || {}).color
+                    // (Once the menu is closed: this changes the groups it lists, which
+                    // would remove this very item while it is being triggered.)
+                    onTriggered: {
+                        const targets = menu.targets, group = modelData, browser = root.browser
+                        menu.close()
+                        Qt.callLater(() => browser.addTabsToGroup(targets, group))
+                    }
+                }
+                onObjectAdded: (i, o) => { let at = 0; for (let j = 0; j < menu.count; ++j) if (menu.itemAt(j) === newGroupItem) at = j + 1; menu.insertItem(at + i, o) }
+                onObjectRemoved: (i, o) => menu.removeItem(o)
+            }
+            QQC2.MenuItem {
+                visible: { root.browser.groupsVersion; return menu.inGroup() }
+                height: visible ? implicitHeight : 0
+                text: menu.n > 1 ? "Remove " + menu.n + " Tabs from Group" : "Remove from Group"
+                icon.name: "edit-delete-remove"
+                onTriggered: root.browser.removeTabsFromGroup(menu.targets)
+            }
+            // (A property: a Menu declared inside a Menu is always added to it.)
+            property ContainerMenu _containerMenu: ContainerMenu {
+                title: "Reopen in Container"
+                app: root.browser.privateMode ? null : root.browser.app
+                parentMenu: menu
+                after: duplicateItem
+                onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
+            }
+            // Tree-style tabs.
+            QQC2.MenuItem {
+                visible: root.treeCount > 0
+                height: visible ? implicitHeight : 0
+                text: root.treeCollapsed ? "Expand Tree" : "Collapse Tree"
+                icon.name: root.treeCollapsed ? "arrow-down" : "arrow-right"
+                onTriggered: root.browser.setTreeCollapsed(root.tabId, !root.treeCollapsed)
+            }
+            QQC2.MenuItem {
+                visible: root.treeCount > 0
+                height: visible ? implicitHeight : 0
+                text: "Close Tree (" + (root.treeCount + 1) + " Tabs)"
+                icon.name: "tab-close"
+                onTriggered: root.browser.closeTabs(root.browser.treeTabs(root.tabId))
+            }
+            QQC2.MenuItem { text: root.pinned ? "Unpin Tab" : "Pin Tab"; icon.name: "window-pin"; onTriggered: root.browser.tabById(root.tabId).setPinned(!root.pinned) }
+            QQC2.MenuItem {
+                // Unloading frees a tab's memory; it reloads when shown again.
+                text: menu.unloadable.length > 1 ? "Unload " + menu.unloadable.length + " Tabs" : "Unload Tab"
+                icon.name: "media-playback-pause"
+                enabled: menu.unloadable.length > 0
+                onTriggered: { for (const id of menu.unloadable) root.browser.tabById(id).unload() }
+            }
+            QQC2.MenuItem { text: root.muted ? "Unmute Tab" : "Mute Tab"; icon.name: root.muted ? "audio-volume-high" : "audio-volume-muted"; onTriggered: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted } }
+            QQC2.MenuItem { text: "Move to New Window"; icon.name: "window-new"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.app.newWindow({urls: [t.url], privateMode: root.browser.privateMode}); root.browser.closeTab(root.index) } }
+            QQC2.MenuItem { text: "Bookmark Tab…"; icon.name: "bookmark-new"; onTriggered: { const t = root.browser.tabById(root.tabId); Browser.addBookmark(t.url, t.title, ""); root.browser.toast("Bookmarked " + t.title, "bookmarks") } }
+            QQC2.MenuItem { text: "Bookmark All Tabs"; icon.name: "bookmarks"; onTriggered: root.browser.bookmarkAllTabs() }
+            QQC2.MenuSeparator {}
+            QQC2.MenuItem { text: "Close Other Tabs"; onTriggered: root.browser.closeOtherTabs(root.index) }
+            QQC2.MenuItem { text: "Close Tabs to the Right"; onTriggered: root.browser.closeTabsToRight(root.index) }
+            QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: root.browser.reopenClosedTab(0) }
+            QQC2.MenuSeparator {}
+            QQC2.MenuItem { text: "Close " + menu.tabsWord; icon.name: "tab-close"; onTriggered: root.browser.closeTabs(menu.targets) }
+            QQC2.MenuSeparator {}
+            TabBarMenu { browser: root.browser }
         }
-        QQC2.MenuItem {
-            visible: { root.browser.groupsVersion; return menu.inGroup() }
-            height: visible ? implicitHeight : 0
-            text: menu.n > 1 ? "Remove " + menu.n + " Tabs from Group" : "Remove from Group"
-            icon.name: "edit-delete-remove"
-            onTriggered: root.browser.removeTabsFromGroup(menu.targets)
-        }
-        // (A property: a Menu declared inside a Menu is always added to it.)
-        property ContainerMenu _containerMenu: ContainerMenu {
-            title: "Reopen in Container"
-            app: root.browser.privateMode ? null : root.browser.app
-            parentMenu: menu
-            after: duplicateItem
-            onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
-        }
-        // Tree-style tabs.
-        QQC2.MenuItem {
-            visible: root.treeCount > 0
-            height: visible ? implicitHeight : 0
-            text: root.treeCollapsed ? "Expand Tree" : "Collapse Tree"
-            icon.name: root.treeCollapsed ? "arrow-down" : "arrow-right"
-            onTriggered: root.browser.setTreeCollapsed(root.tabId, !root.treeCollapsed)
-        }
-        QQC2.MenuItem {
-            visible: root.treeCount > 0
-            height: visible ? implicitHeight : 0
-            text: "Close Tree (" + (root.treeCount + 1) + " Tabs)"
-            icon.name: "tab-close"
-            onTriggered: root.browser.closeTabs(root.browser.treeTabs(root.tabId))
-        }
-        QQC2.MenuItem { text: root.pinned ? "Unpin Tab" : "Pin Tab"; icon.name: "window-pin"; onTriggered: root.browser.tabById(root.tabId).setPinned(!root.pinned) }
-        QQC2.MenuItem {
-            // Unloading frees a tab's memory; it reloads when shown again.
-            text: menu.unloadable.length > 1 ? "Unload " + menu.unloadable.length + " Tabs" : "Unload Tab"
-            icon.name: "media-playback-pause"
-            enabled: menu.unloadable.length > 0
-            onTriggered: { for (const id of menu.unloadable) root.browser.tabById(id).unload() }
-        }
-        QQC2.MenuItem { text: root.muted ? "Unmute Tab" : "Mute Tab"; icon.name: root.muted ? "audio-volume-high" : "audio-volume-muted"; onTriggered: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted } }
-        QQC2.MenuItem { text: "Move to New Window"; icon.name: "window-new"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.app.newWindow({urls: [t.url], privateMode: root.browser.privateMode}); root.browser.closeTab(root.index) } }
-        QQC2.MenuItem { text: "Bookmark Tab…"; icon.name: "bookmark-new"; onTriggered: { const t = root.browser.tabById(root.tabId); Browser.addBookmark(t.url, t.title, ""); root.browser.toast("Bookmarked " + t.title, "bookmarks") } }
-        QQC2.MenuItem { text: "Bookmark All Tabs"; icon.name: "bookmarks"; onTriggered: root.browser.bookmarkAllTabs() }
-        QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "Close Other Tabs"; onTriggered: root.browser.closeOtherTabs(root.index) }
-        QQC2.MenuItem { text: "Close Tabs to the Right"; onTriggered: root.browser.closeTabsToRight(root.index) }
-        QQC2.MenuItem { text: "Reopen Closed Tab"; icon.name: "edit-undo"; onTriggered: root.browser.reopenClosedTab(0) }
-        QQC2.MenuSeparator {}
-        QQC2.MenuItem { text: "Close " + menu.tabsWord; icon.name: "tab-close"; onTriggered: root.browser.closeTabs(menu.targets) }
-        QQC2.MenuSeparator {}
-        TabBarMenu { browser: root.browser }
     }
 }

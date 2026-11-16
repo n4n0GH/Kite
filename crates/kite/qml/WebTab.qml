@@ -173,7 +173,10 @@ Item {
     function canBlockElements(tick) {
         return /^https?:/i.test(url) && app.setting("adblock.enabled") && Browser.contentBlocker(window.privateMode) === "" && !Browser.adblockAllowed(Browser.hostOf(url))
     }
-    function blockElement(x, y) { elementPicker.start(x, y) }
+    function blockElement(x, y) {
+        if (!_elementPicker) _elementPicker = elementPickerComponent.createObject(viewHolder, {tab: wt})
+        _elementPicker.start(x, y)
+    }
     // A frame's classes and ids, and what generic rules hide among them.
     function adblockFound(json) {
         const f = JSON.parse(json).f
@@ -219,12 +222,11 @@ Item {
                         f.x = pointer.x / zoom; f.y = pointer.y / zoom; f.w = 0; f.h = 0
                     }
                     frameBridge.frame = frame
-                    autofillPopup.bridge = frameBridge
-                    autofillPopup.show(f)
+                    showAutofill(frameBridge, f)
                 })
                 break
-            case "autofillBlur": autofillPopup.close(); break
-            case "autofillKey": autofillPopup.key(arg); break
+            case "autofillBlur": closeAutofill(); break
+            case "autofillKey": autofillKey(arg); break
             case "formDirty": formDirty = arg; break
             }
         })
@@ -640,43 +642,58 @@ Item {
             }
         }
 
-        Kirigami.InlineMessage {
+        Loader {
             Layout.fillWidth: true
-            visible: wt.externalPrompt !== ""
-            type: Kirigami.MessageType.Warning
-            icon.name: "document-open-remote"
-            text: "This page wants to open <b>" + wt.externalPrompt.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> in another app."
-            actions: [
-                Kirigami.Action { text: "Open"; icon.name: "document-open"; onTriggered: { const u = wt.externalPrompt; wt.externalPrompt = ""; wt.window.openExternal(u) } },
-                Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: wt.externalPrompt = "" }
-            ]
+            active: wt.externalPrompt !== ""
+            visible: active
+            sourceComponent: Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: true
+                type: Kirigami.MessageType.Warning
+                icon.name: "document-open-remote"
+                text: "This page wants to open <b>" + wt.externalPrompt.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> in another app."
+                actions: [
+                    Kirigami.Action { text: "Open"; icon.name: "document-open"; onTriggered: { const u = wt.externalPrompt; wt.externalPrompt = ""; wt.window.openExternal(u) } },
+                    Kirigami.Action { text: "Cancel"; icon.name: "dialog-cancel"; onTriggered: wt.externalPrompt = "" }
+                ]
+            }
         }
 
-        Kirigami.InlineMessage {
+        Loader {
             Layout.fillWidth: true
-            visible: wt.addressPrompt !== null
-            type: Kirigami.MessageType.Information
-            icon.name: "user-identity"
-            text: !wt.addressPrompt ? "" : (wt.addressPrompt.action === "update" ? "Update the saved address <b>" : "Save the address <b>") + wt.addressPrompt.label.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> for filling in forms?"
-            actions: [
-                Kirigami.Action { text: wt.addressPrompt && wt.addressPrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerAddressPrompt("save") },
-                Kirigami.Action { text: "Not Now"; onTriggered: wt.answerAddressPrompt("dismiss") }
-            ]
+            active: wt.addressPrompt !== null
+            visible: active
+            sourceComponent: Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: true
+                type: Kirigami.MessageType.Information
+                icon.name: "user-identity"
+                text: !wt.addressPrompt ? "" : (wt.addressPrompt.action === "update" ? "Update the saved address <b>" : "Save the address <b>") + wt.addressPrompt.label.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> for filling in forms?"
+                actions: [
+                    Kirigami.Action { text: wt.addressPrompt && wt.addressPrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerAddressPrompt("save") },
+                    Kirigami.Action { text: "Not Now"; onTriggered: wt.answerAddressPrompt("dismiss") }
+                ]
+            }
         }
 
-        Kirigami.InlineMessage {
+        Loader {
             Layout.fillWidth: true
-            visible: wt.savePrompt !== null
-            type: Kirigami.MessageType.Information
-            icon.name: "dialog-password"
-            text: !wt.savePrompt ? "" : (wt.savePrompt.action === "update"
-                ? "Update the saved password for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b> on " + wt.escapeHtml(wt.savePrompt.host) + "?"
-                : "Save the login" + (wt.savePrompt.username ? " for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b>" : "") + " on " + wt.escapeHtml(wt.savePrompt.host) + "?")
-            actions: [
-                Kirigami.Action { text: wt.savePrompt && wt.savePrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerSavePrompt("save") },
-                Kirigami.Action { text: "Never for This Site"; icon.name: "dialog-cancel"; visible: !wt.savePrompt || wt.savePrompt.action === "save"; onTriggered: wt.answerSavePrompt("never") },
-                Kirigami.Action { text: "Not Now"; onTriggered: wt.answerSavePrompt("dismiss") }
-            ]
+            active: wt.savePrompt !== null
+            visible: active
+            sourceComponent: Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: true
+                type: Kirigami.MessageType.Information
+                icon.name: "dialog-password"
+                text: !wt.savePrompt ? "" : (wt.savePrompt.action === "update"
+                    ? "Update the saved password for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b> on " + wt.escapeHtml(wt.savePrompt.host) + "?"
+                    : "Save the login" + (wt.savePrompt.username ? " for <b>" + wt.escapeHtml(wt.savePrompt.username) + "</b>" : "") + " on " + wt.escapeHtml(wt.savePrompt.host) + "?")
+                actions: [
+                    Kirigami.Action { text: wt.savePrompt && wt.savePrompt.action === "update" ? "Update" : "Save"; icon.name: "document-save"; onTriggered: wt.answerSavePrompt("save") },
+                    Kirigami.Action { text: "Never for This Site"; icon.name: "dialog-cancel"; visible: !wt.savePrompt || wt.savePrompt.action === "save"; onTriggered: wt.answerSavePrompt("never") },
+                    Kirigami.Action { text: "Not Now"; onTriggered: wt.answerSavePrompt("dismiss") }
+                ]
+            }
         }
 
         Item {
@@ -689,18 +706,18 @@ Item {
             width: wt.devToolsDocked === "right" ? parent.width - wt.devToolsSpace : parent.width
             height: wt.devToolsDocked === "bottom" ? parent.height - wt.devToolsSpace : parent.height
 
-            Kirigami.PlaceholderMessage {
-                anchors.centerIn: parent
-                width: parent.width - Kirigami.Units.gridUnit * 4
-                visible: wt.inPip
-                icon.name: "kite-pip"
-                text: "Playing in picture-in-picture"
-                helpfulAction: Kirigami.Action { text: "Back to Tab"; icon.name: "kite-pip-exit"; onTriggered: wt.app.stopPip(true) }
-            }
-
-            ElementPicker {
-                id: elementPicker
-                tab: wt
+            Loader {
+                anchors.fill: parent
+                active: wt.inPip
+                sourceComponent: Item {
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        width: parent.width - Kirigami.Units.gridUnit * 4
+                        icon.name: "kite-pip"
+                        text: "Playing in picture-in-picture"
+                        helpfulAction: Kirigami.Action { text: "Back to Tab"; icon.name: "kite-pip-exit"; onTriggered: wt.app.stopPip(true) }
+                    }
+                }
             }
 
             WebEngineView {
@@ -803,7 +820,7 @@ Item {
                             wt.pendingPermissions = wt.pendingPermissions.filter(p => !p.wakeLock && (p.originUrl === undefined || wt.originOf(p.originUrl) === wt.originOf(u)))
                         wt.leftForMidi(u)
                         wt.releasePointerLock()
-                        if (elementPicker.visible) elementPicker.visible = false
+                        if (wt._elementPicker && wt._elementPicker.visible) wt._elementPicker.visible = false
                         wt.loginForm = false
                         wt.frameLoginForm = false
                         wt.loginFrames = ({})
@@ -977,12 +994,12 @@ Item {
 
                 onAuthenticationDialogRequested: request => {
                     request.accepted = true
-                    authDialog.ask(request)
+                    wt.askAuthentication(request)
                 }
 
                 onContextMenuRequested: request => {
                     request.accepted = true
-                    contextMenu.show(request)
+                    wt.pageContextMenu().show(request)
                 }
 
                 // (window.print() in a page, or one of its frames: the whole page.)
@@ -1036,44 +1053,47 @@ Item {
             }
 
             // Certificate error interstitial
-            Rectangle {
+            Loader {
                 anchors.fill: parent
-                visible: wt.certError !== null
-                color: Kirigami.Theme.backgroundColor
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 36)
-                    spacing: Kirigami.Units.largeSpacing
-                    Kirigami.Icon { source: "security-low"; Layout.preferredWidth: Kirigami.Units.iconSizes.huge; Layout.preferredHeight: Layout.preferredWidth; Layout.alignment: Qt.AlignHCenter }
-                    Kirigami.Heading { text: "Warning: Potential Security Risk Ahead"; Layout.fillWidth: true; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
-                    QQC2.Label {
-                        Layout.fillWidth: true; wrapMode: Text.Wrap
-                        text: wt.certError ? ("Kite detected a potential security threat and did not continue to <b>" + Browser.hostOf(wt.certError.url.toString()) + "</b>.<br><br>" + wt.certError.description) : ""
-                    }
-                    QQC2.Label {
-                        visible: wt.certFingerprint !== ""
-                        Layout.fillWidth: true
-                        wrapMode: Text.WrapAnywhere
-                        opacity: 0.7
-                        font: Kirigami.Theme.smallFont
-                        text: "Certificate fingerprint (SHA-256): " + wt.certFingerprint
-                    }
-                    RowLayout {
-                        Layout.alignment: Qt.AlignHCenter
-                        QQC2.Button { text: "Go Back (Recommended)"; icon.name: "go-previous"; onClicked: { wt.certError.rejectCertificate(); wt.certError = null; if (web.canGoBack) web.goBack() } }
-                        QQC2.Button {
-                            text: "Accept the Risk and Continue"; visible: wt.certError && wt.certError.overridable
-                            onClicked: { wt.certError.acceptCertificate(); wt.certError = null }
+                active: wt.certError !== null
+                sourceComponent: Rectangle {
+                    anchors.fill: parent
+                    color: Kirigami.Theme.backgroundColor
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        width: Math.min(parent.width - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 36)
+                        spacing: Kirigami.Units.largeSpacing
+                        Kirigami.Icon { source: "security-low"; Layout.preferredWidth: Kirigami.Units.iconSizes.huge; Layout.preferredHeight: Layout.preferredWidth; Layout.alignment: Qt.AlignHCenter }
+                        Kirigami.Heading { text: "Warning: Potential Security Risk Ahead"; Layout.fillWidth: true; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
+                        QQC2.Label {
+                            Layout.fillWidth: true; wrapMode: Text.Wrap
+                            text: wt.certError ? ("Kite detected a potential security threat and did not continue to <b>" + Browser.hostOf(wt.certError.url.toString()) + "</b>.<br><br>" + wt.certError.description) : ""
                         }
-                        // For good, for this certificate; another one on this site gets
-                        // this warning again. (A private window leaves nothing behind.)
-                        QQC2.Button {
-                            text: "Always Accept This Certificate"
-                            visible: wt.certError && wt.certError.overridable && !wt.window.privateMode && wt.certFingerprint !== ""
-                            onClicked: {
-                                Browser.addCertException(Browser.hostOf(wt.certError.url.toString()), wt.certFingerprint, wt.certError.description)
-                                wt.certError.acceptCertificate()
-                                wt.certError = null
+                        QQC2.Label {
+                            visible: wt.certFingerprint !== ""
+                            Layout.fillWidth: true
+                            wrapMode: Text.WrapAnywhere
+                            opacity: 0.7
+                            font: Kirigami.Theme.smallFont
+                            text: "Certificate fingerprint (SHA-256): " + wt.certFingerprint
+                        }
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            QQC2.Button { text: "Go Back (Recommended)"; icon.name: "go-previous"; onClicked: { wt.certError.rejectCertificate(); wt.certError = null; if (web.canGoBack) web.goBack() } }
+                            QQC2.Button {
+                                text: "Accept the Risk and Continue"; visible: wt.certError && wt.certError.overridable
+                                onClicked: { wt.certError.acceptCertificate(); wt.certError = null }
+                            }
+                            // For good, for this certificate; another one on this site gets
+                            // this warning again. (A private window leaves nothing behind.)
+                            QQC2.Button {
+                                text: "Always Accept This Certificate"
+                                visible: wt.certError && wt.certError.overridable && !wt.window.privateMode && wt.certFingerprint !== ""
+                                onClicked: {
+                                    Browser.addCertException(Browser.hostOf(wt.certError.url.toString()), wt.certFingerprint, wt.certError.description)
+                                    wt.certError.acceptCertificate()
+                                    wt.certError = null
+                                }
                             }
                         }
                     }
@@ -1081,14 +1101,19 @@ Item {
             }
 
             // Crashed wt overlay
-            Kirigami.PlaceholderMessage {
-                anchors.centerIn: parent
-                width: parent.width - Kirigami.Units.gridUnit * 4
-                visible: wt.crashed
-                icon.name: "tab-close-other"
-                text: "This tab has crashed"
-                explanation: "The page's process stopped unexpectedly."
-                helpfulAction: Kirigami.Action { text: "Reload"; icon.name: "view-refresh"; onTriggered: { wt.crashed = false; web.reload() } }
+            Loader {
+                anchors.fill: parent
+                active: wt.crashed
+                sourceComponent: Item {
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        width: parent.width - Kirigami.Units.gridUnit * 4
+                        icon.name: "tab-close-other"
+                        text: "This tab has crashed"
+                        explanation: "The page's process stopped unexpectedly."
+                        helpfulAction: Kirigami.Action { text: "Reload"; icon.name: "view-refresh"; onTriggered: { wt.crashed = false; web.reload() } }
+                    }
+                }
             }
         }
 
@@ -1439,9 +1464,9 @@ Item {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r
         }
-        onAutofillFocused: json => { autofillPopup.bridge = bridge; autofillPopup.show(JSON.parse(json)) }
-        onAutofillBlurred: autofillPopup.close()
-        onAutofillKeyPressed: key => autofillPopup.key(key)
+        onAutofillFocused: json => wt.showAutofill(bridge, JSON.parse(json))
+        onAutofillBlurred: wt.closeAutofill()
+        onAutofillKeyPressed: key => wt.autofillKey(key)
         onAutofillSubmitted: json => {
             const r = JSON.parse(FormFill.formSubmitted(web.url.toString(), wt.window.privateMode, json))
             if (r) wt.addressPrompt = r
@@ -1461,18 +1486,46 @@ Item {
     }
     Connections { target: Passwords; function onChanged() { wt.refreshLogins() } }
 
-    PageContextMenu { id: contextMenu; tab: wt }
-    AutofillPopup {
-        id: autofillPopup
-        tab: wt; view: web; bridge: bridge
-        onPickedAddress: id => {
-            const data = FormFill.fillData((autofillPopup.field && autofillPopup.field.url) || web.url.toString(), id)
-            if (data !== "null") autofillPopup.bridge.fillAddress(data)
+    // Made for a tab when it first needs them, not with every tab. Built up
+    // front, the page's menu, these popups, the prompt bars and the pages for
+    // a crash or a bad certificate (the Loaders above) were most of what an
+    // open tab cost in Kite's own process: about 10 MiB each, for things most
+    // tabs never show.
+    property var _contextMenu: null
+    property var _autofillPopup: null
+    property var _authDialog: null
+    property var _elementPicker: null
+    Component { id: contextMenuComponent; PageContextMenu {} }
+    Component { id: authDialogComponent; AuthDialog {} }
+    Component { id: elementPickerComponent; ElementPicker {} }
+    Component {
+        id: autofillComponent
+        AutofillPopup {
+            id: autofillPopup
+            onPickedAddress: id => {
+                const data = FormFill.fillData((autofillPopup.field && autofillPopup.field.url) || web.url.toString(), id)
+                if (data !== "null") autofillPopup.bridge.fillAddress(data)
+            }
+            onPickedPassword: password => autofillPopup.bridge.fillPassword(password)
+            onManage: wt.app.showPreferences("browsing")
         }
-        onPickedPassword: password => autofillPopup.bridge.fillPassword(password)
-        onManage: wt.app.showPreferences("browsing")
     }
-    AuthDialog { id: authDialog; tab: wt }
+    function pageContextMenu() {
+        if (!_contextMenu) _contextMenu = contextMenuComponent.createObject(wt, {tab: wt})
+        return _contextMenu
+    }
+    // Under a form field, for `fieldBridge` (the page's, or a frame's): shown, or told what was typed.
+    function showAutofill(fieldBridge, field) {
+        if (!_autofillPopup) _autofillPopup = autofillComponent.createObject(wt, {tab: wt, view: web, bridge: fieldBridge})
+        _autofillPopup.bridge = fieldBridge
+        _autofillPopup.show(field)
+    }
+    function closeAutofill() { if (_autofillPopup) _autofillPopup.close() }
+    function autofillKey(key) { if (_autofillPopup) _autofillPopup.key(key) }
+    function askAuthentication(request) {
+        if (!_authDialog) _authDialog = authDialogComponent.createObject(wt, {tab: wt})
+        _authDialog.ask(request)
+    }
 
     Loader {
         id: devTools
