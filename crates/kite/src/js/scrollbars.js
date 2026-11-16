@@ -10,6 +10,13 @@
 // only custom ones take layout space, so that's how they're found; ones a
 // page hides (display: none, zero size, scrollbar-width: none) take none
 // and stay hidden.
+//
+// They are found when they matter, not by going through the page: the
+// page's own (of its root and body) as it loads, any other one when the
+// pointer comes over it or it scrolls. Until then such a one keeps the look
+// its page gave it. Asking every element of every page for its scroll size,
+// and again whenever the page changed, cost about 4 MiB a page in memory
+// and work every second on pages that never stand still.
 (() => {
   'use strict';
   if (window.__kiteScrollbars) return;
@@ -47,42 +54,41 @@
     el.setAttribute(ATTR, '');
   }
 
-  function scan() {
+  // The page's own scrollbars. (Asked again as it loads and now and then
+  // after: a page may be given its style, or enough to scroll, later.)
+  function checkPage() {
     const root = document.documentElement;
     if (!root) return;
     check(root);
     if (document.body) check(document.body);
-    for (const el of document.body ? document.body.getElementsByTagName('*') : []) {
-      // Cheap filter first: only elements that can scroll.
-      if (el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth) continue;
+  }
+
+  // What the pointer is over, and what that is inside of: each looked at once.
+  // (One that was looked at had all it is inside of looked at with it.)
+  const seen = new WeakSet();
+  let pageChecked = 0;
+  function checkAround(target) {
+    if (Date.now() - pageChecked > 1000) {
+      pageChecked = Date.now();
+      checkPage();
+    }
+    for (let el = target; el instanceof Element && !seen.has(el); el = el.parentElement) {
+      seen.add(el);
       check(el);
     }
   }
 
-  // Scans run when the page is idle, at most every second while it changes.
-  let pending = false;
-  let last = 0;
-  function schedule() {
-    if (pending) return;
-    pending = true;
-    const wait = Math.max(0, last + 1000 - Date.now());
-    setTimeout(() => requestIdleCallback(() => {
-      pending = false;
-      last = Date.now();
-      scan();
-    }, {timeout: 1000}), wait);
-  }
-
   function start() {
     if (!addStyle()) return;
-    schedule();
-    new MutationObserver(schedule).observe(document.documentElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style']});
+    checkPage();
+    document.addEventListener('DOMContentLoaded', checkPage);
+    window.addEventListener('load', checkPage);
     // Whatever scrolls is checked right away.
     document.addEventListener('scroll', e => {
       const t = e.target === document ? document.documentElement : e.target;
       if (t instanceof Element) check(t);
     }, {capture: true, passive: true});
-    window.addEventListener('load', schedule);
+    document.addEventListener('pointerover', e => checkAround(e.target), {capture: true, passive: true});
   }
 
   if (document.documentElement) start();
