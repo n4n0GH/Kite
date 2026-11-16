@@ -136,7 +136,7 @@ instead (`qml/ExtBridge.qml`).
 | `instance` | One Kite to a profile: what's started on an open profile hands its URLs to the Kite that has it, and ends |
 | `kwin`, `screensaver` | KWin scripting (picture-in-picture staying on top); screen inhibition |
 | `crashlog` | The log file and crash reports in `logs/<profile>/`; scrambling addresses from private windows |
-| `filemanager` | Show in Folder: asking the file manager (`org.freedesktop.FileManager1`), or the portal from inside a sandbox, to open a file's folder with the file selected. The activation token for its window on Wayland comes from `cpp/activation.cpp` |
+| `filemanager` | Show in Folder: asking the file manager (`org.freedesktop.FileManager1`, which the Flatpak may talk to), or the portal from inside a sandbox that doesn't allow that, to open a file's folder with the file selected. With the portal, the connection is kept until the request has ended: xdg-desktop-portal stops answering if the caller leaves while the file manager is still starting. The activation token for its window on Wayland comes from `cpp/activation.cpp` |
 | `external` | Starting outside programs with Kite's environment and files kept from them: native messaging hosts and an external download manager (arguments split like a shell's, never run through one) |
 
 ### kite-core: the WebExtension platform

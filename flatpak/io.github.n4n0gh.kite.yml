@@ -47,6 +47,10 @@ finish-args:
   - --own-name=io.github.n4n0gh.kite.krunner.*
   # KRunner, outside the sandbox, learns of Kite from a file here.
   - --filesystem=xdg-data/krunner/dbusplugins:create
+  # Show in Folder: the file manager asked to select the downloaded file. The
+  # portal can ask it too, but gives it 25 seconds and then opens a second one,
+  # and answers nobody while it waits (crates/kite-core/src/filemanager.rs).
+  - --talk-name=org.freedesktop.FileManager1
   # Geolocation, for pages the user allows it.
   - --system-talk-name=org.freedesktop.GeoClue2
   # Not granted, and so not available inside the sandbox: native messaging hosts
