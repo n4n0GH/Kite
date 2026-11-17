@@ -299,7 +299,7 @@ QtObject {
     // re-applied, so a change in Preferences reaches open tabs and windows
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
-        "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "appearance.forceDarkMode",
+        "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "web.pdfViewer", "appearance.forceDarkMode",
         "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.enabled", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.privateWindowColor", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})

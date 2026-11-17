@@ -64,6 +64,7 @@ pub fn defaults() -> Map<String, Value> {
         "web.smoothScrolling": true,
         "web.dnsPrefetch": false,             // looks up every link on a page (Settings → Privacy)
         "web.printBackgrounds": true,
+        "web.pdfViewer": true,                // PDF documents open in the tab; off: they download
         "web.userAgent": "",
         // Google's sign-in refuses Kite unless it appears as Firefox there.
         "web.googleSignIn": true,

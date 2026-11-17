@@ -963,6 +963,8 @@ ManagerWindow {
             }
             Hint { text: filePicker.currentIndex === 1 ? "Where a page's file picker, as for uploading a file, opens: the folder last used in one, until Kite closes. Private windows don't change it." : "Where a page's file picker, as for uploading a file, opens." }
             Check { Kirigami.FormData.label: "Printing:"; text: "Print backgrounds"; key: "web.printBackgrounds" }
+            Check { Kirigami.FormData.label: "PDF documents:"; text: "Show in the tab"; key: "web.pdfViewer" }
+            Hint { text: "Off: PDF documents are downloaded instead." }
             // (Its lists and rules are on the Content Blocking page, listed while this is on.)
             Check { Kirigami.FormData.label: "Content blocking:"; text: "Block ads and trackers"; key: "adblock.enabled" }
             UserAgentField {

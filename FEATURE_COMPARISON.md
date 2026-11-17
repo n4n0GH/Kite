@@ -144,6 +144,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Show a downloaded file in the file manager, selected | ✅ | ✅ | ✅ | |
 | Hand downloads to an external download manager | ✅ | ⚠️ | ⚠️ | Kite: a program and its arguments, as in Falkon. Chrome and Firefox: through an extension. |
 | Printing with the system dialog | ✅ | ⚠️ | ✅ | Chrome has its own print preview, with the system dialog a step away. |
+| PDF documents shown in the tab | ✅ | ✅ | ✅ | Kite and Chrome: Chromium's viewer. Firefox: PDF.js. All three can download them instead. |
 | Ask where to save | ✅ | ✅ | ✅ | |
 | Reading list | ❌ | ✅ | ❌ | |
 

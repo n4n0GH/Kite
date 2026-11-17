@@ -36,6 +36,7 @@ const TOGGLES = [
     {page: "browsing", text: "Smooth scrolling", key: "web.smoothScrolling"},
     {page: "browsing", text: "Spatial navigation (arrow keys between links)", key: "web.spatialNavigation"},
     {page: "browsing", text: "Print backgrounds", key: "web.printBackgrounds"},
+    {page: "browsing", prefix: "PDF documents", text: "Show in the tab", key: "web.pdfViewer"},
     {page: "browsing", text: "Check spelling while typing", key: "web.spellcheck"},
     {page: "tabs", text: "Unload tabs that haven't been shown for a while", key: "tabs.unloadInactive"},
     {page: "tabs", text: "Keep pinned tabs loaded", key: "tabs.unloadKeepPinned"},

@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/../src/js/third_party_storage.js', 'utf8');
 
 // A frame's window, refused storage or not.
-function frame({ top = false, origin = 'https://player.example', refused = true, error = 'SecurityError' } = {}) {
-  const w = { origin };
+function frame({ top = false, origin = 'https://player.example', refused = true, error = 'SecurityError', ancestors = ['https://site.example'] } = {}) {
+  const w = { origin, location: { ancestorOrigins: ancestors } };
   w.top = top ? w : {};
   w.Storage = class Storage {};
   for (const name of ['localStorage', 'sessionStorage']) {
@@ -65,4 +65,21 @@ test('only where storage was refused', () => {
   assert.throws(() => frame({ top: true }).localStorage, /denied/, 'not the top page: that takes "block all cookies"');
   assert.throws(() => frame({ origin: 'null' }).localStorage, /denied/, 'not sandboxed frames');
   assert.throws(() => frame({ error: 'OtherError' }).localStorage, /denied/, 'not other errors');
+});
+
+// The engine's PDF viewer: its document's frame is of a process that is ended
+// for so much as asking for storage, so nothing here may touch it.
+test('the PDF viewer is left alone', () => {
+  const VIEWER = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai';
+  function untouched(options) {
+    let asked = 0;
+    const w = { origin: options.origin, location: { ancestorOrigins: options.ancestors }, top: {} };
+    for (const name of ['localStorage', 'sessionStorage']) Object.defineProperty(w, name, { configurable: true, get() { asked++; return name; } });
+    new Function('globalThis', src)(w);
+    return asked === 0;
+  }
+  assert.ok(untouched({ origin: 'https://docs.example', ancestors: [VIEWER, 'https://docs.example'] }), 'the document in the viewer');
+  assert.ok(untouched({ origin: VIEWER, ancestors: ['https://docs.example'] }), 'the viewer itself');
+  assert.ok(untouched({ origin: 'https://docs.example', ancestors: [VIEWER, 'https://docs.example', 'https://site.example'] }), 'a viewer in a frame');
+  assert.ok(!untouched({ origin: 'https://player.example', ancestors: ['https://site.example'] }), 'other frames are looked at');
 });

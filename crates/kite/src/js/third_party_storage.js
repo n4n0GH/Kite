@@ -9,6 +9,10 @@
   if (window === window.top) return;
   // Sandboxed frames are refused by the standard: that's meant.
   if (window.origin === 'null') return;
+  // The engine's PDF viewer shows the document in a frame whose process may not
+  // even ask for storage: it is ended for trying, and the document never shows.
+  const PDF_VIEWER = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai';
+  if (window.origin === PDF_VIEWER || Array.from(window.location.ancestorOrigins || []).includes(PDF_VIEWER)) return;
 
   function memoryStorage(StoragePrototype) {
     const data = new Map();

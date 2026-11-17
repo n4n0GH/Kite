@@ -116,6 +116,8 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   folder or remove; the full list in the Library; Show in Folder opens the file manager with the file selected;
   notifications when one finishes, with a timeout of your choice; or an external download manager (like Falkon's: a program and its
   arguments, `%d` for the address), which private windows and saved pages leave out.
+* **PDF documents:** shown in the tab by the engine's own viewer, with its page list, search,
+  printing and saving; or downloaded instead, if you turn that off (Settings → Browsing).
 * **Settings:** laid out like System Settings, with changes waiting for Apply (or Cancel) at the
   bottom; leaving a page with changes asks first. Spell checking uses the system's QtWebEngine
   dictionaries, listed in Settings → Browsing.

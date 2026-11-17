@@ -762,7 +762,11 @@ Item {
                 settings.javascriptCanOpenWindows: true
                 // The site's own choice (Site Settings), else the global one.
                 settings.forceDarkMode: wt.siteDarkMode === 1 || (wt.siteDarkMode === 0 && wt.app.liveSettings["appearance.forceDarkMode"])
-                settings.pdfViewerEnabled: true
+                // PDF documents shown in the tab, by the engine's own viewer, or
+                // downloaded. (The viewer counts as a plugin to the engine, the only
+                // kind there still is.)
+                settings.pdfViewerEnabled: !!wt.app.liveSettings["web.pdfViewer"]
+                settings.pluginsEnabled: !!wt.app.liveSettings["web.pdfViewer"]
                 settings.localContentCanAccessRemoteUrls: wt.isExtensionPage
 
                 onUrlChanged: {
