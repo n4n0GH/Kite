@@ -1294,7 +1294,7 @@ QtObject {
         download.isFinishedChanged.connect(() => { if (download.isFinished) end() })
         // (Interrupted, as by a lost connection, it never counts as finished.)
         download.stateChanged.connect(() => { if (download.state === WebEngineDownloadRequest.DownloadInterrupted) end() })
-        if (activeWindow) activeWindow.downloadStarted()
+        if (activeWindow) activeWindow.downloadStarted(id)
     }
 
     // Files for what a page shows (the Page Info window's Media list). `items`:

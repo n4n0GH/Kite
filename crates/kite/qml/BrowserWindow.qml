@@ -496,7 +496,38 @@ QQC2.ApplicationWindow {
         Timer { id: fullScreenNoticeTimer; interval: 4000; onTriggered: fullScreenNotice.opacity = 0 }
     }
     property var toolbarActions: []
-    property int downloadsActive: 0
+    // The downloads button's dot: the downloads of this window its panel has yet
+    // to show. One is new when it begins here, and again when it has ended (but
+    // not one the user cancelled, nor one somebody else tells about: a plugin,
+    // the media saver).
+    property var downloadsNew: []
+    property var _downloadsHere: []
+    Connections {
+        target: bw.app
+        function onDownloadEnded(id, download, state) {
+            const i = bw._downloadsHere.indexOf(id)
+            if (i < 0) return
+            bw._downloadsHere.splice(i, 1)
+            const rest = bw.downloadsNew.filter(x => x !== id)
+            if (state !== "cancelled" && !bw.app.claimedDownloads[id]) rest.push(id)
+            bw.downloadsNew = bw.downloadsListed(rest)
+        }
+    }
+    // (What left the list of downloads meanwhile, in the Library, has nothing to show.)
+    Connections {
+        target: Browser
+        function onDownloadsChanged() {
+            if (bw.downloadsNew.every(id => bw.app.activeDownloads[id])) return
+            const rest = bw.downloadsListed(bw.downloadsNew)
+            if (rest.length !== bw.downloadsNew.length) bw.downloadsNew = rest
+        }
+    }
+    // Of these downloads, the ones under way or in the list of downloads.
+    function downloadsListed(ids) {
+        if (ids.every(id => bw.app.activeDownloads[id])) return ids
+        const listed = new Set(JSON.parse(Browser.downloads()).map(r => r.id))
+        return ids.filter(id => bw.app.activeDownloads[id] || listed.has(id))
+    }
 
     width: app.setting("window.width")
     height: app.setting("window.height")
@@ -886,7 +917,7 @@ QQC2.ApplicationWindow {
     }
 
     function toast(message, icon, ms) { toastLabel.text = message; toastIcon.source = icon; toastBox.opacity = 1; toastTimer.interval = ms || 4000; toastTimer.restart() }
-    function downloadStarted() { downloadsActive++; if (downloadsButton) downloadsButton.pulse() }
+    function downloadStarted(id) { _downloadsHere.push(id); downloadsNew = downloadsNew.concat([id]); if (downloadsButton) downloadsButton.pulse() }
 
     function showSidebar(which) { sidebar = (sidebar === which ? "" : which) }
 
@@ -974,7 +1005,7 @@ QQC2.ApplicationWindow {
         case "historySidebar": showSidebar("history"); break
         case "bookmarksLibrary": app.showLibrary("bookmarks"); break
         case "historyLibrary": app.showLibrary("history"); break
-        case "downloads": app.showLibrary("downloads"); break
+        case "downloads": downloadsNew = []; app.showLibrary("downloads"); break
         case "addons": app.showAddons(); break
         case "settings": app.showPreferences(); break
         default:

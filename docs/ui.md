@@ -32,7 +32,7 @@ BrowserWindow.qml
 │  ├─ NavigationToolbar      built from the "toolbar.items" setting
 │  │  ├─ LocationBar         address bar and its icons
 │  │  ├─ ExtensionButtons    extensions button and pinned extensions
-│  │  └─ DownloadsButton     downloads button and its panel of those under way
+│  │  └─ DownloadsButton     downloads button and its panel: those under way and newly ended
 │  ├─ BookmarksBar
 │  └─ TabStripSlot           tab bar, when below the address bar
 ├─ SideTabs (left and right) vertical tab list (TabStrip inside)

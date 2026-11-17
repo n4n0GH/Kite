@@ -112,7 +112,8 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   them). Paused while an extension such as uBlock Origin does the blocking.
 * **Passwords:** see below.
 * **Downloads:** a panel on the toolbar button with the downloads under way, to pause or cancel,
-  and the full list in the Library; Show in Folder opens the file manager with the file selected;
+  and the ones that ended since you last looked (the dot on the button), to open, show in their
+  folder or remove; the full list in the Library; Show in Folder opens the file manager with the file selected;
   notifications when one finishes, with a timeout of your choice; or an external download manager (like Falkon's: a program and its
   arguments, `%d` for the address), which private windows and saved pages leave out.
 * **Settings:** laid out like System Settings, with changes waiting for Apply (or Cancel) at the
