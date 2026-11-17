@@ -181,7 +181,9 @@ Bundles Qt, QtWebEngine and the KDE QML modules Kite uses (including the `org.kd
 Kirigami's desktop platform plugin and the Wayland client plugins) with
 [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and linuxdeploy-plugin-qt. Both are
 downloaded into `target/appimage-tools` on first use; set `LINUXDEPLOY` / `LINUXDEPLOY_PLUGIN_QT`
-to use your own copies, and `QMAKE` to pick the Qt to bundle.
+to use your own copies, and `QMAKE` to pick the Qt to bundle. The AppImage's own icon (`.DirIcon`) is
+a PNG made from the SVG with `rsvg-convert` or Inkscape; with neither installed the build says so and
+leaves it out.
 
 The AppImage also carries the build system's glibc and what's tied to it, in `usr/glibc`, and runs on
 those on systems with an older glibc. Everywhere else it uses the system's, as its graphics drivers

@@ -126,6 +126,31 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/i
 install -m755 "$BIN" "$APPDIR/usr/bin/kite"
 install -m644 "$ROOT/data/io.github.n4n0gh.kite.desktop" "$APPDIR/usr/share/applications/"
 install -m644 "$ROOT/data/io.github.n4n0gh.kite.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+# What software centres and AppImage catalogs describe Kite with: its licence, screenshot
+# and releases.
+install -Dm644 "$ROOT/data/io.github.n4n0gh.kite.metainfo.xml" "$APPDIR/usr/share/metainfo/io.github.n4n0gh.kite.metainfo.xml"
+
+# .DirIcon, the picture file managers and AppImage catalogs show for the file itself. It has
+# to be a PNG, which neither linuxdeploy nor appimagetool makes from an SVG.
+DIR_ICON=usr/share/icons/hicolor/256x256/apps/io.github.n4n0gh.kite.png
+render_icon() { # svg, png, size
+    if command -v rsvg-convert >/dev/null; then
+        rsvg-convert -w "$3" -h "$3" -o "$2" "$1"
+    elif command -v inkscape >/dev/null; then
+        inkscape --export-type=png --export-filename="$2" -w "$3" -h "$3" "$1" >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+NO_DIR_ICON="No .DirIcon: it needs rsvg-convert or inkscape to make a PNG of the icon. The AppImage works without it, but has no picture of its own in file managers, and AppImage catalogs reject it."
+mkdir -p "$APPDIR/$(dirname "$DIR_ICON")"
+if render_icon "$ROOT/data/io.github.n4n0gh.kite.svg" "$APPDIR/$DIR_ICON" 256 && [[ -s $APPDIR/$DIR_ICON ]]; then
+    ln -s "$DIR_ICON" "$APPDIR/.DirIcon"
+    NO_DIR_ICON=
+else
+    rm -rf "$APPDIR/usr/share/icons/hicolor/256x256"
+    say "$NO_DIR_ICON"
+fi
 
 # Things Kite loads at runtime that no QML file imports, so the QML scanner
 # can't see them: the org.kde.desktop Qt Quick Controls style (set in
@@ -299,6 +324,7 @@ add_own_glibc
 mkdir -p "$DIST"
 mv -f "$LDAI_OUTPUT" "$DIST/"
 say "Done: $DIST/$(basename "$LDAI_OUTPUT")"
+[[ -z $NO_DIR_ICON ]] || say "$NO_DIR_ICON"
 
 if [[ $ACTION == install ]]; then
     say "Installing"
