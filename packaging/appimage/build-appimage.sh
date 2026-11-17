@@ -22,6 +22,8 @@
 #   CARGO           cargo binary (default: cargo, or ~/.cargo/bin/cargo)
 #   KITE_TOOLS_DIR  where linuxdeploy is cached (default: target/appimage-tools)
 #   KITE_DIST_DIR   where the AppImage goes (default: dist)
+#   LDAI_UPDATE_INFORMATION  where AppImageUpdate finds a newer Kite (default: this
+#                   project's releases on GitHub; empty leaves it out)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -299,6 +301,11 @@ export QML_SOURCES_PATHS="$ROOT/crates/kite/qml:$EXTRA_QML"
 export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
 export LDAI_OUTPUT="$WORK/Kite-$VERSION-$ARCH.AppImage"
 export OUTPUT=$LDAI_OUTPUT
+# Where AppImageUpdate and the like find a newer Kite: the newest release on GitHub, with
+# pre-releases, which "latest" passes over. They fetch it through the .zsync file made here,
+# so that has to be published beside the AppImage.
+: "${LDAI_UPDATE_INFORMATION=gh-releases-zsync|n4n0GH|Kite|latest-all|Kite-*-$ARCH.AppImage.zsync}"
+if [[ -n $LDAI_UPDATE_INFORMATION ]]; then export LDAI_UPDATE_INFORMATION; else unset LDAI_UPDATE_INFORMATION; fi
 # What NSS loads at runtime from beside itself, which the scan can't see. Without it, a
 # system that doesn't happen to have them ends Kite at the first HTTPS connection.
 nss_modules=()
@@ -324,6 +331,10 @@ add_own_glibc
 mkdir -p "$DIST"
 mv -f "$LDAI_OUTPUT" "$DIST/"
 say "Done: $DIST/$(basename "$LDAI_OUTPUT")"
+if [[ -f $LDAI_OUTPUT.zsync ]]; then
+    mv -f "$LDAI_OUTPUT.zsync" "$DIST/"
+    say "With $(basename "$LDAI_OUTPUT").zsync, to publish beside it"
+fi
 [[ -z $NO_DIR_ICON ]] || say "$NO_DIR_ICON"
 
 if [[ $ACTION == install ]]; then

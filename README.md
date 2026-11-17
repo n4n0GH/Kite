@@ -185,6 +185,12 @@ to use your own copies, and `QMAKE` to pick the Qt to bundle. The AppImage's own
 a PNG made from the SVG with `rsvg-convert` or Inkscape; with neither installed the build says so and
 leaves it out.
 
+The AppImage says where a newer one is found (`gh-releases-zsync`, this project's newest release on
+GitHub, pre-releases included), so [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)
+and similar tools can update it. They fetch it through `dist/Kite-<version>-<arch>.AppImage.zsync`,
+which the build writes and a release has to carry beside the AppImage. `LDAI_UPDATE_INFORMATION` sets
+another place, and leaves it out when empty.
+
 The AppImage also carries the build system's glibc and what's tied to it, in `usr/glibc`, and runs on
 those on systems with an older glibc. Everywhere else it uses the system's, as its graphics drivers
 can need a newer one. Graphics, X11 and sound libraries always come from the system. `KITE_OWN_GLIBC=1`
