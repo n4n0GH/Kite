@@ -461,8 +461,10 @@ function run() {
         }
     }
     // Also those whose press went elsewhere: a hint's last letter is typed to the
-    // window, and let go of here.
+    // window, and let go of here. (Not a release the page sends itself, which no
+    // press came before: an app listening for those would never hear them.)
     function onKeyUp(e) {
+        if (!e.isTrusted) return
         if (held && held.code === e.code) releaseHeld()
         const seen = down.delete(e.code)
         if (!kept.delete(e.code) && seen) return
