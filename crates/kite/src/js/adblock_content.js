@@ -234,7 +234,10 @@
   // How often the page took it back: one that keeps at it would have this script and the
   // page answering each other for good, so after a while the element goes.
   const takenBack = new WeakMap();
+  // Whether anything was ever held: until then, and with no selectors, there's nothing to settle.
+  let anyHeld = false;
   function hold(el, why) {
+    anyHeld = true;
     if (!held.has(el)) held.set(el, why);
     if (inlineHidden(el)) return;
     const n = (takenBack.get(el) || 0) + 1;
@@ -252,22 +255,31 @@
     if (!hideSelector) return false;
     try { return el.matches(hideSelector); } catch (e) { return false; }
   };
-  // Showing itself the way the sheet can't overrule: by its own style attribute.
-  const insists = (el) => el.style && el.style.getPropertyPriority('display') === 'important' && el.style.getPropertyValue('display') !== 'none';
+  // Showing itself the way the sheet can't overrule: by its own style attribute. (Asked for
+  // first: `el.style` makes an object for every element it's read of.)
+  const insists = (el) => el.hasAttribute('style') && el.style && el.style.getPropertyPriority('display') === 'important' && el.style.getPropertyValue('display') !== 'none';
   // An element added or restyled: settled at once (observers run before the page is drawn
   // again or takes a click), so what a rule names never shows.
   function recheck(el) {
+    if (!anyHeld && !hideSelector) return;
     const why = held.get(el);
     if (why === 'procedural') hold(el, why);
     else if (why === 'css') { if (named(el)) hold(el, why); else release(el); }
     else if (insists(el) && named(el)) hold(el, 'css');
   }
-  // Now and then all of them, for the rest (a page's own !important rules).
+  // The rest (a page's own !important rules) shows only in what an element comes to: asked
+  // of those a rule names, new ones as they're looked at and all of them now and then.
+  function holdShown(els) {
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      if (!held.has(el) && getComputedStyle(el).display !== 'none') hold(el, 'css');
+    }
+  }
   function holdAll() {
     if (!hideSelector) return;
     let els;
     try { els = document.querySelectorAll(hideSelector); } catch (e) { return; }
-    for (const el of els) if (!held.has(el) && getComputedStyle(el).display !== 'none') hold(el, 'css');
+    holdShown(els);
   }
 
   const styled = new WeakSet();
@@ -302,19 +314,71 @@
   hideSelector = hide.join(',');
 
   // ---- generic rules, by the classes and ids found ----
-  const asked = new Set();
+  const askedClasses = new Set();
+  const askedIds = new Set();
+  // Whole class attributes read already: most elements of a page repeat a few of them.
+  const readClasses = new Set();
   const frame = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
   const newClasses = new Set();
   const newIds = new Set();
   function note(el) {
-    const id = el.id;
-    if (typeof id === 'string' && id && !asked.has('#' + id)) { asked.add('#' + id); newIds.add(id); }
-    const list = el.classList;
-    if (!list) return;
-    for (let i = 0; i < list.length; i++) {
-      const c = list[i];
-      if (!asked.has('.' + c)) { asked.add('.' + c); newClasses.add(c); }
+    const id = el.getAttribute('id');
+    if (id && !askedIds.has(id)) { askedIds.add(id); newIds.add(id); }
+    const classes = el.getAttribute('class');
+    if (!classes || readClasses.has(classes)) return;
+    if (readClasses.size >= 4096) readClasses.clear();
+    readClasses.add(classes);
+    for (const c of classes.split(/[ \t\n\f\r]+/)) {
+      if (c && !askedClasses.has(c)) { askedClasses.add(c); newClasses.add(c); }
     }
+  }
+  function noteAll(els) {
+    for (let i = 0; i < els.length; i++) note(els[i]);
+  }
+  // What the page added or renamed since the last look: read then, not as it happens (a page
+  // building itself adds thousands of elements, and takes many away again before anyone
+  // could ask about them). Past `LOOK_MOST` of them, the whole document is read instead.
+  const LOOK_MOST = 2000;
+  let added = [];
+  let renamed = [];
+  let whole = true;
+  function seen(list, el) {
+    if (whole) return;
+    if (added.length + renamed.length >= LOOK_MOST) { whole = true; added = []; renamed = []; return; }
+    list.push(el);
+  }
+  function look() {
+    const noting = !plan.generichide;
+    if (whole) {
+      whole = false;
+      if (noting) noteAll(document.querySelectorAll('[id],[class]'));
+      // (Which of them to hold is for `holdWhole`, after every look.)
+      return;
+    }
+    const wasRenamed = renamed, wasAdded = added;
+    renamed = [];
+    added = [];
+    // (What's inside something renamed is for `holdWhole` to find.)
+    for (const el of wasRenamed) {
+      if (!el.isConnected) continue;
+      if (noting) note(el);
+      holdNew(el, false);
+    }
+    for (const el of wasAdded) {
+      if (!el.isConnected) continue;
+      const inside = !!el.firstElementChild;
+      if (noting) { note(el); if (inside) noteAll(el.querySelectorAll('[id],[class]')); }
+      holdNew(el, inside);
+    }
+  }
+  // An element new to the page or newly named, and what's inside it: held if a rule names
+  // it and it shows all the same.
+  function holdNew(el, inside) {
+    if (!hideSelector) return;
+    try {
+      if (el.matches(hideSelector)) holdShown([el]);
+      if (inside) holdShown(el.querySelectorAll(hideSelector));
+    } catch (e) { /* (selectors that can't be read: `holdAll` leaves them too) */ }
   }
   function ask() {
     if (plan.generichide || (!newClasses.size && !newIds.size)) return;
@@ -330,28 +394,52 @@
     sheet.textContent += rule(readable);
     hideSelector += (hideSelector ? ',' : '') + readable.join(',');
     keepSheet();
-    holdAll();
+    // (Only the new ones: the others' elements were looked at as they came.)
+    try { holdShown(document.querySelectorAll(readable.join(','))); } catch (e) { /* (each was checked) */ }
   };
 
   // ---- watching ----
+  // Going through the whole document with every selector takes long on a large page (some
+  // microseconds an element), so it waits until the page has nothing to do (a second at
+  // most), and gets a hundredth of the time. What's new was looked at already; this is for
+  // what a change made of the elements around it.
+  let wholeWaiting = false;
+  let wholeNext = 0;
+  function holdWhole() {
+    wholeWaiting = false;
+    const started = performance.now();
+    holdAll();
+    const now = performance.now();
+    wholeNext = now + Math.max(250, (now - started) * 100);
+  }
+  function holdWholeSoon() {
+    if (!hideSelector || wholeWaiting) return;
+    wholeWaiting = true;
+    setTimeout(() => requestIdleCallback(holdWhole, { timeout: 1000 }), Math.max(0, wholeNext - performance.now()));
+  }
+
   let timer = 0;
   let lastCost = 0;
   function tick() {
     timer = 0;
     const started = performance.now();
     keepSheet();
+    look();
     ask();
     for (const p of procedural) { for (const el of select(p)) apply(p, el); }
-    holdAll();
     // (A page that changes all the time shouldn't take all the time.)
     lastCost = performance.now() - started;
+    holdWholeSoon();
   }
   function soon() {
     if (timer) return;
     timer = setTimeout(tick, Math.max(100, Math.min(2000, lastCost * 20)));
   }
-  function surveyAll() {
-    if (!plan.generichide) for (const el of document.querySelectorAll('[id],[class]')) note(el);
+  // The document as it stands: at the start, and once it's all there.
+  function loaded() {
+    whole = true;
+    added = [];
+    renamed = [];
     soon();
   }
   function watch() {
@@ -359,36 +447,36 @@
     keepSheet();
     new MutationObserver((records) => {
       let changed = false;
+      // (Nothing to settle while no rule names anything and nothing is held.)
+      const settle = anyHeld || hideSelector !== '';
       for (const r of records) {
         if (r.type === 'attributes') {
           // (Style changes come often, from animations: only held or insisting elements count.)
-          if (r.attributeName === 'style') { if (r.target.style) recheck(r.target); continue; }
-          changed = true;
-          if (!plan.generichide) note(r.target);
-          if (r.target.style) recheck(r.target);
+          if (r.attributeName !== 'style') { changed = true; seen(renamed, r.target); }
+          if (settle) recheck(r.target);
           continue;
         }
         changed = true;
-        for (const n of r.addedNodes) {
+        const nodes = r.addedNodes;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
           if (n.nodeType !== 1) continue;
-          if (!plan.generichide) {
-            note(n);
-            if (n.firstElementChild) for (const el of n.querySelectorAll('[id],[class]')) note(el);
-          }
-          if (n.style) recheck(n);
-          if (n.firstElementChild) for (const el of n.querySelectorAll('[style]')) recheck(el);
+          seen(added, n);
+          if (!settle) continue;
+          recheck(n);
+          if (n.firstElementChild) { const inside = n.querySelectorAll('[style]'); for (let j = 0; j < inside.length; j++) recheck(inside[j]); }
         }
       }
       if (changed) soon();
     }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'id', 'style'] });
-    surveyAll();
+    loaded();
     return true;
   }
   if (!watch()) {
     const wait = new MutationObserver(() => { if (watch()) wait.disconnect(); });
     wait.observe(document, { childList: true });
   }
-  document.addEventListener('DOMContentLoaded', surveyAll, { once: true });
+  document.addEventListener('DOMContentLoaded', loaded, { once: true });
 
   if (KITE_AB.test) KITE_AB.test({ parseProcedural, fromEngine, select, recheck, held });
 })();

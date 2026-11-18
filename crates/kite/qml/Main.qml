@@ -836,6 +836,10 @@ QtObject {
         const header = "// ==UserScript==\n// @match *://" + host + "/*\n// ==/UserScript==\n"
         const out = []
         if (plan.script !== "") out.push({name: "kite:ab:page:" + host, worldId: 0, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + plan.script})
+        // Nothing to hide here, and no generic rules to ask about (the lists turn those off for
+        // some sites, such as github.com): no script, which would watch every change of the
+        // page for nothing.
+        if (plan.generichide && plan.hide.length === 0 && plan.procedural.length === 0) return out
         const given = {host: host, secret: frameSecret, plan: {hide: plan.hide, procedural: plan.procedural, generichide: plan.generichide, exceptions: plan.exceptions}}
         out.push({name: "kite:ab:cosmetic:" + host, worldId: 1, runsOnSubFrames: true, injectionPoint: 0, sourceCode: header + "(() => {\nconst KITE_AB = " + JSON.stringify(given) + ";\n" + Browser.adblockContentScript() + "\n})();"})
         return out

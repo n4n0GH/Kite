@@ -98,6 +98,7 @@ function element(selectorMatched, display = '', priority = '') {
   return {
     removed: false,
     matches: () => selectorMatched,
+    hasAttribute: (name) => name === 'style' && decl.display !== '',
     remove() { this.removed = true; },
     style: {
       getPropertyValue: (p) => (p === 'display' ? decl.display : ''),
@@ -145,4 +146,136 @@ test('an element taken back over and over goes', () => {
     el.style.setProperty('display', 'block', 'important');
   }
   assert.ok(el.removed);
+});
+
+// ---- watching the page ----
+// The script with a page's changes to be told of (`changed`), its timers to let run (`look`)
+// and the idle moment it waits for (`idle`). `page.query`: what the document finds for a selector.
+function watching(plan = {}) {
+  let api = null;
+  const sent = [], timers = [], idles = [], observers = [], queries = [];
+  const page = { query: () => [] };
+  const sandbox = {
+    KITE_AB: { host: 'news.test', secret: 'S', plan: { hide: [], procedural: [], generichide: false, exceptions: [], ...plan }, test: (a) => { api = a; } },
+    location: { hostname: 'news.test' },
+    CSS: { supports: () => true },
+    crypto: { getRandomValues: (a) => a },
+    console: { debug: (m) => sent.push(JSON.parse(m.slice('Sab:'.length))) },
+    MutationObserver: class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} disconnect() {} },
+    setTimeout: (f) => timers.push(f),
+    clearTimeout() {},
+    requestIdleCallback: (f) => idles.push(f),
+    getComputedStyle: (el) => ({ display: el.decl.display || (el.sheetHides ? 'none' : 'block') }),
+    performance,
+    document: {
+      documentElement: { appendChild() {} },
+      head: null,
+      createElement: () => ({ textContent: '', isConnected: false }),
+      addEventListener() {},
+      querySelectorAll: (selector) => { queries.push(selector); return page.query(selector); },
+    },
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  const run = (list) => { for (const f of list.splice(0)) f(); };
+  const w = {
+    api, sent, queries, page, sandbox,
+    changed: (records) => observers[0].cb(records),
+    look: () => run(timers),
+    idle: () => run(idles),
+  };
+  // (The first look is at the document as it was found.)
+  w.look();
+  queries.length = 0;
+  return w;
+}
+// An element of such a page. `named`: a hiding rule names it; `sheetHides`: and the sheet gets its way.
+function node({ id = null, classes = null, inside = [], connected = true, named = false, sheetHides = true } = {}) {
+  const el = element(named);
+  return Object.assign(el, {
+    nodeType: 1,
+    isConnected: connected,
+    sheetHides: named && sheetHides,
+    firstElementChild: inside[0] || null,
+    getAttribute: (name) => (name === 'id' ? id : name === 'class' ? classes : null),
+    querySelectorAll: (selector) => (selector === '[style]' ? [] : selector === '[id],[class]' ? inside : inside.filter((e) => e.matches())),
+  });
+}
+const adding = (...nodes) => ({ type: 'childList', addedNodes: nodes });
+const renaming = (target) => ({ type: 'attributes', attributeName: 'class', target });
+
+test('classes and ids are asked about at the next look, each once', () => {
+  const w = watching();
+  w.changed([adding(node({ id: 'top', classes: 'box  wide', inside: [node({ classes: 'ad-slot' })] }))]);
+  assert.strictEqual(w.sent.length, 0, 'not as it happens');
+  w.look();
+  assert.deepStrictEqual(plain(w.sent), [{ f: w.sent[0].f, c: ['box', 'wide', 'ad-slot'], i: ['top'], x: [] }]);
+  w.changed([adding(node({ id: 'top', classes: 'wide box' }), node({ classes: 'ad-slot' }))]);
+  w.look();
+  assert.strictEqual(w.sent.length, 1);
+  w.changed([renaming(node({ classes: 'box open' }))]);
+  w.look();
+  assert.deepStrictEqual(plain(w.sent[1].c), ['open']);
+});
+
+test('what the page took away again before the look is not asked about', () => {
+  const w = watching();
+  w.changed([adding(node({ classes: 'gone', connected: false }), node({ classes: 'here' }))]);
+  w.look();
+  assert.deepStrictEqual(plain(w.sent[0].c), ['here']);
+});
+
+test('after very many changes the whole document is read once instead', () => {
+  const w = watching();
+  const many = [];
+  for (let i = 0; i < 2500; i++) many.push(node({ classes: 'row' }));
+  w.page.query = (selector) => (selector === '[id],[class]' ? [node({ classes: 'row' }), node({ id: 'list' })] : []);
+  w.changed([adding(...many)]);
+  w.look();
+  assert.deepStrictEqual(w.queries, ['[id],[class]']);
+  assert.deepStrictEqual(plain([w.sent[0].c, w.sent[0].i]), [['row'], ['list']]);
+});
+
+test('nothing is asked where generic rules are off', () => {
+  const w = watching({ generichide: true, hide: ['.ad'] });
+  w.changed([adding(node({ classes: 'box' }))]);
+  w.look();
+  assert.strictEqual(w.sent.length, 0);
+});
+
+test('a new element a rule names that the page keeps shown is held at the next look', () => {
+  const w = watching({ hide: ['.ad'] });
+  const forced = node({ classes: 'ad d-block', named: true, sheetHides: false });
+  const hidden = node({ classes: 'ad', named: true });
+  const within = node({ classes: 'ad d-flex', named: true, sheetHides: false });
+  w.changed([adding(forced, hidden, node({ inside: [within] }))]);
+  w.look();
+  assert.deepStrictEqual(forced.decl, { display: 'none', priority: 'important' });
+  assert.deepStrictEqual(hidden.decl, { display: '', priority: '' });
+  assert.deepStrictEqual(within.decl, { display: 'none', priority: 'important' });
+  assert.ok(!w.queries.includes('.ad'), 'without going through the document');
+});
+
+test('the whole document is gone through when the page has nothing to do', () => {
+  const w = watching({ hide: ['.ad'] });
+  const old = node({ classes: 'ad', named: true, sheetHides: false });
+  w.page.query = (selector) => (selector === '.ad' ? [old] : []);
+  w.changed([renaming(node({ classes: 'theme-b' }))]);
+  w.look();
+  w.look();
+  assert.strictEqual(old.decl.display, '', 'not yet');
+  w.idle();
+  assert.deepStrictEqual(old.decl, { display: 'none', priority: 'important' });
+});
+
+test('selectors that come later hold what they name', () => {
+  const w = watching();
+  const old = node({ classes: 'sponsor', named: true, sheetHides: false });
+  w.changed([adding(old)]);
+  w.look();
+  w.page.query = (selector) => (selector === '.sponsor' ? [old] : []);
+  w.sandbox.__kiteAbFill(w.sent[0].f, ['.sponsor']);
+  assert.deepStrictEqual(old.decl, { display: 'none', priority: 'important' });
+  assert.deepStrictEqual(w.queries, ['.sponsor']);
 });
