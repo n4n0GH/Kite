@@ -2336,6 +2336,8 @@ ManagerWindow {
                 Hint { text: "With this enabled, the add-on site shows “Add to Firefox” buttons; clicking one installs the add-on into Kite." }
                 Check { enabled: extensionsOn.checked; text: "Let other sites offer add-ons to install"; key: "extensions.siteInstalls" }
                 Hint { text: "Kite always asks first, and says which site offered it. With this off, add-on files from sites other than addons.mozilla.org download like any other file." }
+                Check { Kirigami.FormData.label: "Running:"; enabled: extensionsOn.checked; text: "Tell extensions that they run in Firefox"; key: "extensions.firefoxUserAgent" }
+                Hint { text: "Kite's extensions are the ones made for Firefox, and some check which browser they are in before they choose how to work. Web pages are told nothing different. Changing this starts the extensions again." }
             }
         }
     }

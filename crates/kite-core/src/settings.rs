@@ -166,6 +166,7 @@ pub fn defaults() -> Map<String, Value> {
         // Extensions
         "extensions.enabled": true,
         "extensions.amoSpoofFirefox": true,
+        "extensions.firefoxUserAgent": true,
         "extensions.siteInstalls": true,
         "extensions.unpinned": [],
         // Window

@@ -340,7 +340,8 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             return (403, "text/plain".into(), vec![]);
         }
         let token = rt.token_of(&ext.info.id).unwrap_or("").to_owned();
-        return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js(), rt.blocking.port()).into_bytes());
+        let firefox_ua = app().shared.settings().get_bool("extensions.firefoxUserAgent").then_some(kite_core::util::FIREFOX_USER_AGENT);
+        return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js(), rt.blocking.port(), firefox_ua).into_bytes());
     }
     if path == scripts::BACKGROUND_PAGE {
         return match scripts::background_page(ext) {

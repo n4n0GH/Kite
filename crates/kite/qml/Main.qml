@@ -315,6 +315,8 @@ QtObject {
             if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent", "web.unblockContextMenu", "web.unblockSelection"].includes(key)) app.installUserScripts()
             // (As the switch in Settings does; the welcome page's levels change it too.)
             if (key === "extensions.enabled") { app.installUserScripts(); app.backgroundHost.reload() }
+            // (What their pages say they run in: the background pages are loaded again to read it.)
+            if (key === "extensions.firefoxUserAgent") app.backgroundHost.reload()
             if (key.startsWith("plugins.")) {
                 app.pluginActions = app.enabledPluginActions()
                 app.installUserScripts()

@@ -20,6 +20,7 @@ pub const BRIDGE: &str = include_str!("js/bridge.js");
 pub const FORMS: &str = include_str!("js/forms.js");
 pub const FRAME_TRANSPORT: &str = include_str!("js/frame_transport.js");
 pub const CORS_SHIM: &str = include_str!("js/cors_shim.js");
+pub const FIREFOX_NAVIGATOR: &str = include_str!("js/firefox_navigator.js");
 /// Loaded right after Qt's qwebchannel.js (see the file).
 pub const QWEBCHANNEL_PATCH: &str = include_str!("js/qwebchannel_patch.js");
 
@@ -59,10 +60,14 @@ fn with_cfg(transport: &str, cfg: &Value) -> String {
 
 /// `/__kite__/api.js` for extension pages. `blocking_port` is the
 /// [`super::blocking::BlockingHub`] port (0: blocking webRequest unavailable).
-pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str, blocking_port: u16) -> String {
+/// `firefox_user_agent`: what the page's scripts read as the browser's
+/// ("extensions.firefoxUserAgent"); `None` leaves them the engine's own.
+pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str, blocking_port: u16, firefox_user_agent: Option<&str>) -> String {
     let mut cfg = ext_cfg(ext, token, "page");
     cfg["blockingPort"] = blocking_port.into();
-    format!("{qwebchannel_js}\n;{QWEBCHANNEL_PATCH}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n", with_cfg(PAGE_TRANSPORT, &cfg))
+    // First, before anything of the extension's can look.
+    let firefox = firefox_user_agent.map(|ua| format!("{FIREFOX_NAVIGATOR}\n;__kiteFirefoxNavigator({});\n", serde_json::to_string(ua).unwrap())).unwrap_or_default();
+    format!("{firefox}{qwebchannel_js}\n;{QWEBCHANNEL_PATCH}\n;{API_CORE}\n;{CORS_SHIM}\n;{}\n", with_cfg(PAGE_TRANSPORT, &cfg))
 }
 
 /// Code that makes sure `browser`/`chrome` exist in the extension's
@@ -323,6 +328,13 @@ mod tests {
         assert_eq!(dynamic.len(), 2);
         assert!(dynamic[1].source.contains("1+1"));
         assert!(bridge_js(&["t1".into()], "/*qwc*/").contains("[\"t1\"]"));
+        // An extension page says it is Firefox's before anything else runs, or not at all.
+        let api = page_api_js(e, "tok", "/*qwc*/", 0, Some("Mozilla/5.0 (X11) \"Firefox\"/140.0"));
+        assert!(api.starts_with("// Extension pages tell their extension"));
+        let call = api.find(r#"__kiteFirefoxNavigator("Mozilla/5.0 (X11) \"Firefox\"/140.0");"#).unwrap();
+        assert!(call < api.find("/*qwc*/").unwrap());
+        let plain = page_api_js(e, "tok", "/*qwc*/", 0, None);
+        assert!(plain.starts_with("/*qwc*/") && !plain.contains("__kiteFirefoxNavigator"));
     }
 
     #[test]

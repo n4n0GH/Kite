@@ -72,6 +72,7 @@ const TOGGLES = [
     {page: "extensions", text: "Enable WebExtensions", key: "extensions.enabled"},
     {page: "extensions", text: "Identify as Firefox on addons.mozilla.org", key: "extensions.amoSpoofFirefox"},
     {page: "extensions", text: "Let other sites offer add-ons to install", key: "extensions.siteInstalls"},
+    {page: "extensions", text: "Tell extensions that they run in Firefox", key: "extensions.firefoxUserAgent"},
 ]
 
 // Settings that take more than a switch: these open their page.
