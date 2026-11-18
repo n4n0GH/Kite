@@ -28,7 +28,7 @@ RowLayout {
     // Where an extension's popup opens: its toolbar button, or the puzzle
     // button for extensions kept in the panel.
     function buttonFor(extId) {
-        for (let i = 0; i < rep.count; ++i) if (rep.itemAt(i).modelData.ext === extId) return rep.itemAt(i)
+        for (let i = 0; i < rep.count; ++i) if (rep.itemAt(i).modelData === extId) return rep.itemAt(i)
         return puzzle
     }
     // Clicking an extension's button (or its row in the panel).
@@ -39,12 +39,23 @@ RowLayout {
         else Extensions.actionClicked(action.ext, "browserAction", tabId)
     }
 
+    // The pinned extensions, by id, and the same list for as long as the same ones are
+    // pinned. A Repeater makes all its buttons anew with every list it is given, and an
+    // extension's open popup goes with its button: one changing its icon or title while
+    // its popup was open closed it (Bitwarden does while logging in, which cut that short).
+    property var pinnedIds: []
+    readonly property var pinnedNow: actions.filter(a => isPinned(a.ext)).map(a => a.ext)
+    onPinnedNowChanged: if (JSON.stringify(pinnedNow) !== JSON.stringify(pinnedIds)) pinnedIds = pinnedNow
+
     Repeater {
         id: rep
-        model: root.actions.filter(a => root.isPinned(a.ext))
+        model: root.pinnedIds
         delegate: QQC2.ToolButton {
             id: btn
-            required property var modelData
+            required property string modelData
+            // (Empty for the moment between an extension going and the list following.)
+            // ("ext", not "action": a button has an action of its own.)
+            readonly property var ext: root.actionFor(modelData) || ({})
             // As tall as the toolbar, like its other buttons and the address bar.
             Layout.fillHeight: true
             // Drawn pressed in while its popup is open.
@@ -53,18 +64,18 @@ RowLayout {
             checked: popupOpen
             // (A click on a checkable button switches it by itself; it follows the popup again.)
             onToggled: checked = Qt.binding(() => btn.popupOpen)
-            enabled: modelData.enabled !== false
-            icon.source: modelData.icon || ""
-            icon.name: modelData.icon ? "" : "kite-extension"
+            enabled: ext.enabled !== false
+            icon.source: ext.icon || ""
+            icon.name: ext.icon ? "" : "kite-extension"
             icon.color: "transparent"
             display: QQC2.AbstractButton.IconOnly
-            text: modelData.title
-            QQC2.ToolTip.text: modelData.title
+            text: ext.title || ""
+            QQC2.ToolTip.text: ext.title || ""
             QQC2.ToolTip.visible: hovered && !popupOpen
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-            onClicked: root.trigger(modelData, btn)
-            TapHandler { acceptedButtons: Qt.RightButton; onTapped: { panel.close(); root.openMenu(btn.modelData.ext, true, true, btn, 0, btn.height) } }
-            Badge { action: btn.modelData }
+            onClicked: root.trigger(ext, btn)
+            TapHandler { acceptedButtons: Qt.RightButton; onTapped: { panel.close(); root.openMenu(btn.modelData, true, true, btn, 0, btn.height) } }
+            Badge { action: btn.ext }
         }
     }
 
