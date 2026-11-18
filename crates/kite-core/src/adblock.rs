@@ -443,7 +443,7 @@ impl AdBlock {
 
 
 fn fetch(url: &str) -> anyhow::Result<String> {
-    let mut resp = ureq::get(url).header("User-Agent", crate::webext::amo::USER_AGENT).call()?;
+    let mut resp = crate::net::agent().get(url).header("User-Agent", crate::webext::amo::USER_AGENT).call()?;
     Ok(resp.body_mut().with_config().limit(64 * 1024 * 1024).read_to_string()?)
 }
 

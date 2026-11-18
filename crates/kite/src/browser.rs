@@ -2397,7 +2397,7 @@ impl qobject::Browser {
 }
 
 fn ureq_get(url: &str) -> String {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(4))).build().into();
+    let agent: ureq::Agent = kite_core::net::config().timeout_global(Some(std::time::Duration::from_secs(4))).build().into();
     agent
         .get(url)
         .header("User-Agent", kite_core::webext::amo::USER_AGENT)

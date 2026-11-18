@@ -97,7 +97,7 @@ pub fn parse_addon(v: &Value) -> AmoAddon {
 }
 
 fn get_json(url: &str) -> anyhow::Result<Value> {
-    let mut resp = ureq::get(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").call()?;
+    let mut resp = crate::net::agent().get(url).header("User-Agent", USER_AGENT).header("Accept", "application/json").call()?;
     Ok(resp.body_mut().read_json()?)
 }
 
@@ -139,7 +139,7 @@ pub fn download(url: &str, expected_hash: &str) -> anyhow::Result<Vec<u8>> {
     if parsed.scheme() != "https" {
         anyhow::bail!("refusing to download add-on over insecure connection");
     }
-    let mut resp = ureq::get(url).header("User-Agent", USER_AGENT).call()?;
+    let mut resp = crate::net::agent().get(url).header("User-Agent", USER_AGENT).call()?;
     let bytes = resp.body_mut().with_config().limit(256 * 1024 * 1024).read_to_vec()?;
     if let Some(hex) = expected_hash.strip_prefix("sha256:") {
         let got = sha256_hex(&bytes);

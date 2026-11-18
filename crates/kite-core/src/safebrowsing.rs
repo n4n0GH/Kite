@@ -665,12 +665,12 @@ fn parse_duration(s: Option<&str>) -> Option<Duration> {
 }
 
 fn fetch(url: &str) -> anyhow::Result<String> {
-    let mut resp = ureq::get(url).header("User-Agent", "Kite").call()?;
+    let mut resp = crate::net::agent().get(url).header("User-Agent", "Kite").call()?;
     Ok(resp.body_mut().with_config().limit(64 * 1024 * 1024).read_to_string()?)
 }
 
 fn post(url: &str, body: &Value, timeout: Duration) -> anyhow::Result<Value> {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(timeout)).http_status_as_error(false).build().into();
+    let agent: ureq::Agent = crate::net::config().timeout_global(Some(timeout)).http_status_as_error(false).build().into();
     let mut resp = agent.post(url).header("Content-Type", "application/json").send(body.to_string())?;
     let status = resp.status();
     let text = resp.body_mut().with_config().limit(64 * 1024 * 1024).read_to_string()?;

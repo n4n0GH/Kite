@@ -745,7 +745,7 @@ fn native_fetch(d: &Value) -> Result<Value, String> {
     use base64::Engine;
     let url = d["url"].as_str().unwrap_or_default();
     let method = d["method"].as_str().unwrap_or("GET").to_uppercase();
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = kite_core::net::config()
         .http_status_as_error(false)
         .timeout_global(Some(std::time::Duration::from_secs(60)))
         .build()
@@ -808,7 +808,7 @@ fn native_download(d: &Value) -> Result<Value, String> {
                     percent_encoding::percent_decode_str(data).collect()
                 });
             }
-            let mut r = ureq::get(&url).header("User-Agent", amo::USER_AGENT).call()?;
+            let mut r = kite_core::net::agent().get(&url).header("User-Agent", amo::USER_AGENT).call()?;
             Ok(r.body_mut().with_config().limit(4 * 1024 * 1024 * 1024).read_to_vec()?)
         })();
         let state = match result.and_then(|b| {

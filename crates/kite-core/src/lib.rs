@@ -25,6 +25,7 @@ pub mod instance;
 pub mod kwallet;
 pub mod kwin;
 pub mod midi;
+pub mod net;
 pub mod formfill;
 pub mod passwords;
 pub mod plugins;
