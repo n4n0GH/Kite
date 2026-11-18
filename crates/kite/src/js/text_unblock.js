@@ -32,6 +32,10 @@
     return s.toString().trim() ? s : null;
   }
 
+  // (All listeners go in at the start, though each is a little time on every such event a
+  // page sends itself: put in later they'd come after the page's own on the window, which
+  // could then cancel the key or the selection first.)
+
   // ---- copying ----
   for (const type of ['copy', 'cut']) {
     window.addEventListener(type, (e) => { if (e.isTrusted && textSelection()) e.stopImmediatePropagation(); }, true);

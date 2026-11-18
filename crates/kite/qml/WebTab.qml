@@ -754,6 +754,9 @@ Item {
                 settings.dnsPrefetchEnabled: wt.app.liveSettings["web.dnsPrefetch"]
                 // WebRTC only uses (and so reveals) public network addresses.
                 settings.webRTCPublicInterfacesOnly: !!wt.app.liveSettings["privacy.webrtcPublicOnly"]
+                // <a ping> beacons, sent as a link is clicked: only when the user lets them.
+                // (Other views never send them: the engine doesn't unless told to.)
+                settings.hyperlinkAuditingEnabled: wt.app.liveSettings["privacy.blockPings"] === false
                 settings.printElementBackgrounds: wt.app.liveSettings["web.printBackgrounds"]
                 settings.fullScreenSupportEnabled: true
                 // (Only the shown tab: one loading behind it mustn't take the keyboard.)

@@ -26,7 +26,11 @@
     if (e.clientX !== undefined) Object.assign(at, { clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY, buttons: e.buttons });
     Object.assign(at, { ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
   };
-  for (const t of ['mousemove', 'mousedown', 'mouseup', 'keydown', 'keyup']) addEventListener(t, note, { capture: true, passive: true });
+  for (const t of ['mousemove', 'mousedown', 'mouseup']) addEventListener(t, note, { capture: true, passive: true });
+  // Keys only while the pointer is locked, for the modifiers held meanwhile (until then
+  // they're as the last click had them). Pages send themselves key events by the thousand,
+  // and each listener is time the engine spends on every one.
+  const keys = (on) => { for (const t of ['keydown', 'keyup']) (on ? addEventListener : removeEventListener)(t, note, { capture: true }); };
   // While locked, movement comes only from Kite. The browser's own move events
   // keep coming as the page redraws (Qt Quick sends the pointer's last position
   // again, with no button held), and Chromium gives them a small movement, which
@@ -39,6 +43,7 @@
   function release() {
     if (!locked) return false;
     locked = null;
+    keys(false);
     restX = restY = 0;
     changed();
     return true;
@@ -78,6 +83,7 @@
       if (!p.el.isConnected) { send(EXIT, {}); failed(); p.reject(new DOMException('The element was removed.', 'WrongDocumentError')); return; }
       const before = locked;
       locked = p.el;
+      keys(true);
       restX = restY = 0;
       if (before !== locked) changed();
       p.resolve();

@@ -29,11 +29,17 @@ function page({ activated = true } = {}) {
   const document = new Document();
   document.hidden = false;
   const window = new EventTarget();
+  // (What the script listens to on the window, by type.)
+  const listened = {};
+  const listen = (by) => (type, ...rest) => {
+    listened[type] = (listened[type] || 0) + by;
+    return (by > 0 ? EventTarget.prototype.addEventListener : EventTarget.prototype.removeEventListener).call(window, type, ...rest);
+  };
   const up = [];
   const userActivation = { isActive: activated };
   const globals = {
     Element, Document, ShadowRoot, MouseEvent, PointerEvent, document, window,
-    addEventListener: window.addEventListener.bind(window),
+    addEventListener: listen(1), removeEventListener: listen(-1),
     console: { debug: (m) => up.push(m) },
     navigator: { userActivation },
   };
@@ -49,7 +55,7 @@ function page({ activated = true } = {}) {
   const el = new Element(document);
   const moves = [];
   for (const t of ['pointermove', 'mousemove']) el.addEventListener(t, (e) => moves.push([t, e.movementX, e.movementY]));
-  return { document, window, el, kite, sent, events, moves, userActivation, Element, MouseEvent };
+  return { document, window, el, kite, sent, events, moves, userActivation, Element, MouseEvent, listened };
 }
 
 test('a page can lock the pointer only on a click', async () => {
@@ -168,4 +174,33 @@ test("the browser's own movement doesn't reach the page while locked", async () 
   p.kite('lost', {});
   real(-2);
   assert.deepStrictEqual(seen, [-1, -2]);
+});
+
+test('keys are listened to only while the pointer is locked', async () => {
+  const p = page();
+  const held = [];
+  p.el.addEventListener('mousemove', (e) => held.push(e.shiftKey));
+  const key = (type, shiftKey) => {
+    const e = new Event(type);
+    Object.assign(e, { shiftKey, ctrlKey: false, altKey: false, metaKey: false });
+    Object.defineProperty(e, 'isTrusted', { value: true });
+    p.window.dispatchEvent(e);
+  };
+  const keys = () => (p.listened.keydown || 0) + (p.listened.keyup || 0);
+  // Not before: pages send themselves key events in numbers, and each listener costs them.
+  assert.strictEqual(keys(), 0);
+  const asked = p.el.requestPointerLock();
+  const [lock] = p.sent();
+  p.kite('answer', { id: lock.a.id, error: '' });
+  await asked;
+  assert.strictEqual(keys(), 2);
+  // Shift pressed and let go while locked goes out with the movement.
+  p.kite('move', [3, 0]);
+  key('keydown', true);
+  p.kite('move', [3, 0]);
+  key('keyup', false);
+  p.kite('move', [3, 0]);
+  assert.deepStrictEqual(held, [false, true, false]);
+  p.kite('lost', {});
+  assert.strictEqual(keys(), 0);
 });

@@ -300,7 +300,7 @@ QtObject {
     // right away.
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "web.pdfViewer", "appearance.forceDarkMode",
-        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.enabled", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.privateWindowColor", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
+        "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.enabled", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.blockPings", "privacy.privateWindowColor", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
     readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
@@ -312,7 +312,7 @@ QtObject {
                 app.liveSettings = o
             }
             if (app.profileKeys.includes(key)) for (const p of app.allProfiles()) app.applyProfileSettings(p)
-            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.blockPings", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent", "web.unblockContextMenu", "web.unblockSelection"].includes(key)) app.installUserScripts()
+            if (["web.doNotTrack", "privacy.globalPrivacyControl", "privacy.antiFingerprinting", "web.googleSignIn", "web.localStorage", "web.userAgent", "web.unblockContextMenu", "web.unblockSelection"].includes(key)) app.installUserScripts()
             // (As the switch in Settings does; the welcome page's levels change it too.)
             if (key === "extensions.enabled") { app.installUserScripts(); app.backgroundHost.reload() }
             if (key.startsWith("plugins.")) {
@@ -778,11 +778,8 @@ QtObject {
             if (setting("privacy.globalPrivacyControl"))
                 wanted.push({name: "kite:gpc", worldId: 0, runsOnSubFrames: true, injectionPoint: 0,
                              sourceCode: "Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get() { return true; }, configurable: true, enumerable: true });"})
-            // <a ping> beacons: the attribute is dropped as a link is clicked
-            // (blocking "ping" requests would also stop navigator.sendBeacon).
-            if (setting("privacy.blockPings"))
-                wanted.push({name: "kite:noPings", worldId: 1, runsOnSubFrames: true, injectionPoint: 0,
-                             sourceCode: "for (const t of ['click', 'auxclick']) document.addEventListener(t, e => { const a = e.target instanceof Element && e.target.closest('a[ping], area[ping]'); if (a) a.removeAttribute('ping'); }, true);"})
+            // (<a ping> beacons need no script: the engine sends them only when asked to,
+            // WebTab.qml.)
             // Another browser's user agent chosen for all sites: pages see it too, in
             // all their frames, before their scripts (a site's own comes after it, so wins).
             const identity = Browser.globalIdentityScript()
