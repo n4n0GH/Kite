@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.4" date="2026-11-18">
+      <description>
+        <p>An extension's popup stays open when the extension changes its toolbar button. Before, it closed, which cut Bitwarden's login short: the account then showed as locked and could not be unlocked ("KDF parameters are required"). If yours is in that state, log out on the lock screen and log in again.</p>
+      </description>
+    </release>
     <release version="0.10.3" date="2026-11-18">
       <description>
         <p>Web apps run faster: the scripts Kite adds to every page for its content blocker, saved logins and autofill, overlay scrollbars, link pings and pointer lock no longer slow down the page's own work (Speedometer 3.1 went from about 23.7 to about 26.8 on the same engine). With the Vim keys plugin on, pages get the key releases they send themselves again, which some web apps rely on. "Block link click pings" is now the engine's own switch: unticked, such pings are really sent. The AppImage now comes with QtWebEngine 6.140, with Chromium's security fixes up to version 157.</p>
