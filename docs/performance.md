@@ -1,34 +1,42 @@
 # Performance report, November 2026
 
-Kite measured against Falkon and Firefox on 2026-11-16: startup, memory, idle CPU and Speedometer,
-and memory in more detail with a second benchmark. The detailed benchmark found two things in Kite
-that cost memory for every open tab. Both are changed in Kite 0.10.1, which is what the numbers
-here are of unless they say 0.10.0. (It was measured as a build of 0.10.0 with these two changes,
-before it was given its version.)
+Kite measured against Falkon and Firefox: startup, memory, idle CPU and Speedometer, and memory in
+more detail with a second benchmark.
+
+- The general comparison is of Kite 0.10.3, on 2026-11-18.
+- The detailed memory benchmark is of Kite 0.10.1, on 2026-11-16, and was not run again. (0.10.1
+  was measured as a build of 0.10.0 with the two changes below, before it was given its version.)
+
+Both found things in Kite that every page paid for: memory for every open tab, changed in 0.10.1,
+and time for every change a page makes to itself, changed in 0.10.3.
 
 ## Summary
 
-- **Startup:** Kite opens a page 0.68 s after launch, Falkon after 0.65 s, Firefox after 1.15 s.
-- **Idle CPU:** with five sites open, Kite uses 2.5 % of a core, Falkon 7.9 %, Firefox 8.2 %.
-- **Memory:** Kite uses less than Firefox with any number of pages open (11 to 36 % less). Falkon
+- **Startup:** Kite opens a page 0.68 s after launch, Falkon after 0.64 s, Firefox after 1.07 s.
+- **Idle CPU:** with five sites open, Kite uses 2.9 % of a core, Falkon 7.9 %, Firefox 8.7 %.
+- **Speedometer 3.1:** Kite scores 25.8, Falkon 25.2, Firefox 24.6 (medians of four runs). Kite
+  0.10.2 scored about 23.7 where 0.10.3 scored about 26.8, both on the engine of two days before.
+- **Memory (0.10.1):** Kite uses less than Firefox with any number of pages open (11 to 36 % less). Falkon
   uses less than Kite except on ad-heavy pages: 311 against 435 MiB with no page open, and 2028
   against 2259 MiB with 19 pages.
-- **Memory per page:** on three of the four sets of pages an extra page costs Kite 2 to 7 MiB more
+- **Memory per page (0.10.1):** on three of the four sets of pages an extra page costs Kite 2 to 7 MiB more
   than Falkon (65, 122 and 96 MiB), on ad-heavy pages 57 MiB less. In Kite 0.10.0 those three were
   82, 145 and 106 MiB.
-- **Speedometer 3.1:** Kite scores 23.4 and 23.5 in two runs, Firefox 23.4 and 24.0, Falkon 26.7
-  and 26.3.
 
 ## Setup
 
-| | |
-|---|---|
-| Machine | AMD Ryzen 9 7900X3D (12 cores), 62 GiB RAM, AMD Radeon RX 7900 XTX |
-| System | openSUSE Tumbleweed 20261111, Linux 7.3.3, KWin 6.8.2 (Wayland) |
-| Kite | 0.10.0 (the released AppImage), and 0.10.1: 0.10.0 with tab pieces made on demand and a lighter scrollbar script (see [What was found and changed](#what-was-found-and-changed)), as an AppImage in the detailed benchmark and as its release binary in the general comparison |
-| Falkon | 26.08.3, the distribution's package |
-| Firefox | 158.0.1, the distribution's package |
-| Engines | Kite and Falkon: QtWebEngine 6.11.2 (Chromium 140). Firefox: Gecko |
+Machine: AMD Ryzen 9 7900X3D (12 cores), 62 GiB RAM, AMD Radeon RX 7900 XTX.
+
+| | General comparison, 2026-11-18 | Memory in detail, 2026-11-16 |
+|---|---|---|
+| System | openSUSE Tumbleweed 20261116, Linux 7.3.3, KWin 6.8.3 (Wayland) | openSUSE Tumbleweed 20261111, Linux 7.3.3, KWin 6.8.2 (Wayland) |
+| Kite | 0.10.3, its release binary | 0.10.0 (the released AppImage), and 0.10.1: 0.10.0 with tab pieces made on demand and a lighter scrollbar script (see [What was found and changed](#what-was-found-and-changed)), as an AppImage |
+| Falkon | 26.08.3, the distribution's package | the same |
+| Firefox | 159.0.1, the distribution's package | 158.0.1 |
+| Engine of Kite and Falkon | QtWebEngine 6.140.0 (Chromium 140 with security fixes up to 157) | QtWebEngine 6.11.2 (Chromium 140) |
+
+The system update that brought QtWebEngine 6.140.0 came on the day of the general comparison, so
+the two benchmarks are of different engines.
 
 Every run started from a fresh profile with default settings and no extensions. The browsers ran
 on a headless KWin with the machine's GPU, on a D-Bus session of their own, so the desktop and its
@@ -37,30 +45,42 @@ Falkon's AdBlock with EasyList), Firefox blocks trackers only.
 
 ## General comparison
 
-| | Kite 0.10.1 | Falkon | Firefox |
+| | Kite 0.10.3 | Falkon | Firefox |
 |---|---:|---:|---:|
-| Startup (median of 6) | 0.68 s | **0.65 s** | 1.15 s |
-| Memory, 5 sites (median of 3) | 819 MiB | **768 MiB** | 1340 MiB |
-| Idle CPU (median of 3) | **2.5 %** | 7.9 % | 8.2 % |
-| Speedometer 3.1 (two runs) | 23.4 ± 1.4, 23.5 ± 1.2 | **26.7** ± 1.7, **26.3** ± 1.7 | 23.4 ± 1.4, 24.0 ± 0.87 |
+| Startup (median of 6) | 0.68 s | **0.64 s** | 1.07 s |
+| Memory, 5 sites (median of 3) | 843 MiB | **785 MiB** | 1297 MiB |
+| Idle CPU (median of 3) | **2.9 %** | 7.9 % | 8.7 % |
+| Speedometer 3.1 (median of 4) | **25.8** | 25.2 | 24.6 |
 
 Bold marks the best value in each row.
 
 - **Startup** is the time from launching the browser to the `onload` of a local page. Kite's six
-  starts took 0.67 to 0.68 s, Falkon's 0.64 to 0.67 s, Firefox's 1.13 to 1.17 s.
+  starts took 0.66 to 0.68 s, Falkon's 0.63 to 0.65 s, Firefox's 1.03 to 1.11 s.
 - **Memory** is the proportional set size (PSS) of the browser's whole process tree, 60 seconds
   after opening five sites at once: a Wikipedia article, a GitHub repository, an MDN page, BBC News
-  and YouTube. The three rounds were 815 to 827 MiB for Kite, 762 to 774 MiB for Falkon and 1330
-  to 1341 MiB for Firefox.
+  and YouTube. The three rounds were 826 to 860 MiB for Kite, 778 to 794 MiB for Falkon and 1287
+  to 1307 MiB for Firefox.
 - **Idle CPU** is the processor time the same tree used over the following 30 seconds, as a share
-  of one core.
-- **Speedometer 3.1** is the benchmark at browserbench.org, with the margin it reports itself.
+  of one core: 2.7 to 3.3 % for Kite, 6.8 to 8.2 % for Falkon, 8.4 to 9.4 % for Firefox.
+- **Speedometer 3.1** is the benchmark at browserbench.org, run four times in turn: Kite 25.5,
+  26.1, 25.7 and 25.9, Falkon 25.2, 24.9, 25.3 and 25.2, Firefox 24.7, 24.5, 24.3 and 24.7. The
+  margin it reports for a single run (± 1.0 to 1.5) is wider than the browsers are apart. What
+  tells them apart is that the order was the same in all four rounds.
 
-This is the comparison made for Kite 0.9.0 a week earlier (startup 0.72 s, memory 778 MB, idle CPU
-3.7 %, Speedometer 24.5). The two can't be set side by side: that one ran on the live desktop, and
-the pages of the memory test are live sites that differ from day to day. Falkon's memory came out
-127 MiB lower this time with only a patch release in between, and both other browsers started about
-8 % slower here.
+The same comparison for Kite 0.10.1, two days earlier:
+
+| | Kite 0.10.1 | Falkon | Firefox |
+|---|---:|---:|---:|
+| Startup | 0.68 s | 0.65 s | 1.15 s |
+| Memory, 5 sites | 819 MiB | 768 MiB | 1340 MiB |
+| Idle CPU | 2.5 % | 7.9 % | 8.2 % |
+| Speedometer 3.1 (two runs) | 23.4, 23.5 | 26.7, 26.3 | 23.4, 24.0 |
+
+Little of the difference between the two can be read as Kite's: in between, Kite's and Falkon's
+engine went from QtWebEngine 6.11.2 to 6.140.0 and Firefox from 158 to 159, and the pages of the
+memory test are live sites that differ from day to day. The exception is Kite's Speedometer score,
+which was measured before and after on one engine and one day: see
+[Page scripts and Speedometer](#page-scripts-and-speedometer).
 
 ## Memory in detail
 
@@ -168,18 +188,61 @@ Also measured, and left as they are:
   pages, more than the single scripts add up to. The likely reason is the fixed cost of running
   anything in every frame of a page; this was not verified.
 
+## Page scripts and Speedometer
+
+Kite adds scripts of its own to every page: for the content blocker, saved logins and autofill,
+overlay scrollbars and more. On Speedometer 3.1, Kite 0.10.2 scored about 23.7, and about 27 with
+none of these scripts (same day, QtWebEngine 6.11.2). The scripts' own code took next to no time.
+The cost was in what the engine does for a page that has them:
+
+- **Observers.** Once a `MutationObserver` has watched a document, every later change to that
+  document is slower, also after the observer was switched off: adding a row of elements took about
+  13 % longer. Three scripts had one: the blocker's (for elements to hide), the one for logins
+  (waiting for a login form) and the one for scrollbars (waiting, once, for the document's root
+  element). This is where the points were.
+- **Listeners.** A listener for clicks, input or keys is handed every such event a page sends
+  itself, in every frame, at 0.2 to 1 µs each. A Speedometer run sends itself about 27,000 clicks
+  and 10,000 key events, so this was the small part: under 0.1 points.
+
+What changed in 0.10.3:
+
+| Script | Change | Measured, before → after |
+|---|---|---|
+| Content blocker | A site with nothing to hide and generic rules off gets no script (EasyList turns them off for browserbench.org, as for github.com and wikipedia.org). Elsewhere, new elements are checked at the script's next look, not as each one is added. | Speedometer 23.8 → 25.6. With an ordinary site's 560 rules forced on: 22.3 → 24.2 |
+| Saved logins and autofill | Its listeners go in when the document is first used. A login form that comes after loading is looked for at intervals and after whatever the user does, without an observer. | 4.7 → 3.1 µs per row a page adds (3.1 without the script). Speedometer 25.3 → 26.0 |
+| Overlay scrollbars | No observer. The style rule goes in with the first scrollbar it is for. | 3.5 → 3.2 µs per row. Speedometer 26.25 → 26.65 |
+| Link pings | The script that took the `ping` attribute away at each click is gone. The engine sends pings only when told to, and "Block link click pings" is now that switch. | 2.2 → 1.2 µs per click a page sends itself (1.2 without page scripts) |
+| Pointer lock | Listens to keys only while the pointer is locked. | |
+
+Each pair of scores is from runs taken in turn in one session. Between sessions scores differ by
+about 0.4, so the pairs don't add up to one sum.
+
+After all of them, with four runs each in turn: Kite 26.75 (27.2, 26.4, 26.9, 26.6), and 26.8
+without any page script (26.7, 27.0, 26.8, 26.8). Nothing measurable is left.
+
+Also found: with the Vim keys plugin on, Speedometer stopped at its Angular TodoMVC. The plugin
+kept from the page every key release whose press it hadn't seen there, including those a page
+sends itself, and that test adds its entries by sending the release of an Enter. Such releases are
+the page's again.
+
+Left as it is: the script that lets text be selected and copied where a page forbids it keeps its
+listeners from the start (about half a microsecond per key press a page sends itself). Put in
+later, they would come after the page's own.
+
 ## Open points
 
 - **Idle memory.** With no page open Kite holds 435 MiB, Falkon 311 MiB. Part of it is the AppImage
   carrying its own Qt, which it shares with no other program: without file-backed memory the two
   are at 193 and 168 MiB. The rest was not looked into.
-- **Speedometer.** Falkon is about 3 points ahead of Kite on the same engine.
+- **Speedometer on the new engine.** Kite scored 26.75 on QtWebEngine 6.11.2 and 25.8 on 6.140.0
+  on the same day; Falkon 26.7 and 26.3 two days before, and 25.2 now. Whether the engine got
+  slower or the sessions differ was not looked into.
 - **forbes.com** shows Kite a captcha where Falkon and Firefox get the page. Kite's user agent and
   its privacy settings were ruled out as the cause.
 
 ## Limits
 
-- One machine, one day, live sites fetched from Germany, with consent banners left unanswered.
+- One machine, one day for each benchmark, live sites fetched from Germany, with consent banners left unanswered.
 - Empty profiles without extensions. Each browser at its default window size.
 - Three repetitions per measurement. Where two ranges overlap, the browsers aren't told apart.
 - The scripts that made these measurements are not in the repository yet.
