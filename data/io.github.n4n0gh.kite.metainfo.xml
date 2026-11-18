@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.5" date="2026-11-18">
+      <description>
+        <p>Fixes a crash: when a page had opened another page in a tab or popup window and the opening tab was closed, moving the pointer over the opened page crashed Kite. Extensions are now told that they run in Firefox, which is what they are made for (Settings, Plugins and Extensions; on by default). What Kite fetches itself, such as extensions' requests, add-ons and filter lists, now trusts the certificate authorities of your system, so an extension can reach a self-hosted server with a certificate authority of its own.</p>
+      </description>
+    </release>
     <release version="0.10.4" date="2026-11-18">
       <description>
         <p>An extension's popup stays open when the extension changes its toolbar button. Before, it closed, which cut Bitwarden's login short: the account then showed as locked and could not be unlocked ("KDF parameters are required"). If yours is in that state, log out on the lock screen and log in again.</p>
