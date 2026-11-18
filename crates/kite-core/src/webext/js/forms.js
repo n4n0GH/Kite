@@ -2,6 +2,32 @@
 // (bridge.js) and every other frame's (frame_transport.js). What they talk to,
 // `k`, is the same to them.
 
+// A listener costs a page each time it sends itself an event, and web apps (and
+// the tests and benchmarks of them) send themselves clicks, inputs and keys by
+// the ten thousand. So the listeners below wait for somebody to have to do with
+// the document: whatever a person does to a form starts with focus moving into
+// the document or with a pointer pressed on it, and neither is something pages
+// make up in numbers. `whenUsed(fn)` runs `fn` then, in time for it to hear
+// that very event (it listens on the document, which events reach after the
+// window).
+const whenUsed = (() => {
+  let used = false, watching = false;
+  const waiting = [];
+  const first = (e) => {
+    if (!e.isTrusted) return;
+    used = true;
+    for (const type of ['focusin', 'pointerdown']) window.removeEventListener(type, first, true);
+    for (const fn of waiting.splice(0)) fn();
+  };
+  return (fn) => {
+    if (used) { fn(); return; }
+    waiting.push(fn);
+    if (watching) return;
+    watching = true;
+    for (const type of ['focusin', 'pointerdown']) window.addEventListener(type, first, true);
+  };
+})();
+
 // ---------------------------------------------------------------------------
 // Password manager: login form detection and autofill (Falkon's AutoFill
 // form observer). Runs in the bridge world, invisible to the page.
@@ -48,16 +74,17 @@
     withKite((k) => k.formSubmitted(JSON.stringify(d)));
   }
   // Only what the user did (trusted events): a page's own synthetic clicks
-  // and keys aren't logins, and looking through the form on each of them
-  // slows pages that make many (web apps, tests, benchmarks).
-  document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
-  // Script-driven logins: submit-like button clicks and Enter in a password field.
-  document.addEventListener('click', (e) => {
-    if (!e.isTrusted) return;
-    const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=button], [role=button]');
-    if (b) submitted(scopeOf(b));
-  }, true);
-  document.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') submitted(scopeOf(e.target)); }, true);
+  // and keys aren't logins.
+  whenUsed(() => {
+    document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
+    // Script-driven logins: submit-like button clicks and Enter in a password field.
+    document.addEventListener('click', (e) => {
+      if (!e.isTrusted) return;
+      const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=button], [role=button]');
+      if (b) submitted(scopeOf(b));
+    }, true);
+    document.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') submitted(scopeOf(e.target)); }, true);
+  });
 
   // Setting values the way a user would, so frameworks (React, Vue) notice.
   function setValue(input, value) {
@@ -96,7 +123,7 @@
   }
 
   // Tell the browser when a login form is present (to autofill and show the key icon).
-  let announced = false, checks = 0;
+  let announced = false;
   function scan() {
     if (announced) return;
     const pw = inputsOf(document).find((i) => i.type.toLowerCase() === 'password' && visible(i) && i.autocomplete !== 'new-password');
@@ -105,9 +132,28 @@
     announced = true;
     withKite((k) => k.loginFormFound(!!pw && !pw.value));
   }
-  const observer = new MutationObserver(() => { if (++checks > 400) observer.disconnect(); else { clearTimeout(scan._t); scan._t = setTimeout(scan, 150); } });
-  const start = () => { scan(); observer.observe(document.documentElement || document, { childList: true, subtree: true }); setTimeout(() => observer.disconnect(), 30000); };
+  // The form may come after the page has loaded: apps build themselves, and bring
+  // their login up when asked. Watching every change of the document for it costs
+  // a page that changes a lot, so it's looked for at times instead: ever less
+  // often for half a minute after loading, and after whatever the user does,
+  // which is what brings a form up later on.
+  let wait = 150, waited = 0;
+  function later() {
+    if (announced || waited > 30000) return;
+    setTimeout(() => { scan(); later(); }, wait);
+    waited += wait;
+    wait *= 1.4;
+  }
+  const start = () => { scan(); later(); };
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', start, { once: true }) : start();
+  let looking = false;
+  const lookSoon = (e) => {
+    if (announced || looking || !e.isTrusted) return;
+    looking = true;
+    setTimeout(scan, 150);
+    setTimeout(() => { looking = false; scan(); }, 1000);
+  };
+  whenUsed(() => { for (const type of ['focusin', 'pointerdown']) document.addEventListener(type, lookSoon, true); });
 })();
 
 // ---------------------------------------------------------------------------
@@ -220,25 +266,27 @@
   }
   function blur() { current = null; menuOpen = false; withKite((k) => k.autofillBlur()); }
 
-  document.addEventListener('focusin', (e) => { if (!filling) report(e.target); }, true);
-  document.addEventListener('focusout', (e) => { if (!filling && e.target === current) blur(); }, true);
-  document.addEventListener('input', (e) => { if (!filling && e.target === current) report(current); }, true);
-  // Clicking a field that already has focus brings the suggestions back.
-  document.addEventListener('mousedown', (e) => { if (e.target === current && document.activeElement === current && !menuOpen) setTimeout(() => current && report(current), 0); }, true);
   let moved = 0;
   const follow = () => { if (current && !moved) moved = requestAnimationFrame(() => { moved = 0; if (current) report(current); }); };
-  window.addEventListener('scroll', follow, true);
-  window.addEventListener('resize', follow, true);
-  document.addEventListener('keydown', (e) => {
-    if (!menuOpen || e.target !== current) return;
-    if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'PageDown', 'PageUp'].includes(e.key)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      withKite((k) => k.autofillKey(e.key));
-    } else if (e.key === 'Tab') {
-      withKite((k) => k.autofillKey('Escape'));
-    }
-  }, true);
+  whenUsed(() => {
+    document.addEventListener('focusin', (e) => { if (!filling) report(e.target); }, true);
+    document.addEventListener('focusout', (e) => { if (!filling && e.target === current) blur(); }, true);
+    document.addEventListener('input', (e) => { if (!filling && e.target === current) report(current); }, true);
+    // Clicking a field that already has focus brings the suggestions back.
+    document.addEventListener('mousedown', (e) => { if (e.target === current && document.activeElement === current && !menuOpen) setTimeout(() => current && report(current), 0); }, true);
+    window.addEventListener('scroll', follow, true);
+    window.addEventListener('resize', follow, true);
+    document.addEventListener('keydown', (e) => {
+      if (!menuOpen || e.target !== current) return;
+      if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'PageDown', 'PageUp'].includes(e.key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        withKite((k) => k.autofillKey(e.key));
+      } else if (e.key === 'Tab') {
+        withKite((k) => k.autofillKey('Escape'));
+      }
+    }, true);
+  });
 
   // Setting values the way a user would, so frameworks (React, Vue) notice.
   function setValue(el, value) {
@@ -310,21 +358,23 @@
     lastSent = key;
     withKite((k) => k.autofillSubmit(key));
   }
-  // (Trusted events only, as for logins.)
-  document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
   // Typed, unsent text: the browser keeps such tabs loaded.
   let dirty = false;
   const setDirty = (d) => { if (d !== dirty) { dirty = d; withKite((k) => k.formDirty(d)); } };
-  document.addEventListener('input', (e) => {
-    const t = e.target;
-    if (!e.isTrusted || !t) return;
-    const editable = t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(checkbox|radio|range|color|file|button|submit|search)$/i.test(t.type));
-    if (editable) setDirty(Array.from(document.querySelectorAll('input, textarea')).some((f) => f.value && f.value !== f.defaultValue && f.type !== 'search' && f.type !== 'hidden') || t.isContentEditable);
-  }, true);
-  document.addEventListener('submit', () => setDirty(false), true);
-  document.addEventListener('click', (e) => {
-    if (!e.isTrusted) return;
-    const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
-    if (b && (b.type === 'submit' || /continue|next|save|submit|order|checkout|weiter|bestellen|speichern|register|sign.?up|pay/i.test(b.textContent + ' ' + (b.value || '')))) submitted(scopeOf(b));
-  }, true);
+  whenUsed(() => {
+    // (Trusted events only, as for logins.)
+    document.addEventListener('submit', (e) => { if (e.isTrusted) submitted(e.target); }, true);
+    document.addEventListener('input', (e) => {
+      const t = e.target;
+      if (!e.isTrusted || !t) return;
+      const editable = t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(checkbox|radio|range|color|file|button|submit|search)$/i.test(t.type));
+      if (editable) setDirty(Array.from(document.querySelectorAll('input, textarea')).some((f) => f.value && f.value !== f.defaultValue && f.type !== 'search' && f.type !== 'hidden') || t.isContentEditable);
+    }, true);
+    document.addEventListener('submit', () => setDirty(false), true);
+    document.addEventListener('click', (e) => {
+      if (!e.isTrusted) return;
+      const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
+      if (b && (b.type === 'submit' || /continue|next|save|submit|order|checkout|weiter|bestellen|speichern|register|sign.?up|pay/i.test(b.textContent + ' ' + (b.value || '')))) submitted(scopeOf(b));
+    }, true);
+  });
 })();
