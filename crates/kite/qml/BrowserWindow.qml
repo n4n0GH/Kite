@@ -726,7 +726,8 @@ QQC2.ApplicationWindow {
         const t = tabById(id)
         t.openerTabId = opts.openerTabId !== undefined ? opts.openerTabId : -1
         Extensions.browserEvent("tabCreated", JSON.stringify({tab: t.extInfo()}))
-        if (opts.request) { t.openedByPage = true; opts.request.openIn(t.view) }
+        // (adoptedView: or it crashes at the pointer's next move once its opener is closed.)
+        if (opts.request) { t.openedByPage = true; opts.request.openIn(t.view); Browser.adoptedView(t.view.objectName) }
         else if (opts.lazy) t.pendingUrl = url
         else if (url) t.load(url)
         if (!opts.background || tabModel.count === 1 || (paneTab[pane] === id && pane === activePane)) setCurrentIndex(idx)

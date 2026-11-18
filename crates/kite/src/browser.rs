@@ -643,6 +643,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "faviconTrack"]
         fn favicon_track(self: &Browser, view_name: &QString, track: bool);
+        /// A view was just given the page another page opened (`request.openIn`):
+        /// keeps it from crashing once its opener is closed (see bootstrap.cpp).
+        #[qinvokable]
+        #[cxx_name = "adoptedView"]
+        fn adopted_view(self: &Browser, view_name: &QString);
         /// Settings → Shortcuts: a pressed key as a portable key sequence,
         /// and a stored sequence as shown to the user.
         #[qinvokable]
@@ -1776,6 +1781,10 @@ impl qobject::Browser {
 
     fn favicon_track(&self, view_name: &QString, track: bool) {
         crate::ffi::favicon_track(&view_name.to_string(), track);
+    }
+
+    fn adopted_view(&self, view_name: &QString) {
+        crate::ffi::adopted_view(&view_name.to_string());
     }
 
     fn key_sequence_text(&self, key: i32, modifiers: i32) -> QString {

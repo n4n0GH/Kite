@@ -52,6 +52,8 @@ Window {
             // A local file may not read other local files (Chrome's default; Qt's is on).
             settings.localContentCanAccessFileUrls: false
             id: view
+            // (A name to find it by from C++, Browser.adoptedView.)
+            objectName: "kite-popup-web-" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)
             // Other apps' addresses (mailto:, smb:, …): asked about, as in a tab,
             // never handed to the desktop straight away.
             onNavigationRequested: request => {
@@ -73,7 +75,8 @@ Window {
             onWindowCloseRequested: w.close()
             onNewWindowRequested: request => w.opener.window.openTab("", {request: request, background: false, container: w.opener.container})
             onGeometryChangeRequested: geometry => { w.x = geometry.x; w.y = geometry.y; w.width = geometry.width; w.height = geometry.height + bar.height }
-            Component.onCompleted: w.request.openIn(view)
+            // (adoptedView: as for a tab a page opened, BrowserWindow.qml.)
+            Component.onCompleted: { w.request.openIn(view); Browser.adoptedView(view.objectName) }
         }
     }
 }

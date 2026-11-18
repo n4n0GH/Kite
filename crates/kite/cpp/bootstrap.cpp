@@ -20,6 +20,7 @@
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QPointer>
+#include <QVersionNumber>
 #include <QWheelEvent>
 #include <atomic>
 #include <QStyleHints>
@@ -440,6 +441,121 @@ extern "C" void kite_cpp_replay_context_click()
 {
     // (Not from inside the page's message being handled.)
     if (g_inputFilter) QTimer::singleShot(0, g_inputFilter, [] { if (g_inputFilter) g_inputFilter->replayContextClick(); });
+}
+
+// ---- pages opened by pages ---------------------------------------------------------
+// A page that another page opened (window.open) is at first drawn by an item its
+// opener's view made, with a helper (the "widget delegate") that keeps a pointer to
+// that opener's view: at every mouse, touch or hover event it asks it whether a press
+// may take the focus. The item moves into the new tab's view; the helper's pointer
+// doesn't. Once the opener's tab is closed the pointer is null, and the next movement
+// of the pointer over the opened page crashes
+// (WebEngineQuickWidgetDelegate::ActiveFocusOnPress, QtWebEngine 6.11 and 6.140).
+//
+// Kite gives such an item a helper of its own, which asks the view the item is in.
+// The interface is private to QtWebEngine: it is declared here as in its
+// render_widget_host_view_qt_delegate_item.h, and used only with the versions that
+// header was read for (kite_cpp_adopted_view). The members called are exported.
+namespace QtWebEngineCore {
+class WebContentsAdapterClient;
+class WidgetDelegate {
+public:
+    virtual ~WidgetDelegate() = default;
+    virtual void InitAsPopup(const QRect &screenRect) = 0;
+    virtual void SetInputMethodEnabled(bool) { }
+    virtual void SetInputMethodHints(Qt::InputMethodHints) { }
+    virtual void SetClearColor(const QColor &) { }
+    virtual bool ActiveFocusOnPress() = 0;
+    virtual void MoveWindow(const QPoint &) { }
+    virtual void Bind(WebContentsAdapterClient *) = 0;
+    virtual void Unbind() = 0;
+    virtual void Destroy() = 0;
+    virtual void Resize(int, int) { }
+    virtual QWindow *Window() { return nullptr; }
+    virtual void SetCursor(const QCursor &) { }
+    virtual void unhandledWheelEvent(QWheelEvent *) { }
+};
+// (A QQuickItem first of all, which is all that's used of it.)
+class RenderWidgetHostViewQtDelegateItem : public QQuickItem {
+public:
+    void setWidgetDelegate(WidgetDelegate *delegate);
+};
+}
+// (A WebContentsAdapterClient and nothing else, so a pointer to one is a pointer to it.)
+class QQuickWebEngineViewPrivate {
+public:
+    static void bindViewAndDelegateItem(QQuickWebEngineViewPrivate *viewPrivate, QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *delegateItem);
+};
+
+// As QtWebEngineQuick's own, but for the view asked: the one the item is in now.
+class KiteWidgetDelegate : public QtWebEngineCore::WidgetDelegate {
+public:
+    explicit KiteWidgetDelegate(QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *item) : m_item(item) {}
+    ~KiteWidgetDelegate() override { if (auto *i = item()) i->setWidgetDelegate(nullptr); }
+    void InitAsPopup(const QRect &screenRect) override { if (auto *i = item()) i->setPosition(screenRect.topLeft()); }
+    void Bind(QtWebEngineCore::WebContentsAdapterClient *client) override
+    {
+        QQuickWebEngineViewPrivate::bindViewAndDelegateItem(reinterpret_cast<QQuickWebEngineViewPrivate *>(client), item());
+    }
+    void Unbind() override { QQuickWebEngineViewPrivate::bindViewAndDelegateItem(nullptr, item()); }
+    void Destroy() override { delete this; }
+    bool ActiveFocusOnPress() override
+    {
+        QQuickItem *view = m_item ? m_item->parentItem() : nullptr;
+        return view && (view->property("activeFocusOnPress").toBool() || view->hasActiveFocus());
+    }
+
+private:
+    QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *item() const { return static_cast<QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *>(m_item.data()); }
+    QPointer<QQuickItem> m_item; // the engine's; it destroys this helper as it goes
+};
+
+extern "C" const char *kite_cpp_webengine_version();
+
+// The view's item for its page gets Kite's helper; whether there was one to give it to.
+static bool giveKiteWidgetDelegate(QQuickItem *view)
+{
+    bool given = false;
+    const auto children = view->childItems();
+    for (QQuickItem *c : children) {
+        if (!c->inherits("QtWebEngineCore::RenderWidgetHostViewQtDelegateItem")) continue;
+        given = true;
+        if (c->property("_kite_widget_delegate").toBool()) continue;
+        c->setProperty("_kite_widget_delegate", true);
+        auto *item = static_cast<QtWebEngineCore::RenderWidgetHostViewQtDelegateItem *>(c);
+        // (The engine's helper is let go of, not destroyed: there's no reaching it. A few bytes.)
+        item->setWidgetDelegate(nullptr);
+        item->setWidgetDelegate(new KiteWidgetDelegate(item));
+    }
+    return given;
+}
+
+// A view (by objectName) was just given the page another page opened.
+extern "C" void kite_cpp_adopted_view(const char *viewName)
+{
+    // QtWebEngine 6.11 and 6.140 have the interface declared above (and the fault).
+    static const bool known = [] {
+        const QVersionNumber v = QVersionNumber::fromString(QString::fromLatin1(kite_cpp_webengine_version()));
+        return v.majorVersion() == 6 && (v.minorVersion() == 11 || v.minorVersion() == 140);
+    }();
+    if (!known) return;
+    const QString name = QString::fromUtf8(viewName);
+    for (QWindow *w : QGuiApplication::topLevelWindows()) {
+        auto *q = qobject_cast<QQuickWindow *>(w);
+        if (!q) continue;
+        QQuickItem *view = findItem(q->contentItem(), name);
+        if (!view || !view->inherits("QQuickWebEngineView")) continue;
+        if (giveKiteWidgetDelegate(view)) return;
+        // The item comes into the view a moment after the page was handed over: at the
+        // view's next change of children, and not from inside the engine's own moving of it.
+        auto *once = new QObject(view);
+        QObject::connect(view, &QQuickItem::childrenChanged, once, [view, once] {
+            QMetaObject::invokeMethod(once, [view, once] {
+                if (giveKiteWidgetDelegate(view)) once->deleteLater();
+            }, Qt::QueuedConnection);
+        });
+        return;
+    }
 }
 
 extern "C" void kite_cpp_favicon_track(const char *viewName, bool track)

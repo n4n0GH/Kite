@@ -64,6 +64,7 @@ extern "C" {
     fn kite_cpp_chromium_security_patch() -> *const c_char;
     fn kite_cpp_save_favicon(page_url: *const c_char, icon_url: *const c_char, view_name: *const c_char);
     fn kite_cpp_favicon_track(view_name: *const c_char, track: bool);
+    fn kite_cpp_adopted_view(view_name: *const c_char);
     fn kite_cpp_key_text(key: std::ffi::c_int, modifiers: std::ffi::c_int) -> *const c_char;
     fn kite_cpp_key_native(sequence: *const c_char) -> *const c_char;
     fn kite_cpp_set_wheel_pixels(px: std::ffi::c_int);
@@ -76,6 +77,13 @@ extern "C" {
 pub fn save_favicon(page_url: &str, icon_url: &str, view_name: &str) {
     let (Ok(p), Ok(i), Ok(v)) = (CString::new(page_url), CString::new(icon_url), CString::new(view_name)) else { return };
     unsafe { kite_cpp_save_favicon(p.as_ptr(), i.as_ptr(), v.as_ptr()) }
+}
+
+/// A web view (by objectName) was given a page that another page opened: the
+/// engine's faulty helper for it is replaced (see bootstrap.cpp).
+pub fn adopted_view(view_name: &str) {
+    let Ok(n) = CString::new(view_name) else { return };
+    unsafe { kite_cpp_adopted_view(n.as_ptr()) }
 }
 
 /// Take a web view (by objectName) out of Qt's favicon provider while it is
