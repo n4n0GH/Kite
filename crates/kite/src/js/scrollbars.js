@@ -26,14 +26,17 @@
   // A grey that reads on light and dark pages alike.
   const CSS = `[${ATTR}] { scrollbar-color: rgb(128 128 128 / 0.75) transparent !important; }`;
 
+  // The rule goes in with the first scrollbar it's for: most documents have none, and are
+  // left as their pages made them.
+  let style = null;
   function addStyle() {
+    if (style && style.isConnected) return;
     const root = document.documentElement;
-    if (!root) return false;
-    const style = document.createElement('style');
+    if (!root) return;
+    style = document.createElement('style');
     style.textContent = CSS;
     // Not in <head>: pages rebuilding it keep the rule.
     root.appendChild(style);
-    return true;
   }
 
   // Whether `el` hides one of its scrollbars with ::-webkit-scrollbar
@@ -51,6 +54,7 @@
     const horizontal = isRoot ? window.innerHeight - el.clientHeight : el.offsetHeight - el.clientHeight - 2 * el.clientTop;
     if (vertical <= 0 && horizontal <= 0) return;
     if (hidesOne(el)) return;
+    addStyle();
     el.setAttribute(ATTR, '');
   }
 
@@ -79,7 +83,6 @@
   }
 
   function start() {
-    if (!addStyle()) return;
     checkPage();
     document.addEventListener('DOMContentLoaded', checkPage);
     window.addEventListener('load', checkPage);
@@ -91,6 +94,9 @@
     document.addEventListener('pointerover', e => checkAround(e.target), {capture: true, passive: true});
   }
 
-  if (document.documentElement) start();
-  else new MutationObserver((_, obs) => { if (document.documentElement) { obs.disconnect(); start(); } }).observe(document, {childList: true});
+  // (Right away, though the document may have no root element yet: the listeners need none,
+  // and the page is looked at again as it loads. Waiting for the root with a
+  // MutationObserver would cost the page for good: once one has watched a document, the
+  // engine looks for observers at every change made to it, also after that one is gone.)
+  start();
 })();
