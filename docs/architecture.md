@@ -55,6 +55,8 @@ interface and the state that belongs to it, such as which tabs a window has.
 1. **`main()` in `src/main.rs`** reads the arguments (`--profile`, `--private`, URLs) and, when
    several profiles exist and the user asked to choose, runs the picker as a separate process
    (`kite --pick-profile`, `cpp/profiles.cpp`). The profile has to be known before QtWebEngine starts.
+   With parental controls set up, a profile that isn't a child's opens only with the parent
+   password (`parental_gate`, see [parental-controls.md](parental-controls.md)).
 2. **`state::init`** opens the profile and builds the global `App` (`src/state.rs`), reached from
    anywhere through `app()`.
 3. **Chromium flags** are set from settings, because they can't change later. That's why proxy and
@@ -95,7 +97,7 @@ are a `KiteBuf`, released with `kite_buf_free`.
 | `cpp/bootstrap.cpp` | Start-up, the application-wide input filter `KiteInputFilter` (Alt menu bar, mouse gestures), favicon tracking |
 | `cpp/glue.cpp` | `KiteSchemeHandler` (`kite:`, `moz-extension:`), `KiteInterceptor` (every request), cookie store hooks, DNS over HTTPS, the certificate lookup for `kite:certificate` |
 | `cpp/print.cpp` | Qt's print dialog, then CUPS through `lp` |
-| `cpp/profiles.cpp` | The profile picker |
+| `cpp/profiles.cpp` | The profile picker (cards, and the dialog that crops a profile's picture), and the dialog asking for the parent password |
 
 ### Web pages and the browser
 
@@ -127,6 +129,7 @@ instead (`qml/ExtBridge.qml`).
 | `search` | Search engines and address bar input (address or search?) |
 | `sitesettings`, `privacy` | Per-site settings, with what a site was told when it asked to open links of a kind (mailto:, magnet:) and where such links then go, as QtWebEngine keeps neither past the session; tracking parameters and HTTPS upgrades |
 | `adblock`, `safebrowsing` | The built-in content blocker: filter lists, uBO's scriptlets (`resources/`), and what each page gets (`page_plan`), which `WebTab.prepareAdblock` puts in the view's scripts before the page exists; dangerous-site protection |
+| `parental` | Parental controls: the parent password, child profiles and what each is held to, the site filter and its lists, safe search ([parental-controls.md](parental-controls.md)) |
 | `passwords`, `kwallet`, `formfill` | Saved logins and their backends; saved addresses |
 | `certs`, `certview` | Accepted certificate exceptions; the `kite:certificate` page |
 | `reader`, `startpage`, `standin` | Reader view pages (the reader-view plugin extracts the articles); custom start pages; generated stand-in files |
@@ -301,11 +304,13 @@ profiles/<name>/
     bookmarks.json    bookmark tree
     session.json      last session, closed tabs and windows
     profile.lock      held by the Kite that has the profile open
+    avatar.png        the profile's picture, if it has one
     instance.sock     where that Kite takes URLs from others started on the profile
     downloads.json    download history
     adblock/          filter subscriptions
     extensions/       registry.json, storage.db and the unpacked extensions
     webengine/        Chromium's storage: cookies, cache, local storage
+profiles.json             the picker's choices: ask at startup, the profile picked last, the default profile's name
 logs/<profile>/           kite.log, kite.prev.log, last-crash.txt (logs/private/ for --private)
 native-messaging-hosts/   Kite's own native messaging manifests
 plugins/<id>/             plugins installed from a file

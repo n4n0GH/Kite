@@ -72,8 +72,8 @@ ManagerWindow {
                     readonly property bool compact: hp.width < Kirigami.Units.gridUnit * 32
                     Kirigami.SearchField { id: search; Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.gridUnit * 5; onTextChanged: hp.reload() }
                     QQC2.ComboBox { id: range; model: ["All time", "Today", "Last 7 days", "Last 30 days"]; onActivated: hp.reload() }
-                    BarButton { compact: historyBar.compact; text: "Delete Selected"; icon.name: "edit-delete"; enabled: Object.keys(hp.selected).length > 0; onClicked: Browser.deleteHistory(JSON.stringify(Object.keys(hp.selected).map(Number))) }
-                    BarButton { compact: historyBar.compact; text: "Clear All History…"; icon.name: "edit-clear-history"; onClicked: confirmClear.open() }
+                    BarButton { compact: historyBar.compact; text: "Delete Selected"; icon.name: "edit-delete"; enabled: Object.keys(hp.selected).length > 0 && w.app.parentalSession.allows.clearHistory; onClicked: Browser.deleteHistory(JSON.stringify(Object.keys(hp.selected).map(Number))) }
+                    BarButton { compact: historyBar.compact; text: "Clear All History…"; icon.name: "edit-clear-history"; enabled: w.app.parentalSession.allows.clearHistory; onClicked: confirmClear.open() }
                 }
             }
             Kirigami.PromptDialog {

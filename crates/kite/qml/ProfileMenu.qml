@@ -10,14 +10,18 @@ QQC2.Menu {
     icon.name: "user-identity"
     property var profiles: []
     readonly property string current: Browser.currentProfile()
-    onAboutToShow: profiles = JSON.parse(Browser.profiles())
+    // (Part of the pictures' addresses: one changed since the menu was last open is asked for anew.)
+    property int shown: 0
+    onAboutToShow: { shown++; profiles = JSON.parse(Browser.profiles()) }
 
     Instantiator {
         model: menu.profiles
         delegate: QQC2.MenuItem {
             required property var modelData
             readonly property bool here: modelData.name === menu.current
-            text: modelData.name + (modelData.inUse && !here ? " (open)" : "")
+            text: modelData.name + (modelData.child ? " (child's)" : "") + (modelData.inUse && !here ? " (open)" : "")
+            // Its picture, as the profile picker shows it (bootstrap.cpp).
+            icon.source: "image://kiteprofile/" + menu.shown + "/" + encodeURIComponent(modelData.name)
             checkable: here
             checked: here
             enabled: !here && !modelData.inUse

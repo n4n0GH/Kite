@@ -442,6 +442,11 @@ QtObject {
 
     function newWindow(opts) {
         opts = opts || {}
+        // A child's profile that may not open private windows gets an ordinary one.
+        if (opts.privateMode && !Browser.isPrivate() && !parentalSession.allows.privateWindows) {
+            opts = Object.assign({}, opts, {privateMode: false})
+            Qt.callLater(() => toast("Private windows aren't available in this profile", "view-private"))
+        }
         const w = windowComponent.createObject(null, {
             app: app,
             windowId: nextWindowId++,
@@ -1381,6 +1386,20 @@ QtObject {
     property Component _installComp: Component { InstallDialog {} }
     property Component _permissionComp: Component { PermissionDialog {} }
     property Component _masterPasswordComp: Component { MasterPasswordDialog {} }
+    // Parental controls: what this profile may do right now ({child, unlocked,
+    // allows}), and the dialog asking for the parent password.
+    property var parentalSession: JSON.parse(Browser.parentalSession())
+    property Connections _parentalFollower: Connections { target: Browser; function onParentalChanged() { app.parentalSession = JSON.parse(Browser.parentalSession()) } }
+    // The parental controls were changed outside Kite and put back as Kite started:
+    // said once, in the first window.
+    property bool _restoredTold: false
+    property Timer _restoredNotice: Timer {
+        interval: 1500
+        running: !!app.parentalSession.restored && !app._restoredTold && !!app.activeWindow
+        onTriggered: { app._restoredTold = true; app.activeWindow.toast("Parental controls were changed outside Kite and have been put back", "object-locked", 12000) }
+    }
+    property Component _parentPasswordComp: Component { ParentPasswordDialog {} }
+    function askParent(text, attempt, done) { dialog(_parentPasswordComp).ask(text, attempt, done) }
     property Component _saveComp: Component { SaveDialog { onAccepted2: d => app.startDownload(d) } }
     function unlockPasswords(cb) { dialog(_masterPasswordComp).ask(cb || (() => {})) }
     property var optionsDialog: null

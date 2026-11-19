@@ -247,12 +247,13 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
         let page = rest.split(['?', '#']).next().unwrap_or("");
         // Kite's pages are for Kite: the address bar, its own pages, and the
         // tab itself (empty initiator). A web page (an opaque "null" one
-        // included) may only reach the dangerous-site warning, which the
-        // request interceptor sends its links to. Anything else let pages
+        // included) may only reach the dangerous-site warning and the page for a
+        // site blocked in a child's profile, which the request interceptor sends
+        // their links to. Anything else let pages
         // probe history (favicon), bounce through kite:search to file: and
         // kite: addresses, or frame Kite's pages.
         let from_kite = initiator.is_empty() || initiator.starts_with("kite:");
-        if !from_kite && page != "dangerous" {
+        if !from_kite && page != "dangerous" && page != "blocked" {
             return (403, "text/plain".into(), vec![]);
         }
         return match page {
@@ -311,7 +312,14 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             }
             // A known phishing or malware site (dangerous-site protection).
             "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
+            // A site that doesn't open in a child's profile (parental controls).
+            "blocked" => (200, "text/html".into(), blocked_page(&query_param(url, "url"), &query_param(url, "why")).into_bytes()),
             // Every setting. It holds what's needed to change them, so no web page gets it.
+            // (Not in a child's profile that may not change settings.)
+            "config" if from_kite && !app().parental.allows(kite_core::parental::Permission::Settings) => {
+                let html = "<!DOCTYPE html><meta charset=utf-8><meta name=color-scheme content=\"light dark\"><title>Settings are locked</title><body style=\"font:15px/1.5 system-ui,sans-serif;max-width:38em;margin:12vh auto;padding:0 1.5em\"><h1 style=\"font-size:1.5em;font-weight:600\">Settings are locked</h1><p>This is a child's profile. A parent can unlock its settings in Settings → Parental Controls.</p>";
+                (200, "text/html".into(), html.as_bytes().to_vec())
+            }
             "config" if from_kite => {
                 (200, "text/html".into(), kite_core::config::page(&crate::browser::config_entries(), crate::state::config_token(), &kite_core::config::secret()).into_bytes())
             }
@@ -458,13 +466,28 @@ fn stand_in(to: &str, rtype: &str) -> String {
     format!("redirect:{to}")
 }
 
-/// Where Kite itself sends a page load instead: to a warning about a dangerous site,
-/// without tracking parameters, over https (privacy.*).
+/// Why a request doesn't go through in a child's profile (parental controls), if so.
+fn blocked_for_child(url: &str) -> Option<kite_core::parental::Blocked> {
+    let filter = &app().parental.filter;
+    if !filter.is_on() {
+        return None;
+    }
+    filter.check(&kite_core::util::host_of(url))
+}
+
+/// Where Kite itself sends a page load instead: to the page for a site blocked in a
+/// child's profile, to a warning about a dangerous site, without tracking parameters,
+/// over https (privacy.*).
 fn builtin_page_redirect(url: &str) -> Option<String> {
     let a = app();
+    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+    // A child's profile: sites it's kept from get a page saying so.
+    if let Some(why) = blocked_for_child(url) {
+        log::info!("parental controls: {} blocked ({})", kite_core::util::host_of(url), why.as_str());
+        return Some(format!("kite:blocked?why={}&url={}", why.as_str(), enc(url)));
+    }
     if let Some(threat) = a.safe_browsing.check(url) {
         log::info!("safebrowsing: {} listed as {}", url, threat.as_str());
-        let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
         return Some(format!("kite:dangerous?threat={}&url={}", threat.as_str(), enc(url)));
     }
     if a.privacy.strip_params.load(std::sync::atomic::Ordering::Relaxed) {
@@ -593,6 +616,11 @@ pub unsafe extern "C" fn kite_intercept(
         // Never interfere with add-on installs from AMO.
         if kite_core::webext::amo::is_amo_download(url) {
             return String::new();
+        }
+        // A child's profile: nothing is fetched from a site it's kept from, whatever
+        // asks. (A page load gets the page saying so, below.)
+        if rtype != "mainFrame" && blocked_for_child(url).is_some() {
+            return "block".into();
         }
         // Page loads: what onNavigationRequested already went through isn't asked again.
         let decided = rtype == "mainFrame" && take_decided_page_load(url);
@@ -849,6 +877,45 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
     )
 }
 
+/// The page shown in a child's profile instead of a site it's kept from.
+fn blocked_page(target: &str, why: &str) -> String {
+    let host = html_escape(&kite_core::util::host_of(target));
+    let (title, text) = match why {
+        "listed" => ("This site is blocked", format!("<span class=\"host\">{host}</span> has been blocked for this profile.")),
+        "not-allowed" => ("This site isn't open to this profile", format!("Only some sites open in this profile, and <span class=\"host\">{host}</span> isn't one of them.")),
+        "search" => ("This search engine is blocked", format!("<span class=\"host\">{host}</span> can't be kept to safe search, so it doesn't open in this profile. DuckDuckGo, Google, Bing and Ecosia do.")),
+        "no-lists" => ("Not ready yet", "Kite is downloading its lists of blocked sites, and no site opens until it has them. This page tries again by itself; if it stays, check the internet connection.".to_owned()),
+        _ => ("This site is blocked", format!("<span class=\"host\">{host}</span> is on a list of sites that aren't for children.")),
+    };
+    let allow = format!("kite:blocked-allow?url={}&key={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>(), crate::state::warning_key());
+    let buttons = if why == "no-lists" {
+        format!("<a class=\"button primary\" href=\"{}\">Try again</a>", html_escape(target))
+    } else {
+        format!("<a class=\"button primary\" href=\"javascript:history.back()\">Go back</a><a class=\"button\" href=\"{}\">Allow this site…</a>", html_escape(&allow))
+    };
+    let note = if why == "no-lists" { "" } else { "<p class=\"small\">Allowing a site takes the parent password.</p>" };
+    // (The lists are on their way when Kite starts: the page is tried again by itself.)
+    let again = if why == "no-lists" { format!("<meta http-equiv=\"refresh\" content=\"3;url={}\">", html_escape(target)) } else { String::new() };
+    format!(
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title>
+<meta name="color-scheme" content="light dark">{again}
+<style>
+body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
+h1 {{ font-size: 1.5em; font-weight: 600; }}
+.host {{ font-weight: 600; }}
+.small {{ opacity: .7; font-size: .9em; }}
+.buttons {{ margin-top: 2em; display: flex; gap: .75em; flex-wrap: wrap; }}
+a.button {{ padding: .5em 1.1em; border-radius: 4px; text-decoration: none; border: 1px solid #888; color: inherit; }}
+a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
+</style></head><body>
+<h1>{title}</h1>
+<p>{text}</p>
+<div class="buttons">{buttons}</div>
+{note}
+</body></html>"#
+    )
+}
+
 // ---- the profile picker (cpp/profiles.cpp) --------------------------------
 
 static PICK_OPENS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -861,29 +928,110 @@ fn profiles() -> Option<kite_core::profiles::Profiles> {
     kite_core::profiles::Profiles::open().ok()
 }
 
+fn parental() -> Option<kite_core::parental::Parental> {
+    kite_core::parental::Parental::open().ok()
+}
+
+/// In the picker's own process: the parent password was given in it.
+static PARENT_PRESENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The parent is at the picker: the password was given in it, or the Kite that
+/// opened it handed it a pass (one a parent's profile gives).
+fn parent_present() -> bool {
+    PARENT_PRESENT.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var(kite_core::parental::PASS_VARIABLE).is_ok_and(|pass| parental().is_some_and(|p| p.pass_is_good(&pass)))
+}
+
+/// Profiles are made, renamed and deleted by the parent only, once one is a child's.
+fn may_manage_profiles() -> anyhow::Result<()> {
+    if parental().is_some_and(|p| p.guards_profiles()) && !parent_present() {
+        anyhow::bail!("This takes the parent password.");
+    }
+    Ok(())
+}
+
+/// `guarded`: managing profiles takes the parent password first (`kite_parental_verify`).
 #[no_mangle]
 pub extern "C" fn kite_profiles_json() -> KiteBuf {
-    let json = profiles().map(|p| serde_json::json!({"profiles": p.list(), "last": p.choices().last}).to_string()).unwrap_or_default();
+    let json = profiles()
+        .map(|p| {
+            serde_json::json!({"profiles": p.list(), "last": p.choices().last, "hasPassword": parental().is_some_and(|p| p.has_password()),
+                "guarded": may_manage_profiles().is_err(), "parentPresent": parent_present(), "minPassword": kite_core::parental::MIN_PASSWORD})
+            .to_string()
+        })
+        .unwrap_or_default();
     KiteBuf::from_vec(json.into_bytes())
+}
+
+/// The parent password, given in the picker or the dialog asking for it: "" if that's it.
+#[no_mangle]
+pub unsafe extern "C" fn kite_parental_verify(password: *const c_char) -> KiteBuf {
+    let checked = kite_core::parental::Parental::open().and_then(|p| p.verify(s(password)));
+    if checked.is_ok() {
+        PARENT_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    error_buf(checked)
+}
+
+/// A new child's profile: with the first one the parent password is set (`password`),
+/// later ones take it (unless the parent is at the picker already).
+fn create_child_profile(name: &str, password: &str) -> anyhow::Result<()> {
+    let parental = kite_core::parental::Parental::open()?;
+    let profiles = kite_core::profiles::Profiles::open()?;
+    if parental.has_password() {
+        if !parent_present() {
+            parental.verify(password)?;
+        }
+    } else if password.chars().count() < kite_core::parental::MIN_PASSWORD {
+        anyhow::bail!("The password needs at least {} characters.", kite_core::parental::MIN_PASSWORD);
+    }
+    profiles.create(name)?;
+    if !parental.has_password() {
+        parental.set_password("", password)?;
+    }
+    PARENT_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
+    parental.set_child(name, Some(Default::default()))
 }
 
 fn error_buf(r: anyhow::Result<()>) -> KiteBuf {
     KiteBuf::from_vec(r.err().map(|e| e.to_string()).unwrap_or_default().into_bytes())
 }
 
+/// `child`: a child's profile, with the parent password (see `create_child_profile`).
 #[no_mangle]
-pub unsafe extern "C" fn kite_profile_create(name: *const c_char) -> KiteBuf {
-    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.create(s(name))))
+pub unsafe extern "C" fn kite_profile_create(name: *const c_char, child: std::ffi::c_int, password: *const c_char) -> KiteBuf {
+    if child != 0 {
+        return error_buf(create_child_profile(s(name), s(password)));
+    }
+    error_buf(may_manage_profiles().and_then(|_| kite_core::profiles::Profiles::open()).and_then(|p| p.create(s(name))))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn kite_profile_delete(name: *const c_char) -> KiteBuf {
-    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.delete(s(name))))
+    error_buf(may_manage_profiles().and_then(|_| kite_core::profiles::Profiles::open()).and_then(|p| p.delete(s(name))))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn kite_profile_rename(from: *const c_char, to: *const c_char) -> KiteBuf {
-    error_buf(kite_core::profiles::Profiles::open().and_then(|p| p.rename(s(from), s(to))))
+    error_buf(may_manage_profiles().and_then(|_| kite_core::profiles::Profiles::open()).and_then(|p| p.rename(s(from), s(to))))
+}
+
+/// A profile's picture: `len` bytes of a PNG file, or none to remove it. A child's
+/// profile's is anyone's to change; another's is the parent's, once one is a child's.
+#[no_mangle]
+pub unsafe extern "C" fn kite_profile_set_avatar(name: *const c_char, png: *const u8, len: usize) -> KiteBuf {
+    let name = s(name);
+    let png = (!png.is_null() && len > 0).then(|| std::slice::from_raw_parts(png, len));
+    let allowed = if parental().is_some_and(|p| p.is_child(name)) { Ok(()) } else { may_manage_profiles() };
+    error_buf(allowed.and_then(|_| kite_core::profiles::Profiles::open()).and_then(|p| p.set_avatar(name, png)))
+}
+
+/// The file of a profile's picture, "" without one (for the pictures Kite's windows show).
+#[no_mangle]
+pub unsafe extern "C" fn kite_profile_avatar_path(name: *const c_char) -> KiteBuf {
+    let name = s(name);
+    let path = profiles().and_then(|p| p.list().into_iter().find(|i| i.name == name)).map(|i| i.avatar).unwrap_or_default();
+    KiteBuf::from_vec(path.into_bytes())
 }
 
 #[no_mangle]
@@ -904,12 +1052,19 @@ pub unsafe extern "C" fn kite_profile_chosen(name: *const c_char) {
     if let Some(p) = profiles() {
         let _ = p.set_choices(&kite_core::profiles::Choices { last: name.to_owned(), ..p.choices() });
     }
+    // The parent password was given here: it isn't asked again for the profile chosen.
+    let pass = parental().filter(|p| PARENT_PRESENT.load(std::sync::atomic::Ordering::Relaxed) && p.needs_password(Some(name))).and_then(|p| p.grant_pass());
     if PICK_OPENS.load(std::sync::atomic::Ordering::Relaxed) {
         if let Some(exe) = crate::own_executable() {
-            let _ = std::process::Command::new(exe).args(["--profile", name]).spawn();
+            let mut start = std::process::Command::new(exe);
+            start.args(["--profile", name]);
+            if let Some(pass) = pass {
+                start.env(kite_core::parental::PASS_VARIABLE, pass);
+            }
+            let _ = start.spawn();
         }
     } else {
-        println!("{name}");
+        println!("{name}\n{}", pass.unwrap_or_default());
     }
 }
 

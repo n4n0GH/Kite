@@ -17,7 +17,7 @@ QQC2.Menu {
 
     QQC2.MenuItem { text: "New Tab"; icon.name: "tab-new"; onTriggered: win.openTab(app.newTabUrl(), {background: false}).focusLocationBar() }
     QQC2.MenuItem { text: "New Window"; icon.name: "window-new"; onTriggered: app.newWindow() }
-    QQC2.MenuItem { id: newPrivateWindow; text: "New Private Window"; icon.name: "view-private"; onTriggered: app.newWindow({privateMode: true}) }
+    QQC2.MenuItem { id: newPrivateWindow; text: "New Private Window"; icon.name: "view-private"; enabled: app.parentalSession.allows.privateWindows; onTriggered: app.newWindow({privateMode: true}) }
     // (A property: a Menu declared inside a Menu is always added to it.)
     property ContainerMenu _containerMenu: ContainerMenu {
         title: "New Container Tab"

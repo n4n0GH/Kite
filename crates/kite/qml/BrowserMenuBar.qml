@@ -24,7 +24,7 @@ QQC2.MenuBar {
         title: "&File"
         QQC2.MenuItem { text: "New &Tab"; icon.name: "tab-new"; onTriggered: menuBar.win.openTab(menuBar.app.newTabUrl(), {background: false}).focusLocationBar() }
         QQC2.MenuItem { text: "New &Window"; icon.name: "window-new"; onTriggered: menuBar.app.newWindow() }
-        QQC2.MenuItem { text: "New &Private Window"; icon.name: "view-private"; onTriggered: menuBar.app.newWindow({privateMode: true}) }
+        QQC2.MenuItem { text: "New &Private Window"; icon.name: "view-private"; enabled: menuBar.app.parentalSession.allows.privateWindows; onTriggered: menuBar.app.newWindow({privateMode: true}) }
         QQC2.MenuSeparator {}
         ProfileMenu {}
         SessionMenu { win: menuBar.win }

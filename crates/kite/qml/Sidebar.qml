@@ -117,7 +117,7 @@ QQC2.Pane {
                         }
                     }
                     CloseButton {
-                        visible: row.deletable
+                        visible: row.deletable && root.win.app.parentalSession.allows.clearHistory
                         opacity: rowHover.hovered ? 1 : 0
                         enabled: rowHover.hovered
                         text: "Delete from History"

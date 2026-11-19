@@ -885,6 +885,19 @@ Item {
                         if (request.navigationType === WebEngineNavigationRequest.LinkClickedNavigation) wt.externalPrompt = u
                         return
                     }
+                    // "Allow this site…" on the page of a site blocked in a child's
+                    // profile: with the parent password, it's allowed from then on.
+                    if (u.startsWith("kite:blocked-allow?")) {
+                        request.reject()
+                        if (!request.isMainFrame || !/^kite:blocked\?/.test(web.url.toString())) return
+                        let target = ""
+                        Qt.callLater(() => wt.app.askParent("Allowing this site in this profile takes the parent password.", password => {
+                            const r = JSON.parse(Browser.parentalAllowSite(u, password))
+                            target = r.url || ""
+                            return r.url ? "" : (r.error || "This site can't be allowed from here.")
+                        }, () => { if (target !== "") web.url = target }))
+                        return
+                    }
                     const dangerous = u.startsWith("kite:dangerous-allow?")
                     if (!u.startsWith("kite:https-allow?") && !dangerous) {
                         // Where it should go instead: a redirect has to happen here, as

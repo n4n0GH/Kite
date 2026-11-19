@@ -76,7 +76,7 @@ QQC2.Menu {
         onChosen: c => menu.tab.window.openTab(menu.linkUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: c})
     }
     QQC2.MenuItem { visible: menu.linkOpenable; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in New Window"; icon.name: "window-new"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: menu.tab.window.privateMode}) }
-    QQC2.MenuItem { visible: menu.linkOpenable; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
+    QQC2.MenuItem { visible: menu.linkOpenable; height: visible ? implicitHeight : 0; text: "Open " + menu.linkNoun + " in Private Window"; icon.name: "view-private"; enabled: menu.tab.app.parentalSession.allows.privateWindows; onTriggered: menu.tab.app.newWindow({urls: [menu.linkUrl], privateMode: true}) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Bookmark " + menu.linkNoun; icon.name: "bookmark-new"; onTriggered: Browser.addBookmark(menu.linkUrl, menu.req.linkText || menu.linkUrl, "") }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: "Save " + menu.linkNoun + " As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadLinkToDisk) }
     QQC2.MenuItem { visible: !!menu.linkUrl; height: visible ? implicitHeight : 0; text: menu.linkIsImage ? "Copy Image Address" : "Copy Link"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyLinkToClipboard) }
@@ -101,7 +101,7 @@ QQC2.Menu {
     // Selected text that is an address
     QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link"; icon.name: "go-jump"; onTriggered: menu.tab.load(menu.selectionLink) }
     QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.selectionLink, {background: !menu.tab.app.setting("tabs.switchToNewTabFromLink"), index: menu.tab.window.linkTabIndex(menu.tab), openerTabId: menu.tab.tabId, container: menu.tab.container}) }
-    QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; onTriggered: menu.tab.app.newWindow({urls: [menu.selectionLink], privateMode: true}) }
+    QQC2.MenuItem { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0; text: "Open Link in Private Window"; icon.name: "view-private"; enabled: menu.tab.app.parentalSession.allows.privateWindows; onTriggered: menu.tab.app.newWindow({urls: [menu.selectionLink], privateMode: true}) }
     QQC2.MenuSeparator { visible: !!menu.selectionLink; height: visible ? implicitHeight : 0 }
 
     // Editing / selection

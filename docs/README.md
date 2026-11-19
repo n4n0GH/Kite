@@ -4,6 +4,7 @@
 |---|---|
 | [architecture.md](architecture.md) | The core components, how Rust, C++ and QML are glued together, and how the main things flow through them |
 | [ui.md](ui.md) | Which file defines which window, menu, dialog and settings page |
+| [parental-controls.md](parental-controls.md) | Child profiles: the parent password, the lists of blocked sites, safe search, what a child's profile may do, and what none of it holds against |
 | [plugins.md](plugins.md) | The native plugin system: writing, handing out and installing plugins, with a complete example |
 | [performance.md](performance.md) | Kite measured against Falkon and Firefox (November 2026): startup, memory, idle CPU, Speedometer, and what the measuring changed in Kite |
 

@@ -237,6 +237,14 @@ impl cxx_qt::Initialize for qobject::Extensions {
     }
 }
 
+/// Parental controls: a child's profile installs, removes and switches extensions only
+/// if it may.
+fn extensions_allowed() -> bool {
+    app().parental.allows(kite_core::parental::Permission::Extensions)
+}
+
+const EXTENSIONS_LOCKED: &str = "Extensions can't be installed or changed in this profile (parental controls).";
+
 impl qobject::Extensions {
     /// Queue a message for a view's bridge and tell the bridges (the signal
     /// carries only the view's name; its bridge takes the messages). Views
@@ -494,6 +502,9 @@ impl qobject::Extensions {
     }
 
     fn set_enabled(self: Pin<&mut Self>, id: &QString, enabled: bool) {
+        if !extensions_allowed() {
+            return;
+        }
         let id = id.to_string();
         let fx = {
             let mut rt = app().runtime();
@@ -507,6 +518,9 @@ impl qobject::Extensions {
 
     /// Returns the extension's uninstall URL (if it set one) for the UI to open.
     fn uninstall(self: Pin<&mut Self>, id: &QString) -> QString {
+        if !extensions_allowed() {
+            return QString::default();
+        }
         let id = id.to_string();
         let url = {
             let mut rt = app().runtime();
@@ -538,6 +552,10 @@ impl qobject::Extensions {
 
     // ---- installation -----------------------------------------------------------
     fn start_download(self: Pin<&mut Self>, what: String, direct_url: Option<String>) {
+        if !extensions_allowed() {
+            self.install_status(q(json!({"state": "error", "message": EXTENSIONS_LOCKED}).to_string()));
+            return;
+        }
         let thread = self.qt_thread();
         let status = |s: &str, m: &str| json!({"state": s, "message": m}).to_string();
         let _ = thread.queue({
@@ -573,6 +591,10 @@ impl qobject::Extensions {
     }
 
     fn prompt_install(mut self: Pin<&mut Self>, bytes: Vec<u8>, source: String, slug: String) {
+        if !extensions_allowed() {
+            self.install_status(q(json!({"state": "error", "message": EXTENSIONS_LOCKED}).to_string()));
+            return;
+        }
         let manifest = match Registry::inspect(&bytes) {
             Ok(m) => m,
             Err(e) => {
@@ -648,6 +670,10 @@ impl qobject::Extensions {
 
     fn confirm_install(mut self: Pin<&mut Self>, request: i32, accept: bool) {
         let Some(p) = self.as_mut().rust_mut().pending.remove(&request) else { return };
+        if accept && !extensions_allowed() {
+            self.install_status(q(json!({"state": "error", "message": EXTENSIONS_LOCKED}).to_string()));
+            return;
+        }
         if !accept {
             self.install_status(q(json!({"state": "cancelled", "message": "Installation cancelled"}).to_string()));
             return;
@@ -674,6 +700,9 @@ impl qobject::Extensions {
     }
 
     fn load_temporary(mut self: Pin<&mut Self>, path: &QString) -> QString {
+        if !extensions_allowed() {
+            return q(EXTENSIONS_LOCKED);
+        }
         let p = path.to_string();
         let p = p.strip_prefix("file://").unwrap_or(&p).to_owned();
         let mut dir = std::path::PathBuf::from(&p);
@@ -744,6 +773,11 @@ impl qobject::Extensions {
 fn native_fetch(d: &Value) -> Result<Value, String> {
     use base64::Engine;
     let url = d["url"].as_str().unwrap_or_default();
+    // (Kite fetches this itself, past the request interceptor: a child's profile is
+    // kept from the same sites here.)
+    if app().parental.filter.is_on() && app().parental.filter.check(&kite_core::util::host_of(url)).is_some() {
+        return Err("NetworkError when attempting to fetch resource.".into());
+    }
     let method = d["method"].as_str().unwrap_or("GET").to_uppercase();
     let agent: ureq::Agent = kite_core::net::config()
         .http_status_as_error(false)

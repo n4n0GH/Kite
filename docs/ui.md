@@ -19,6 +19,28 @@ All paths are under `crates/kite/qml/`, except for plugins. QML files are compil
 | Picture-in-picture | `plugins/pip/PipWindow.qml` | `Main.startPip` |
 | Profile picker | `crates/kite/cpp/profiles.cpp` | `kite --pick-profile`, its own process |
 
+The profile picker is Qt Widgets, not QML (it runs before QtWebEngine starts). It shows each
+profile as a card (`CardDelegate`, `CardList`): its picture in a circle, its name, and under the name
+what there is to say about it ("Child's profile", "Default profile", "Open"). The cards are as wide
+as their share of the row, as many beside each other as fit. A profile's picture is set with
+"Picture…" (also in the card's context menu, and in the New Profile dialog): `PictureDialog` opens an
+image file (or takes one dropped on it), which is dragged and zoomed under a round opening
+(`CropCanvas`: the wheel, the slider, or the arrow keys and +/−); what's in the opening is kept as
+`avatar.png`, 256 pixels a side, in the profile's directory (`Profiles::set_avatar` in kite-core).
+Without a picture a card shows a figure drawn in the colour scheme's accent colour. With parental
+controls, the picture of a child's profile is anyone's to change; another profile's takes the parent
+password, like its name. Kite's own windows show the same pictures in the Profiles menu and the
+command palette, through the image provider `image://kiteprofile/<anything>/<name>` in
+`cpp/bootstrap.cpp` (what's before the name makes the address a new one, so a changed picture is
+asked for again).
+
+Every profile can be renamed while it isn't open, the default one too. The default profile is the
+one that opens when none is asked for; it's always there, listed first, can't be deleted and can't be
+a child's. It's named "default" until it's renamed. Its name is then the `default` entry of
+`profiles.json`, and `--profile default` still opens it (`Profiles::resolve`), which is why no other
+profile can be named "default" from then on. Without that entry (the file removed, say), a profile
+named "default" is the default one again.
+
 Settings, Extensions and Library are based on `ManagerWindow.qml`, and only one of each is
 open at a time (`Main.showSingleton`).
 
@@ -97,7 +119,8 @@ separately**. A new command needs adding to each one where it belongs.
 | Tab search (Ctrl+Shift+E) | `TabSearch.qml` | The open tabs of all windows |
 
 Matching and ranking are in `fuzzy.js` and `CommandBar.refresh`. A setting's score is weighted by
-`SETTING_WEIGHT` in `palette.js`, so actions come first.
+`SETTING_WEIGHT` in `palette.js`, so actions come first. In a child's profile (parental controls),
+settings it may not change, and plugins it may not switch, aren't listed.
 
 ## The panels and popups
 
@@ -129,7 +152,11 @@ Matching and ranking are in `fuzzy.js` and `CommandBar.refresh`. A setting's sco
 The list is `pages` in `PreferencesWindow.qml`, and each page is a `Component` in that file:
 
 General, Appearance, Tabs, Browsing, Search Engines, Privacy, Passwords, Content Blocking, Downloads, Site
-Settings, Plugins & Extensions, and Shortcuts.
+Settings, Plugins & Extensions, Shortcuts, and Parental Controls (its own file, `ParentalPage.qml`;
+see [parental-controls.md](parental-controls.md)). In a child's profile that may not change
+settings, only Appearance, Tabs, Site Settings, Shortcuts and Parental Controls can be used, and
+on Plugins & Extensions the settings of plugins that are on; the other pages are shown disabled,
+with a padlock in the list (`pageLocked`).
 
 Every page is built from the same pieces, defined at the top of `PreferencesWindow.qml`, so they
 look alike: a centred `PageColumn` of the same width on every page, a `SectionHeader` (title on the

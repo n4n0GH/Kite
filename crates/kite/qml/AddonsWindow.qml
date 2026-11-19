@@ -65,6 +65,14 @@ ManagerWindow {
 
             ColumnLayout {
                 spacing: Kirigami.Units.largeSpacing
+                // Parental controls: a child's profile that may not change its extensions.
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    visible: !w.app.parentalSession.allows.extensions
+                    type: Kirigami.MessageType.Information
+                    text: "Extensions can't be installed, removed or switched in this profile. A parent can unlock that in Settings → Parental Controls."
+                    actions: [Kirigami.Action { text: "Parental Controls"; icon.name: "system-users"; onTriggered: w.app.showPreferences("parental") }]
+                }
                 Kirigami.InlineMessage {
                     Layout.fillWidth: true
                     visible: w.updates.length > 0
@@ -121,7 +129,7 @@ ManagerWindow {
                                     QQC2.Label { text: card.modelData.broken ? card.modelData.error : (card.modelData.description || ""); wrapMode: Text.Wrap; Layout.fillWidth: true; maximumLineCount: card.expanded ? 20 : 2; elide: Text.ElideRight }
                                 }
                                 QQC2.Switch {
-                                    enabled: !card.modelData.broken
+                                    enabled: !card.modelData.broken && w.app.parentalSession.allows.extensions
                                     checked: card.modelData.enabled
                                     onToggled: Extensions.setEnabled(card.modelData.id, checked)
                                     QQC2.ToolTip.text: checked ? "Disable" : "Enable"; QQC2.ToolTip.visible: hovered

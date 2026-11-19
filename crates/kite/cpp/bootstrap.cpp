@@ -3,6 +3,9 @@
 // the KDE desktop style needs a QApplication. Everything else lives in Rust
 // (src/) and QML (qml/).
 #include <QApplication>
+#include <QPalette>
+#include <QPixmap>
+#include <QUrl>
 #include <QBuffer>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -679,6 +682,26 @@ private:
     QImage m_image;
 };
 
+// The profiles' pictures, as the profile picker shows them (profiles.cpp), for the
+// Profiles menu and the command palette: image://kiteprofile/<anything>/<name>.
+// What's before the name only makes the address another one, so that a picture that
+// was changed isn't shown as it was (it's part of the path: an icon asks without what
+// follows a "?").
+QPixmap kiteProfilePicture(const QString &profile, int size, const QPalette &palette);
+
+class KiteProfilePictureProvider : public QQuickImageProvider {
+public:
+    KiteProfilePictureProvider() : QQuickImageProvider(QQuickImageProvider::Pixmap) {}
+    QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override
+    {
+        const QString name = QUrl::fromPercentEncoding(id.section(QLatin1Char('/'), -1).toUtf8());
+        const int wanted = qMax(requestedSize.width(), requestedSize.height());
+        const int side = wanted > 0 ? qBound(16, wanted, 256) : 64;
+        if (size) *size = QSize(side, side);
+        return kiteProfilePicture(name, side, QGuiApplication::palette());
+    }
+};
+
 class KiteFaviconProvider : public QQuickAsyncImageProvider {
 public:
     // (Called on the interface's thread by an icon, on a loader's by an image.)
@@ -787,6 +810,7 @@ extern "C" int kite_bootstrap(int argc, char **argv, const char *version)
     QQmlApplicationEngine engine;
     g_engine = &engine;
     engine.addImageProvider(QStringLiteral("kitefavicon"), new KiteFaviconProvider);
+    engine.addImageProvider(QStringLiteral("kiteprofile"), new KiteProfilePictureProvider);
     kite_init_dns();
     app.installEventFilter(new KiteInputFilter(&app));
     app.installEventFilter(new KiteScaleFilter(&app));

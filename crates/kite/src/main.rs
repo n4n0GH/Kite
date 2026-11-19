@@ -24,6 +24,7 @@ use std::os::raw::{c_char, c_int};
 extern "C" {
     fn kite_bootstrap(argc: c_int, argv: *mut *mut c_char, version: *const c_char) -> c_int;
     fn kite_pick_profile(argc: c_int, argv: *mut *mut c_char) -> c_int;
+    fn kite_ask_parent_password(argc: c_int, argv: *mut *mut c_char, profile: *const c_char, changed: bool) -> c_int;
 }
 
 /// How to start Kite again (an AppImage's own file, not the mounted one).
@@ -58,17 +59,79 @@ fn pick_profile(args: &[String], open: bool) -> ! {
     std::process::exit(unsafe { kite_pick_profile((argv.len() - 1) as c_int, argv.as_mut_ptr()) });
 }
 
+/// The profile meant by `name`: "default" is the default one, also once it's renamed.
+fn named_profile(name: &str) -> String {
+    kite_core::profiles::Profiles::open().map_or_else(|_| name.to_owned(), |p| p.resolve(name))
+}
+
 /// A start without --profile, with several profiles: the user chooses. None
-/// if the picker was closed, to end there; the default if it can't show.
-fn ask_for_profile() -> Option<String> {
-    let default = || Some(kite_core::profiles::DEFAULT.to_owned());
+/// if the picker was closed, to end there; the default if it can't show. With the
+/// name comes a pass, if the parent password was given in the picker.
+fn ask_for_profile() -> Option<(String, Option<String>)> {
+    let default = || Some((named_profile(kite_core::profiles::DEFAULT), None));
     let Some(exe) = own_executable() else { return default() };
     match std::process::Command::new(exe).arg("--pick-profile").stderr(std::process::Stdio::inherit()).output() {
         Ok(out) if out.status.success() => {
-            let name = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            (!name.is_empty()).then_some(name)
+            let out = String::from_utf8_lossy(&out.stdout);
+            let mut lines = out.lines();
+            let name = lines.next().unwrap_or("").trim().to_owned();
+            let pass = lines.next().map(|l| l.trim().to_owned()).filter(|l| !l.is_empty());
+            (!name.is_empty()).then_some((name, pass))
         }
         _ => default(),
+    }
+}
+
+/// The dialog asking for the parent password, in a process of its own (as the
+/// profile picker is): this one hasn't started Qt yet, and has to know before it does.
+fn ask_parent_password(args: &[String], profile: &str, changed: bool) -> ! {
+    let profile = CString::new(profile).unwrap_or_default();
+    let args: Vec<CString> = args.iter().map(|a| CString::new(a.as_str()).unwrap_or_default()).collect();
+    let mut argv: Vec<*mut c_char> = args.iter().map(|a| a.as_ptr() as *mut c_char).collect();
+    argv.push(std::ptr::null_mut());
+    std::mem::forget(args);
+    std::process::exit(unsafe { kite_ask_parent_password((argv.len() - 1) as c_int, argv.as_mut_ptr(), profile.as_ptr(), changed) });
+}
+
+/// The look whether the parental controls are as Kite left them, once for this start
+/// and before anything goes by them. Changed outside Kite, they're put back from their
+/// copy (the windows say so).
+fn parental_check() -> kite_core::parental::Integrity {
+    use kite_core::parental::Integrity;
+    let integrity = kite_core::parental::Parental::open().map_or(Integrity::Fine, |p| p.check());
+    if integrity == Integrity::Restored {
+        state::PARENTAL_RESTORED.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    integrity
+}
+
+/// Parental controls: a profile without restrictions (or a private session, None)
+/// opens only with the parent password, unless the Kite that started this one handed
+/// it a pass. A child's profile opens as it is. Ends here if the password isn't given.
+///
+/// If the parental controls were changed outside Kite with nothing to put them back
+/// from, no profile opens without the password, a child's neither; with it, they
+/// count as they are now.
+fn parental_gate(profile: Option<&str>, pass: Option<String>, integrity: kite_core::parental::Integrity) {
+    let Ok(parental) = kite_core::parental::Parental::open() else { return };
+    let changed = integrity == kite_core::parental::Integrity::Changed;
+    if !changed && !parental.needs_password(profile) {
+        return;
+    }
+    if !pass.is_some_and(|p| parental.redeem_pass(&p)) {
+        let mut ask = vec!["--parent-password", profile.unwrap_or("")];
+        if changed {
+            ask.push("--parental-changed");
+        }
+        let asked = own_executable().and_then(|exe| std::process::Command::new(exe).args(ask).status().ok());
+        if !asked.is_some_and(|s| s.success()) {
+            std::process::exit(0);
+        }
+    }
+    if changed {
+        if let Err(e) = parental.accept() {
+            eprintln!("kite: parental controls can't be saved: {e}");
+        }
     }
 }
 
@@ -79,8 +142,12 @@ without any, it opens a new window.
 
 Options:
   -p, --profile <name>   Use (or create) the named profile. Without it, Kite asks
-                         if there are several (or uses \"default\")
+                         if there are several (or uses the default one, which
+                         \"default\" always names, also once it's renamed)
       --pick-profile     Choose a profile, printing its name
+      --parent-password <profile>
+                         Ask for the parent password (parental controls); exits
+                         with 0 if it was given
       --private          Start a private browsing session (nothing is saved)
       --factory          Go back to the default settings, saving the current ones
                          to a file in the profile first (bookmarks, logins and
@@ -141,6 +208,8 @@ fn main() {
     let mut chosen = false;
     let mut pick = false;
     let mut pick_opens = false;
+    let mut ask_password: Option<String> = None;
+    let mut parental_changed = false;
     let mut private = false;
     let mut factory = false;
     let mut urls = vec![];
@@ -171,6 +240,8 @@ fn main() {
                 pick = true;
                 pick_opens = true;
             }
+            "--parent-password" => ask_password = Some(it.next().unwrap_or_default()),
+            "--parental-changed" => parental_changed = true,
             "--private" => private = true,
             "--factory" => factory = true,
             "--no-plugins" => state::NO_PLUGINS.store(true, std::sync::atomic::Ordering::Relaxed),
@@ -184,9 +255,23 @@ fn main() {
             _ => urls.push(a.clone()),
         }
     }
+    // (Without --profile it's the default one; `--profile default` says that too.)
+    profile = named_profile(&profile);
     if pick {
+        // (The picker goes by the parental controls too.)
+        parental_check();
         pick_profile(&qt_args, pick_opens);
     }
+    if let Some(profile) = ask_password {
+        ask_parent_password(&qt_args, &profile, parental_changed);
+    }
+    // A pass from the Kite that started this one (parental controls). It's for this
+    // start only: what this Kite starts doesn't get it.
+    let mut pass = std::env::var(kite_core::parental::PASS_VARIABLE).ok();
+    std::env::remove_var(kite_core::parental::PASS_VARIABLE);
+    // A link handed to the only Kite that's open joins what's open already: nothing new opens.
+    let mut joins = false;
+    let mut integrity = None;
     if private {
         profile = format!("private-{}", std::process::id());
     } else if !chosen {
@@ -196,12 +281,20 @@ fn main() {
         let open = profiles.as_ref().filter(|_| !urls.is_empty()).and_then(|p| p.only_open());
         if let Some(name) = open {
             profile = name;
+            joins = true;
         } else if profiles.is_some_and(|p| p.should_ask()) {
+            integrity = Some(parental_check());
             match ask_for_profile() {
-                Some(name) => profile = name,
+                Some((name, picked_pass)) => {
+                    profile = name;
+                    pass = picked_pass.or(pass);
+                }
                 None => return,
             }
         }
+    }
+    if !joins {
+        parental_gate((!private).then_some(profile.as_str()), pass, integrity.unwrap_or_else(parental_check));
     }
     if factory {
         factory_reset(&profile, private);
@@ -233,6 +326,11 @@ fn main() {
             flags.push("--enable-features=FluentOverlayScrollbar".into());
         }
         flags.extend(proxy_flags(&s.get_str("privacy.proxy"), &s.get_str("privacy.proxyType"), &s.get_str("privacy.proxyHost"), s.get_i64("privacy.proxyPort")));
+        // A child's profile with safe search: the search engines' names lead to the
+        // addresses they keep for safe search that can't be switched off.
+        if state::app().parental.restrictions().is_some_and(|r| r.safe_search) {
+            flags.push(format!("--host-resolver-rules=\"{}\"", kite_core::parental::safe_search_resolver_rules()));
+        }
         if let Ok(user) = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS") {
             flags.push(user);
         }

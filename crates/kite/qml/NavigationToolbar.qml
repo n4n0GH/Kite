@@ -128,7 +128,7 @@ QQC2.ToolBar {
     }
     Component {
         id: privateWindowItem
-        Button { icon.name: "view-private"; tip: "New Private Window"; onClicked: toolbar.win.app.newWindow({privateMode: true}) }
+        Button { icon.name: "view-private"; tip: "New Private Window"; enabled: toolbar.win.app.parentalSession.allows.privateWindows; onClicked: toolbar.win.app.newWindow({privateMode: true}) }
     }
     Component {
         id: bookmarksItem

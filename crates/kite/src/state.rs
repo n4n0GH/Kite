@@ -28,6 +28,8 @@ pub struct App {
     pub safe_browsing: Arc<kite_core::safebrowsing::SafeBrowsing>,
     /// Wakes the safe browsing updater (a setting changed).
     pub safe_browsing_wake: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    /// Parental controls, as this profile is held to them.
+    pub parental: ParentalSession,
     pub qwebchannel_js: OnceLock<String>,
     /// URLs passed on the command line.
     pub initial_urls: Vec<String>,
@@ -66,6 +68,8 @@ pub static NO_PLUGINS: AtomicBool = AtomicBool::new(false);
 /// `--debug`: tools for looking into Kite (Settings → Browsing → Dangerous
 /// Sites: the lists checked against).
 pub static DEBUG: AtomicBool = AtomicBool::new(false);
+/// Parental controls were changed outside Kite and put back as this Kite started.
+pub static PARENTAL_RESTORED: AtomicBool = AtomicBool::new(false);
 
 /// KNotification needs an event description file to show desktop notifications.
 fn install_notifyrc() {
@@ -136,7 +140,9 @@ fn init_app(profile: &str, initial_urls: Vec<String>, private: bool) -> anyhow::
     safe_browsing.load_cached();
     let safe_browsing_wake = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
     spawn_safe_browsing_updater(safe_browsing.clone(), safe_browsing_wake.clone());
-    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, formfill, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, safe_browsing, safe_browsing_wake, qwebchannel_js: OnceLock::new(), initial_urls, private })
+    let parental = ParentalSession::start(&profile.name);
+    parental.keep_search_engine_usable(&shared);
+    APP.set(App { shared, runtime: Mutex::new(runtime), passwords, formfill, screen: Mutex::default(), adblock, do_not_track, send_referer, cookie_policy, privacy, safe_browsing, safe_browsing_wake, parental, qwebchannel_js: OnceLock::new(), initial_urls, private })
         .map_err(|_| anyhow::anyhow!("already initialised"))?;
     Ok(())
 }
@@ -325,4 +331,95 @@ pub fn safe_browsing_changed() {
     let (lock, cvar) = &*a.safe_browsing_wake;
     *lock.lock().unwrap() = true;
     cvar.notify_one();
+}
+
+/// Parental controls as this Kite follows them (`kite_core::parental`).
+pub struct ParentalSession {
+    /// What this profile is held to; None for one that isn't a child's.
+    child: Arc<std::sync::RwLock<Option<kite_core::parental::Restrictions>>>,
+    /// The parent gave the password in Settings: until it's locked again, the limits
+    /// on what may be done here are lifted. (The site filter stays.)
+    pub unlocked: AtomicBool,
+    pub filter: Arc<kite_core::parental::SiteFilter>,
+    /// Wakes the lists' updater: 1 to look again, 2 to fetch them all anew.
+    wake: Arc<(Mutex<u8>, std::sync::Condvar)>,
+}
+
+impl ParentalSession {
+    /// For the profile of that name. (A private session, `private-<pid>`, is nobody's.)
+    fn start(profile: &str) -> Self {
+        let store = kite_core::parental::Parental::open().ok();
+        let restrictions = store.as_ref().and_then(|p| p.restrictions(profile));
+        let filter = Arc::new(match store {
+            Some(store) => kite_core::parental::SiteFilter::of(store),
+            None => kite_core::parental::SiteFilter::new(std::env::temp_dir().join("kite-sitefilter")),
+        });
+        filter.configure(restrictions.as_ref());
+        if let Some(r) = &restrictions {
+            filter.load_cached(&r.lists);
+        }
+        let child = Arc::new(std::sync::RwLock::new(restrictions));
+        let wake = Arc::new((Mutex::new(0u8), std::sync::Condvar::new()));
+        let (lists_of, filter2, wake2) = (child.clone(), filter.clone(), wake.clone());
+        // The lists: fetched when missing or old, now and twice a day while Kite runs.
+        std::thread::Builder::new()
+            .name("sitefilter".into())
+            .spawn(move || loop {
+                let (lock, cvar) = &*wake2;
+                let force = std::mem::take(&mut *lock.lock().unwrap_or_else(|e| e.into_inner())) == 2;
+                let lists = lists_of.read().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|r| r.block_adult).map(|r| r.lists.clone());
+                if let Some(lists) = lists {
+                    filter2.refresh(&lists, force);
+                }
+                let asked = lock.lock().unwrap_or_else(|e| e.into_inner());
+                if *asked == 0 {
+                    let _ = cvar.wait_timeout(asked, std::time::Duration::from_secs(12 * 3600));
+                }
+            })
+            .ok();
+        Self { child, unlocked: AtomicBool::new(false), filter, wake }
+    }
+
+    pub fn is_child(&self) -> bool {
+        self.child.read().unwrap_or_else(|e| e.into_inner()).is_some()
+    }
+
+    pub fn restrictions(&self) -> Option<kite_core::parental::Restrictions> {
+        self.child.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Whether that may be done in this profile right now.
+    pub fn allows(&self, what: kite_core::parental::Permission) -> bool {
+        self.unlocked.load(Relaxed) || self.child.read().unwrap_or_else(|e| e.into_inner()).as_ref().is_none_or(|r| r.allows(what))
+    }
+
+    /// What this profile is held to changed (Settings): followed from here on.
+    pub fn set(&self, restrictions: Option<kite_core::parental::Restrictions>) {
+        self.filter.configure(restrictions.as_ref());
+        *self.child.write().unwrap_or_else(|e| e.into_inner()) = restrictions;
+        self.update_lists(false);
+    }
+
+    /// Has the updater look at the lists now (`force`: fetch them all anew).
+    pub fn update_lists(&self, force: bool) {
+        let (lock, cvar) = &*self.wake;
+        let mut asked = lock.lock().unwrap_or_else(|e| e.into_inner());
+        *asked = (*asked).max(if force { 2 } else { 1 });
+        cvar.notify_one();
+    }
+
+    /// With safe search on, a search engine that can't be held to it is blocked: if
+    /// that's the one the address bar searches with, DuckDuckGo takes its place.
+    fn keep_search_engine_usable(&self, shared: &Shared) {
+        if !self.restrictions().is_some_and(|r| r.safe_search) {
+            return;
+        }
+        let name = shared.settings().get_str("general.searchEngine");
+        let engines = kite_core::search::load_engines(&shared.db()).unwrap_or_default();
+        let blocked = |e: &kite_core::search::SearchEngine| self.filter.check(&kite_core::util::host_of(&e.url.replace("%s", "x"))) == Some(kite_core::parental::Blocked::Search);
+        if engines.iter().find(|e| e.name == name).is_some_and(blocked) {
+            log::info!("parental controls: {name} can't be held to safe search; searching with DuckDuckGo");
+            let _ = shared.settings().set("general.searchEngine", serde_json::Value::String("DuckDuckGo".into()));
+        }
+    }
 }

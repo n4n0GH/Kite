@@ -65,8 +65,14 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   and YouTube Download, a button in the address bar on YouTube videos that saves them with
   [yt-dlp](https://github.com/yt-dlp/yt-dlp) (when it's installed), in the quality you choose.
 * **Profiles:** each with its own bookmarks, history, logins and extensions; a picker at startup when
-  there are several, where they can be renamed too, and a Profiles menu to open another or manage
-  them (`--profile` still works).
+  there are several, where they can be renamed (the default one too) and given a picture, and a
+  Profiles menu to open another or manage them (`--profile` still works).
+* **Parental controls:** a profile can be a child's. It blocks adult sites by community-kept lists
+  (about 550,000 sites, updated by themselves), holds Google, YouTube, Bing, DuckDuckGo and Ecosia to
+  safe search that can't be switched off, and can't install extensions or plugins, change settings,
+  open private windows or delete history unless allowed. Leaving it for another profile takes the
+  parent password. Set in Settings → Parental Controls; it works inside Kite, and a child's own
+  system account is what holds beyond that ([docs/parental-controls.md](docs/parental-controls.md)).
 * **Plasma Integration:** control what's playing with Plasma's media controls and media
   keys (MPRIS), follow, pause and open downloads in the notification area, find tabs,
   bookmarks and history from KRunner, share with KDE's share menu (the Web Share API), and
@@ -226,6 +232,7 @@ crates/kite-core   pure Rust, unit-tested, no Qt
   adblock (Brave's engine, EasyList/EasyPrivacy, cached compiled engine),
   privacy (tracking-parameter stripping, HTTPS-only upgrades), startpage (custom start pages),
   safebrowsing (Google Update API v4 + open lists)
+  parental (child profiles, the parent password, the site filter and its lists)
   webext/  amo (AMO API client, sha256-verified downloads), xpi, registry,
            manifest (MV2+MV3), i18n, match patterns, storage, dnr,
            runtime (the WebExtension API backend), scripts + js/ (browser.* API)

@@ -18,8 +18,14 @@ CommandBar {
     function toggle_(t) {
         const now = !app.setting(t.key)
         Browser.setSetting(t.key, JSON.stringify(now))
+        // (Parental controls: what a child's profile may not change isn't listed; if
+        // it was locked meanwhile, it stays as it is.)
+        if (!!app.setting(t.key) !== now) { win.toast("Not available in this profile", "object-locked"); return }
         win.toast(t.text + ": " + (now ? "on" : "off") + (t.restart ? " (after restarting Kite)" : ""), "configure")
     }
+    // Parental controls: in a child's profile, settings it may not change aren't offered.
+    readonly property bool settingsLocked: !app.parentalSession.allows.settings
+    function pageOpen(page) { return !settingsLocked || Palette.CHILD_PAGES.includes(page) || Palette.CHILD_PAGES_IN_PART.includes(page) }
 
     // Settings make room for actions, unless what was typed only matches
     // those by letters scattered over them.
@@ -48,14 +54,15 @@ CommandBar {
         for (const p of JSON.parse(Browser.profiles())) {
             if (p.name === here || p.inUse) continue
             const name = p.name
-            out.push({prefix: "Profiles", title: "Open " + name, icon: "user-identity", run: () => Browser.openProfile(name)})
+            out.push({prefix: "Profiles", title: "Open " + name, icon: "image://kiteprofile/" + Date.now() + "/" + encodeURIComponent(name), run: () => Browser.openProfile(name)})
         }
         out.push({prefix: "Profiles", title: "Manage profiles", icon: "user-identity", run: () => Browser.manageProfiles()})
         for (const t of Palette.TOGGLES) {
+            if (settingsLocked && !Browser.maySetSetting(t.key)) continue
             const item = t
             out.push({prefix: "Settings: " + Palette.PAGE_TITLES[t.page] + (t.prefix ? ", " + t.prefix : ""), title: t.text, weight: settingWeight, icon: "configure", checked: !!app.setting(t.key), run: () => palette.toggle_(item)})
         }
-        for (const p of app.pluginsDisabled ? [] : app.plugins) {
+        for (const p of app.pluginsDisabled || !app.parentalSession.allows.plugins ? [] : app.plugins) {
             const plugin = p
             const on = app.pluginEnabled(plugin)
             out.push({prefix: "Plugins", title: plugin.name, icon: plugin.icon, checked: on, run: () => {
@@ -64,6 +71,7 @@ CommandBar {
             }})
         }
         for (const c of Palette.CHOICES) {
+            if (!pageOpen(c.page)) continue
             const page = c.page
             out.push({prefix: "Settings: " + Palette.PAGE_TITLES[c.page], title: c.text, weight: settingWeight, icon: "configure", run: () => app.showPreferences(page)})
         }

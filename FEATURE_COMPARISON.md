@@ -48,6 +48,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |
 | Profiles | ✅ | ✅ | ✅ | Kite: a picker at startup and a Profiles menu; each runs in its own process. |
+| Parental controls (child profiles) | ✅ | ⚠️ | ❌ | Kite: a child's profile blocks adult sites by lists, enforces safe search and takes a parent password to leave. Chrome: supervised accounts through Google's Family Link. Firefox: only follows the system's parental controls. |
 | Private windows | ✅ | ✅ | ✅ | Kite's are purple, bars and title bar, unless switched off. |
 
 ## Address bar and navigation

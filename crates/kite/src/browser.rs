@@ -612,6 +612,61 @@ pub mod qobject {
         #[cxx_name = "manageProfiles"]
         fn manage_profiles(self: &Browser);
 
+        // Parental controls (kite_core::parental, Settings → Parental Controls).
+        /// All of it, for Settings and what's shown or hidden elsewhere: {hasPassword,
+        /// child, unlocked, lockUnrestricted, profile, allows: {extensions, plugins,
+        /// settings, privateWindows, clearHistory}, restrictions, profiles: [{name,
+        /// child, inUse, restrictions}], lists: [{id, name, about, home, updated,
+        /// error}], sites, minPassword}.
+        #[qinvokable]
+        fn parental(self: &Browser) -> QString;
+        /// The part of it the windows follow: {child, unlocked, allows, restored}
+        /// (`restored`: changed outside Kite and put back as this Kite started).
+        #[qinvokable]
+        #[cxx_name = "parentalSession"]
+        fn parental_session(self: &Browser) -> QString;
+        /// Whether this profile may change that setting (parental controls).
+        #[qinvokable]
+        #[cxx_name = "maySetSetting"]
+        fn may_set_setting(self: &Browser, key: &QString) -> bool;
+        /// The parent has seen that the parental controls were put back. An error, or "".
+        #[qinvokable]
+        #[cxx_name = "parentalDismissRestored"]
+        fn parental_dismiss_restored(self: Pin<&mut Browser>) -> QString;
+        /// The parent password, to change parental controls and, in a child's profile,
+        /// to do there what it may not. An error, or "".
+        #[qinvokable]
+        #[cxx_name = "parentalUnlock"]
+        fn parental_unlock(self: Pin<&mut Browser>, password: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "parentalLock"]
+        fn parental_lock(self: Pin<&mut Browser>);
+        /// Sets the parent password (`current`: the one set so far). An error, or "".
+        #[qinvokable]
+        #[cxx_name = "parentalSetPassword"]
+        fn parental_set_password(self: Pin<&mut Browser>, current: &QString, password: &QString) -> QString;
+        /// Whether profiles that aren't a child's open only with the password.
+        #[qinvokable]
+        #[cxx_name = "parentalSetLockUnrestricted"]
+        fn parental_set_lock_unrestricted(self: Pin<&mut Browser>, on: bool) -> QString;
+        /// What a profile is held to, as JSON; "" makes it an ordinary profile again.
+        /// An error, or "".
+        #[qinvokable]
+        #[cxx_name = "parentalSetChild"]
+        fn parental_set_child(self: Pin<&mut Browser>, profile: &QString, json: &QString) -> QString;
+        /// "Allow this site…" on the page of a blocked site, with the parent
+        /// password: {url} to load, or {error}.
+        #[qinvokable]
+        #[cxx_name = "parentalAllowSite"]
+        fn parental_allow_site(self: Pin<&mut Browser>, link: &QString, password: &QString) -> QString;
+        /// Fetches the lists of blocked sites anew.
+        #[qinvokable]
+        #[cxx_name = "parentalUpdateLists"]
+        fn parental_update_lists(self: &Browser);
+        #[qsignal]
+        #[cxx_name = "parentalChanged"]
+        fn parental_changed(self: Pin<&mut Browser>);
+
         /// Reader view (the reader-view plugin extracts articles; kite_core::reader
         /// shows them): keep an article; the kite:reader address showing it, or "".
         #[qinvokable]
@@ -878,6 +933,68 @@ fn notify_bookmarks(fx: Value) {
     crate::extensions::apply_effects_async(effects);
 }
 
+/// Whether this profile may change that setting (parental controls). With settings
+/// locked, what stays open is what makes the browser one's own: how it looks, its
+/// tabs and its shortcuts (those pages of Settings, with Site Settings, whose settings
+/// aren't among these), and what menus and toolbars change as one goes. Whether a
+/// plugin is on goes with the plugins; the settings of one that is on stay open, as
+/// its toolbar button leads to them. Whether history is kept goes with the clearing
+/// of it.
+fn may_change_setting(key: &str) -> bool {
+    use kite_core::parental::Permission;
+    const LOOKS: [&str; 6] = ["window.", "devtools.", "speeddial.", "toolbar.", "appearance.", "tabs."];
+    const OPEN: [&str; 8] = ["shortcuts", "extensions.unpinned", "general.crashReportNotice", "general.welcome", "adblock.customRules", "browsing.fileFolderPath", "web.spellcheck", "web.spellcheckLanguages"];
+    let p = &app().parental;
+    if let Some(rest) = key.strip_prefix("plugins.") {
+        // ("plugins.<id>.<setting>": ids have no dots.)
+        return p.allows(Permission::Plugins) || rest.split_once('.').is_some_and(|(id, setting)| setting != "enabled" && plugin_is_on(id));
+    }
+    if matches!(key, "privacy.saveHistory" | "privacy.clearOnExit") && !p.allows(Permission::ClearHistory) {
+        return false;
+    }
+    p.allows(Permission::Settings) || LOOKS.iter().any(|l| key.starts_with(l)) || OPEN.contains(&key)
+}
+
+/// Whether that plugin runs in this profile: as set, or as it starts out.
+fn plugin_is_on(id: &str) -> bool {
+    if crate::state::NO_PLUGINS.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    let set = app().shared.settings().get(&format!("plugins.{id}.enabled"));
+    set.as_bool().unwrap_or_else(|| all_plugins().iter().any(|p| p.id == id && p.default_enabled))
+}
+
+const PLUGINS_LOCKED: &str = "Plugins can't be installed or removed in this profile (parental controls).";
+const SETTINGS_LOCKED: &str = "Settings are locked in this profile (parental controls).";
+
+/// Parental controls are changed by the parent: with the password given, once one is set.
+fn parent_is_here() -> Result<kite_core::parental::Parental, String> {
+    let store = kite_core::parental::Parental::open().map_err(|e| e.to_string())?;
+    if store.has_password() && !app().parental.unlocked.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err("Unlock Parental Controls with the parent password first.".into());
+    }
+    Ok(store)
+}
+
+/// What this profile may do right now (parental controls), for the windows.
+fn parental_allows() -> Value {
+    use kite_core::parental::Permission;
+    let allows = |p| app().parental.allows(p);
+    json!({"extensions": allows(Permission::Extensions), "plugins": allows(Permission::Plugins), "settings": allows(Permission::Settings),
+           "privateWindows": allows(Permission::PrivateWindows), "clearHistory": allows(Permission::ClearHistory)})
+}
+
+/// A Kite started from a profile that isn't a child's opens any profile: the parent
+/// is at it already. (From a child's profile, the Kite started asks.)
+fn parent_pass(start: &mut std::process::Command) {
+    if app().parental.is_child() {
+        return;
+    }
+    if let Some(pass) = kite_core::parental::Parental::open().ok().filter(|p| p.has_password()).and_then(|p| p.grant_pass()) {
+        start.env(kite_core::parental::PASS_VARIABLE, pass);
+    }
+}
+
 /// Settings the Rust side acts on itself (QML follows settingChanged).
 fn apply_setting(key: &str, v: &serde_json::Value) {
     let a = app();
@@ -950,12 +1067,21 @@ impl qobject::Browser {
         let key = key.to_string();
         let v = parse(json);
         let a = app();
+        if !may_change_setting(&key) {
+            // (What asked shows the value that stays.)
+            let stays = a.shared.settings().get(&key);
+            self.setting_changed(q(&key), js(&stays));
+            return;
+        }
         let _ = a.shared.settings().set(&key, v.clone());
         apply_setting(&key, &v);
         self.setting_changed(q(&key), js(&v));
     }
     fn reset_setting(self: Pin<&mut Self>, key: &QString) {
         let key = key.to_string();
+        if !may_change_setting(&key) {
+            return;
+        }
         let v = {
             let mut s = app().shared.settings();
             let _ = s.reset(&key);
@@ -1064,6 +1190,9 @@ impl qobject::Browser {
         js(&serde_json::to_value(list).unwrap_or_default())
     }
     fn delete_history(self: Pin<&mut Self>, ids_json: &QString) {
+        if !app().parental.allows(kite_core::parental::Permission::ClearHistory) {
+            return;
+        }
         let ids: Vec<i64> = serde_json::from_str(&ids_json.to_string()).unwrap_or_default();
         {
             let db = app().shared.db();
@@ -1074,10 +1203,16 @@ impl qobject::Browser {
         self.history_changed();
     }
     fn delete_history_range(self: Pin<&mut Self>, start: f64, end: f64) {
+        if !app().parental.allows(kite_core::parental::Permission::ClearHistory) {
+            return;
+        }
         let _ = kite_core::history::delete_range(&app().shared.db(), start as i64, end as i64);
         self.history_changed();
     }
     fn clear_history(self: Pin<&mut Self>) {
+        if !app().parental.allows(kite_core::parental::Permission::ClearHistory) {
+            return;
+        }
         let _ = kite_core::history::clear(&app().shared.db());
         let fx = app().runtime().browser_event("historyRemoved", &json!({"allHistory": true, "urls": []}));
         crate::extensions::apply_effects_async(fx);
@@ -1401,6 +1536,9 @@ impl qobject::Browser {
         js(&serde_json::to_value(search::load_engines(&app().shared.db()).unwrap_or_default()).unwrap_or_default())
     }
     fn save_engines(self: Pin<&mut Self>, json: &QString) {
+        if !app().parental.allows(kite_core::parental::Permission::Settings) {
+            return;
+        }
         if let Ok(list) = serde_json::from_str::<Vec<search::SearchEngine>>(&json.to_string()) {
             let _ = search::save_engines(&app().shared.db(), &list);
         }
@@ -1725,14 +1863,164 @@ impl qobject::Browser {
 
     fn open_profile(&self, name: &QString) {
         if let Some(exe) = crate::own_executable() {
-            let _ = std::process::Command::new(exe).args(["--profile", &name.to_string()]).spawn();
+            let mut start = std::process::Command::new(exe);
+            start.args(["--profile", &name.to_string()]);
+            parent_pass(&mut start);
+            let _ = start.spawn();
         }
     }
 
     fn manage_profiles(&self) {
         if let Some(exe) = crate::own_executable() {
-            let _ = std::process::Command::new(exe).arg("--pick-profile-open").spawn();
+            let mut start = std::process::Command::new(exe);
+            start.arg("--pick-profile-open");
+            parent_pass(&mut start);
+            let _ = start.spawn();
         }
+    }
+
+    // ---- parental controls ---------------------------------------------------
+    fn parental_session(&self) -> QString {
+        let p = &app().parental;
+        js(&json!({"child": p.is_child(), "unlocked": p.unlocked.load(std::sync::atomic::Ordering::Relaxed), "allows": parental_allows(),
+                   "restored": crate::state::PARENTAL_RESTORED.load(std::sync::atomic::Ordering::Relaxed)}))
+    }
+
+    fn may_set_setting(&self, key: &QString) -> bool {
+        may_change_setting(&key.to_string())
+    }
+
+    fn parental_dismiss_restored(self: Pin<&mut Self>) -> QString {
+        let done = parent_is_here().and_then(|store| store.dismiss_restored().map_err(|e| e.to_string()));
+        self.parental_changed();
+        q(done.err().unwrap_or_default())
+    }
+
+    fn parental(&self) -> QString {
+        use kite_core::parental::LISTS;
+        let a = app();
+        let store = kite_core::parental::Parental::open().ok();
+        let children = store.as_ref().map(|p| p.children()).unwrap_or_default();
+        let profiles: Vec<Value> = kite_core::profiles::Profiles::open()
+            .map(|p| p.list())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| json!({"name": p.name, "child": p.child, "inUse": p.in_use, "isDefault": p.is_default, "restrictions": children.get(&p.name)}))
+            .collect();
+        let status = a.parental.filter.status();
+        let lists: Vec<Value> = LISTS
+            .iter()
+            .zip(status)
+            .map(|(l, s)| json!({"id": l.id, "name": l.name, "about": l.about, "home": l.home, "updated": s.updated, "error": s.error}))
+            .collect();
+        js(&json!({
+            "hasPassword": store.as_ref().is_some_and(|p| p.has_password()),
+            "child": a.parental.is_child(),
+            "unlocked": a.parental.unlocked.load(std::sync::atomic::Ordering::Relaxed),
+            "lockUnrestricted": store.as_ref().is_none_or(|p| p.lock_unrestricted()),
+            "profile": a.shared.profile.name,
+            "private": a.private,
+            "allows": parental_allows(),
+            "restrictions": a.parental.restrictions(),
+            "defaults": kite_core::parental::Restrictions::default(),
+            "profiles": profiles,
+            "lists": lists,
+            "sites": a.parental.filter.len(),
+            // When they were changed outside Kite and put back (ms), until the parent has seen it.
+            "restored": store.as_ref().map_or(0, |p| p.restored()),
+            "minPassword": kite_core::parental::MIN_PASSWORD,
+        }))
+    }
+
+    fn parental_unlock(self: Pin<&mut Self>, password: &QString) -> QString {
+        let checked = kite_core::parental::Parental::open().and_then(|p| p.verify(&password.to_string()));
+        match checked {
+            Ok(()) => {
+                app().parental.unlocked.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.parental_changed();
+                QString::default()
+            }
+            Err(e) => q(e.to_string()),
+        }
+    }
+
+    fn parental_lock(self: Pin<&mut Self>) {
+        if app().parental.unlocked.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            self.parental_changed();
+        }
+    }
+
+    fn parental_set_password(self: Pin<&mut Self>, current: &QString, password: &QString) -> QString {
+        // (A child's profile never sets the first one: it has one, or the file was tampered with.)
+        if app().parental.is_child() && !app().parental.unlocked.load(std::sync::atomic::Ordering::Relaxed) {
+            return q("Unlock Parental Controls with the parent password first.");
+        }
+        match kite_core::parental::Parental::open().and_then(|p| p.set_password(&current.to_string(), &password.to_string())) {
+            Ok(()) => {
+                // The one who set it is the parent, here and now.
+                app().parental.unlocked.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.parental_changed();
+                QString::default()
+            }
+            Err(e) => q(e.to_string()),
+        }
+    }
+
+    fn parental_set_lock_unrestricted(self: Pin<&mut Self>, on: bool) -> QString {
+        let done = parent_is_here().and_then(|store| store.set_lock_unrestricted(on).map_err(|e| e.to_string()));
+        self.parental_changed();
+        q(done.err().unwrap_or_default())
+    }
+
+    fn parental_set_child(self: Pin<&mut Self>, profile: &QString, json: &QString) -> QString {
+        let (profile, json) = (profile.to_string(), json.to_string());
+        let done = (|| -> Result<(), String> {
+            let store = parent_is_here()?;
+            let restrictions = if json.is_empty() { None } else { Some(serde_json::from_str::<kite_core::parental::Restrictions>(&json).map_err(|e| e.to_string())?) };
+            store.set_child(&profile, restrictions).map_err(|e| e.to_string())?;
+            // This profile's own: followed from here on. (Another's that's open follows
+            // when it's opened next.)
+            if profile == app().shared.profile.name && !app().private {
+                app().parental.set(store.restrictions(&profile));
+            }
+            Ok(())
+        })();
+        self.parental_changed();
+        q(done.err().unwrap_or_default())
+    }
+
+    fn parental_allow_site(self: Pin<&mut Self>, link: &QString, password: &QString) -> QString {
+        let link = link.to_string();
+        let done = (|| -> Result<String, String> {
+            let query = link.strip_prefix("kite:blocked-allow?").ok_or("")?;
+            let param = |name: &str| url::form_urlencoded::parse(query.as_bytes()).find(|(k, _)| k == name).map(|(_, v)| v.into_owned()).unwrap_or_default();
+            if param("key") != crate::state::warning_key() {
+                return Err(String::new());
+            }
+            let target = param("url");
+            let site = kite_core::parental::site_name(&kite_core::util::host_of(&target)).ok_or("")?;
+            let a = app();
+            let mut r = a.parental.restrictions().ok_or("")?;
+            let store = kite_core::parental::Parental::open().map_err(|e| e.to_string())?;
+            store.verify(&password.to_string()).map_err(|e| e.to_string())?;
+            if !r.allowed.contains(&site) {
+                r.allowed.push(site.clone());
+            }
+            r.blocked.retain(|b| *b != site);
+            store.set_child(&a.shared.profile.name, Some(r)).map_err(|e| e.to_string())?;
+            a.parental.set(store.restrictions(&a.shared.profile.name));
+            log::info!("parental controls: {site} allowed by the parent");
+            Ok(target)
+        })();
+        self.parental_changed();
+        js(&match done {
+            Ok(url) => json!({"url": url}),
+            Err(e) => json!({"error": e}),
+        })
+    }
+
+    fn parental_update_lists(&self) {
+        app().parental.update_lists(true);
     }
 
 
@@ -2011,6 +2299,9 @@ impl qobject::Browser {
             return js(&json!({"key": key, "error": "There is no such setting."}));
         };
         let a = app();
+        if !may_change_setting(&key) {
+            return js(&json!({"key": key, "error": SETTINGS_LOCKED}));
+        }
         match m["op"].as_str() {
             Some("set") => match kite_core::config::parse_value(before.kind, m["value"].as_str().unwrap_or("")) {
                 Ok(value) => {
@@ -2061,6 +2352,9 @@ impl qobject::Browser {
     }
 
     fn install_inspected_plugin(&self) -> QString {
+        if !app().parental.allows(kite_core::parental::Permission::Plugins) {
+            return q(PLUGINS_LOCKED);
+        }
         let bytes = PENDING_PLUGIN.lock().unwrap_or_else(|e| e.into_inner()).take();
         let (Some(bytes), Some(dir)) = (bytes, installed_plugins_dir()) else { return q("There is no plugin file to install") };
         match kite_core::plugins::install(&bytes, &builtin_plugin_ids(), &dir) {
@@ -2070,6 +2364,9 @@ impl qobject::Browser {
     }
 
     fn remove_plugin(&self, id: &QString) -> QString {
+        if !app().parental.allows(kite_core::parental::Permission::Plugins) {
+            return q(PLUGINS_LOCKED);
+        }
         let id = id.to_string();
         let Some(dir) = installed_plugins_dir() else { return q("There is no plugins folder") };
         match kite_core::plugins::remove(&dir, &id) {
@@ -2189,6 +2486,9 @@ impl qobject::Browser {
     fn import_settings(mut self: Pin<&mut Self>, path: &QString) -> QString {
         let path = kite_core::util::local_path(&path.to_string());
         let a = app();
+        if !a.parental.allows(kite_core::parental::Permission::Settings) {
+            return q(SETTINGS_LOCKED);
+        }
         let result = (|| -> anyhow::Result<Vec<(String, Value)>> {
             let backup = kite_core::backup::parse(&std::fs::read_to_string(&path)?)?;
             // A way back.
@@ -2380,7 +2680,9 @@ impl qobject::Browser {
         let v = parse(json);
         let a = app();
         let since = v["since"].as_f64().unwrap_or(0.0) as i64;
-        if v["history"].as_bool() == Some(true) {
+        // (A child's profile that may not clear its history keeps what tells where it went.)
+        let keep_traces = !a.parental.allows(kite_core::parental::Permission::ClearHistory);
+        if v["history"].as_bool() == Some(true) && !keep_traces {
             let db = a.shared.db();
             let _ = if since > 0 { kite_core::history::delete_range(&db, since, i64::MAX).map(|_| ()) } else { kite_core::history::clear(&db) };
         }
@@ -2390,10 +2692,10 @@ impl qobject::Browser {
         if v["cache"].as_bool() == Some(true) {
             crate::ffi::clear_http_cache();
         }
-        if v["downloads"].as_bool() == Some(true) {
+        if v["downloads"].as_bool() == Some(true) && !keep_traces {
             a.shared.downloads().clear_finished();
         }
-        if v["closedTabs"].as_bool() == Some(true) {
+        if v["closedTabs"].as_bool() == Some(true) && !keep_traces {
             let mut s = a.shared.session();
             s.data.closed_tabs.clear();
             s.data.closed_windows.clear();

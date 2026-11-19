@@ -109,6 +109,14 @@ const CHOICES = [
     {page: "shortcuts", text: "Keyboard shortcuts"},
 ]
 
+// The pages of Settings that stay open in a child's profile whose settings are locked
+// (parental controls): what makes the browser one's own. The settings on them are
+// open in browser.rs (may_change_setting) too.
+const CHILD_PAGES = ["appearance", "tabs", "sites", "shortcuts"]
+// And the ones open in part there: on Plugins & Extensions, the settings of plugins
+// that are on (each control on it follows what the profile may do).
+const CHILD_PAGES_IN_PART = ["extensions"]
+
 const PAGE_TITLES = {
     general: "General", appearance: "Appearance", tabs: "Tabs", browsing: "Browsing", search: "Search Engines", privacy: "Privacy",
     passwords: "Passwords", adblock: "Content Blocking", downloads: "Downloads", sites: "Site Settings",

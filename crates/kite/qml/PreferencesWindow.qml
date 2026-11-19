@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "palette.js" as Palette
 
 // Falkon's Preferences dialog.
 ManagerWindow {
@@ -148,7 +149,18 @@ ManagerWindow {
         {key: "sites", title: "Site Settings", icon: "preferences-web-browser-cookies"},
         {key: "extensions", title: "Plugins & Extensions", icon: "kite-extension"},
         {key: "shortcuts", title: "Shortcuts", icon: "preferences-desktop-keyboard-shortcut"},
+        {key: "parental", title: "Parental Controls", icon: "system-users"},
     ]
+    // Parental controls: a child's profile that may not change settings sees the
+    // pages, but can use only the ones that make the browser one's own (appearance,
+    // tabs, site settings, shortcuts) and Parental Controls, where the parent unlocks
+    // the others. Plugins & Extensions is open in part: the settings of plugins that
+    // are on, which their toolbar buttons lead to.
+    readonly property bool settingsLocked: !!app && !app.parentalSession.allows.settings
+    function pageLocked(key) { return settingsLocked && key !== "parental" && !Palette.CHILD_PAGES.includes(key) && !Palette.CHILD_PAGES_IN_PART.includes(key) }
+    // What the parent unlocked is locked again when Settings closes.
+    onVisibleChanged: if (!visible) Browser.parentalLock()
+    Component { id: parentalPage; ParentalPage { prefs: w } }
 
     globalDrawer: Kirigami.GlobalDrawer {
         modal: false
@@ -157,7 +169,7 @@ ManagerWindow {
     }
     // (Content Blocking is listed while blocking is on, as set on the Browsing page,
     // or while it's the page shown.)
-    Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: iconName; checked: w.page === key; visible: key !== "adblock" || !!w.get("adblock.enabled") || w.page === key; onTriggered: w.page = key } }
+    Component { id: pageAction; Kirigami.Action { property string key; property string iconName; icon.name: w.pageLocked(key) ? "object-locked" : iconName; checked: w.page === key; visible: key !== "adblock" || !!w.get("adblock.enabled") || w.page === key; onTriggered: w.page = key } }
 
     // Submenus (a start page file, a site's settings) are pages pushed on
     // the stack: they slide in, one at a time, with a back arrow in the
@@ -173,6 +185,13 @@ ManagerWindow {
         readonly property bool unsaved: w.changed
         function applyChanges() { w.applyChanges() }
         function discardChanges() { w.discardChanges() }
+        header: Kirigami.InlineMessage {
+            visible: w.pageLocked(w.page)
+            type: Kirigami.MessageType.Information
+            position: Kirigami.InlineMessage.Position.Header
+            text: "These settings are locked in this profile. A parent can unlock them in Parental Controls."
+            actions: [ Kirigami.Action { text: "Parental Controls"; icon.name: "system-users"; onTriggered: w.page = "parental" } ]
+        }
         footer: ApplyBar {
             changed: w.changed
             onApply: w.applyChanges()
@@ -181,6 +200,7 @@ ManagerWindow {
             leading: [
                 QQC2.Button {
                     visible: w.page === "extensions"
+                    enabled: w.app.parentalSession.allows.plugins
                     text: "Install Plugin…"
                     icon.name: "document-open"
                     onClicked: if (pageLoader.item && pageLoader.item.installPlugin) pageLoader.item.installPlugin()
@@ -201,8 +221,10 @@ ManagerWindow {
             id: pageLoader
             width: w.columnWidthIn(sp)
             x: w.columnXIn(sp)
+            enabled: !w.pageLocked(w.page)
             sourceComponent: {
                 switch (w.page) {
+                case "parental": return parentalPage
                 case "appearance": return appearance
                 case "tabs": return tabsPage
                 case "browsing": return browsing
@@ -2179,6 +2201,7 @@ ManagerWindow {
     Component {
         id: extensions
         PageColumn {
+            id: extPage
             // (The bar's "Install Plugin…".)
             function installPlugin() { pluginFileDialog.open() }
             // ---- Kite's own optional features ----
@@ -2189,6 +2212,16 @@ ManagerWindow {
                 visible: w.app.pluginsDisabled
                 type: Kirigami.MessageType.Information
                 text: "Kite was started with --no-plugins: no plugin is running, and they can't be turned on. Those you installed can still be removed. Start Kite normally to get them back."
+            }
+            // Parental controls: what this profile may do here.
+            readonly property bool mayPlugins: w.app.parentalSession.allows.plugins
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: !extPage.mayPlugins || w.settingsLocked
+                type: Kirigami.MessageType.Information
+                text: (extPage.mayPlugins ? "" : "In this profile, plugins can't be turned on or off, installed or removed; the ones that are on can be configured. ")
+                    + (w.settingsLocked ? "The settings for extensions are locked. " : "") + "A parent can unlock this in Parental Controls."
+                actions: [ Kirigami.Action { text: "Parental Controls"; icon.name: "system-users"; onTriggered: w.page = "parental" } ]
             }
             // (Rows back to back, as a list.)
             ColumnLayout {
@@ -2223,7 +2256,7 @@ ManagerWindow {
                             }
                             QQC2.Switch {
                                 Accessible.name: entry.modelData.name
-                                enabled: !w.app.pluginsDisabled
+                                enabled: !w.app.pluginsDisabled && extPage.mayPlugins
                                 checked: entry.on
                                 onToggled: {
                                     entry.on = checked
@@ -2241,6 +2274,7 @@ ManagerWindow {
                             }
                             RowButton {
                                 visible: !!entry.modelData.installed
+                                enabled: extPage.mayPlugins
                                 text: "Remove " + entry.modelData.name + "…"
                                 icon.name: "edit-delete"
                                 onClicked: { removePluginPrompt.plugin = entry.modelData; removePluginPrompt.open() }
@@ -2330,6 +2364,7 @@ ManagerWindow {
             // ---- WebExtensions ----
             SectionHeader { text: "WebExtensions" }
             Form {
+                enabled: !w.settingsLocked
                 Check { id: extensionsOn; Kirigami.FormData.label: "Extensions:"; text: "Enable WebExtensions"; key: "extensions.enabled" }
                 // (What installing does, which needs extensions.)
                 Check { Kirigami.FormData.label: "Installing:"; enabled: extensionsOn.checked; text: "Identify as Firefox on addons.mozilla.org"; key: "extensions.amoSpoofFirefox" }

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/palette.js', 'utf8').replace('.pragma library', '');
-const P = new Function(src + '\nreturn {TOGGLES, CHOICES, PAGE_TITLES, ACTION_ICONS};')();
+const P = new Function(src + '\nreturn {TOGGLES, CHOICES, PAGE_TITLES, ACTION_ICONS, CHILD_PAGES};')();
 
 // The plain checkboxes of the Settings window.
 const prefs = fs.readFileSync(__dirname + '/PreferencesWindow.qml', 'utf8');
@@ -37,6 +37,25 @@ test('pages exist in the Settings window', () => {
   for (const item of [...P.TOGGLES, ...P.CHOICES]) {
     assert.ok(P.PAGE_TITLES[item.page], item.page);
     assert.ok(prefs.includes('key: "' + item.page + '", title: "' + P.PAGE_TITLES[item.page] + '"'), item.page);
+  }
+});
+
+test('the pages open in a child\'s profile hold only settings that are open there', () => {
+  const rust = fs.readFileSync(__dirname + '/../src/browser.rs', 'utf8');
+  const looks = JSON.parse(/const LOOKS: \[&str; \d+\] = (\[[^\]]+\]);/.exec(rust)[1]);
+  const open = JSON.parse(/const OPEN: \[&str; \d+\] = (\[[^\]]+\]);/.exec(rust)[1]);
+  const isOpen = (key) => looks.some((l) => key.startsWith(l)) || open.includes(key);
+  for (const page of P.CHILD_PAGES) assert.ok(P.PAGE_TITLES[page], page);
+  const onThem = P.TOGGLES.filter((t) => P.CHILD_PAGES.includes(t.page));
+  assert.ok(onThem.length >= 5);
+  assert.deepStrictEqual(onThem.filter((t) => !isOpen(t.key)), []);
+  // And what those pages set otherwise (w.set("…")).
+  for (const id of ['appearance', 'tabsPage', 'shortcuts', 'sites']) {
+    const start = prefs.indexOf('id: ' + id + '\n');
+    assert.ok(start > 0, id);
+    const end = prefs.indexOf('\n    Component {', start);
+    const set = [...prefs.slice(start, end).matchAll(/w\.set\("([\w.]+)"/g)].map((m) => m[1]);
+    assert.deepStrictEqual(set.filter((k) => !isOpen(k)), [], id);
   }
 });
 
