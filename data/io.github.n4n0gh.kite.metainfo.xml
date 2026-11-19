@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.8" date="2026-11-19">
+      <description>
+        <p>Password manager extensions work much better, Bitwarden among them. Their entries are on the right-click menu, with submenus complete. Their menu inside login fields appears. Passkeys kept in the extension can be made and used: the request no longer waits forever, and the extension asks in a small window of its own. An extension's popup takes the keyboard as it opens, closes with Escape, and can close itself. Copying works from an extension's sidebar, tab and window as it did from its popup. An extension's scripts no longer stop working once its popup has been opened and closed.</p>
+      </description>
+    </release>
     <release version="0.10.7" date="2026-11-19">
       <description>
         <p>Extensions are kept apart more strictly. One extension no longer hears of the requests another extension's own pages make, which could give away what identifies that extension to Kite. What a content script may ask of Kite is now limited to messaging, storage and a few facts about where it runs, as in Firefox, wherever the call comes from: an extension's session storage is for its own pages unless the extension opens it to its content scripts.</p>
