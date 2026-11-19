@@ -159,7 +159,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Master password / primary password | ✅ | ❌ | ✅ | |
 | Password import/export (CSV) | ✅ | ✅ | ✅ | Kite also reads Bitwarden CSV and Falkon XML. |
 | Password generator | ✅ | ✅ | ✅ | |
-| Passkeys (WebAuthn) | ❌ | ✅ | ✅ | |
+| Passkeys (WebAuthn) | ⚠️ | ✅ | ✅ | Kite: those kept in a password manager extension (checked with Bitwarden); none of its own, nor security keys. |
 | Address and card autofill | ⚠️ | ✅ | ✅ | Kite: addresses and contact details (encrypted), no cards. |
 
 ## Accounts and services
@@ -206,6 +206,6 @@ ship changes every four weeks, so check the newest versions before relying on a 
 
 **Where Kite lags:**
 - Its engine trails Chrome, and it runs only on Linux.
-- No sync, translation, passkeys or card autofill.
+- No sync, translation or card autofill; passkeys only through a password manager extension.
 - No browser themes.
 - Its extension API coverage is narrower than Firefox's.
