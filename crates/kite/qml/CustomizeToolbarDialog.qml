@@ -91,7 +91,7 @@ QQC2.ApplicationWindow {
                                     onMoveRequested: (oldIndex, newIndex) => current.move(oldIndex, newIndex, 1)
                                     onDropped: dialog.save()
                                 }
-                                Kirigami.Icon { source: slot.info ? slot.info.icon : ""; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
+                                Kirigami.Icon { source: slot.info ? slot.info.image || slot.info.icon : ""; Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Layout.preferredWidth }
                                 QQC2.Label { text: slot.info ? slot.info.name : slot.itemId; Layout.fillWidth: true; elide: Text.ElideRight }
                                 QQC2.ToolButton {
                                     visible: !(slot.info && slot.info.required)
@@ -119,7 +119,8 @@ QQC2.ApplicationWindow {
                     delegate: QQC2.ItemDelegate {
                         required property var modelData
                         width: ListView.view.width
-                        icon.name: modelData.icon
+                        icon.name: modelData.image ? "" : modelData.icon
+                        icon.source: modelData.image || ""
                         text: modelData.name
                         onClicked: dialog.add(modelData.id)
                         QQC2.ToolTip.text: "Add to toolbar"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay

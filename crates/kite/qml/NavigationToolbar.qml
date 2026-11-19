@@ -44,7 +44,7 @@ QQC2.ToolBar {
                     newTab: newTabItem, newWindow: newWindowItem, privateWindow: privateWindowItem,
                     bookmarks: bookmarksItem, history: historyItem, sidebar: sidebarItem, print: printItem,
                     find: findItem, zoom: zoomItem, fullScreen: fullScreenItem, splitView: splitViewItem, addons: addonsItem,
-                    settings: settingsItem, flexibleSpace: spaceItem,
+                    settings: settingsItem, profiles: profilesItem, flexibleSpace: spaceItem,
                 })[modelData] || null
             }
         }
@@ -195,6 +195,35 @@ QQC2.ToolBar {
     Component {
         id: settingsItem
         Button { icon.name: "settings-configure"; tip: "Settings"; onClicked: toolbar.win.app.showPreferences() }
+    }
+    // The Profiles menu, under this profile's picture.
+    Component {
+        id: profilesItem
+        MenuButton {
+            id: profilesButton
+            // (The picture may have been changed in the picker: looked at again whenever
+            // the window comes to the front or the menu opens.)
+            property int fresh: 0
+            readonly property bool inFront: toolbar.win.active
+            onInFrontChanged: if (inFront) fresh++
+            tip: "Profiles"
+            // (Drawn here: a button's own icon can't come from the picture's provider. As wide
+            // as the buttons beside it.)
+            implicitWidth: implicitHeight
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                width: Kirigami.Units.iconSizes.smallMedium
+                height: width
+                source: toolbar.catalog.profilePicture(profilesButton.fresh + profilesMenu.shown)
+            }
+            menuOpen: profilesMenu.visible
+            onClicked: profilesMenu.opened ? profilesMenu.close() : profilesMenu.popup(profilesButton, 0, profilesButton.height)
+            ProfileMenu {
+                id: profilesMenu
+                // The button toggles the menu.
+                closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
+            }
+        }
     }
     Component {
         id: spaceItem

@@ -1,11 +1,13 @@
 import QtQuick
+import org.kde.kite
 
 // The items the navigation toolbar can show ("toolbar.items"), used by
 // NavigationToolbar and the Customize Toolbar dialog.
 QtObject {
     readonly property var defaults: ["back", "forward", "reload", "home", "urlbar", "extensions", "downloads", "menu"]
     // `required` items can't be removed (Kite would be unusable without them);
-    // `repeatable` ones may appear more than once.
+    // `repeatable` ones may appear more than once. An `image` is shown in place
+    // of the icon.
     readonly property var catalog: [
         {id: "back", name: "Back", icon: "go-previous"},
         {id: "forward", name: "Forward", icon: "go-next"},
@@ -28,9 +30,15 @@ QtObject {
         {id: "splitView", name: "Split View", icon: "view-split-left-right"},
         {id: "addons", name: "Manage Extensions", icon: "kite-extension"},
         {id: "settings", name: "Settings", icon: "settings-configure"},
+        {id: "profiles", name: "Profiles", icon: "user-identity", image: profilePicture(0)},
         {id: "flexibleSpace", name: "Flexible Space", icon: "distribute-horizontal-x", repeatable: true},
     ]
     function info(id) { return catalog.find(c => c.id === id) || null }
+
+    // This profile's picture, as the profile picker shows it (bootstrap.cpp): the
+    // Profiles button's icon. (`fresh`: any number; another one asks for the picture
+    // anew, as it may have been changed in the picker since.)
+    function profilePicture(fresh) { return "image://kiteprofile/" + fresh + "/" + encodeURIComponent(Browser.currentProfile()) }
 
     // A stored list made usable: unknown ids dropped, duplicates removed
     // (except repeatable items), required items added if missing.
