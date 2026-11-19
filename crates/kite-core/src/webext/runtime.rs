@@ -1281,8 +1281,9 @@ impl Runtime {
                     .iter()
                     .filter(|m| m.parent.as_deref() == parent && (parent.is_some() || visible(m)))
                     .map(|m| {
+                        // (The extension's icon marks its one entry in the menu, not each of that entry's.)
                         json!({
-                            "id": m.id, "ext": m.ext, "type": m.kind, "checked": m.checked, "enabled": m.enabled, "icon": m.icon,
+                            "id": m.id, "ext": m.ext, "type": m.kind, "checked": m.checked, "enabled": m.enabled, "icon": if parent.is_none() && items.iter().filter(|o| o.parent.is_none() && visible(o)).count() == 1 { json!(m.icon) } else { Value::Null },
                             "title": m.title.replace("%s", &sel.chars().take(40).collect::<String>()),
                             "children": build(items, Some(&m.id), visible, sel),
                         })
@@ -1661,6 +1662,16 @@ impl Runtime {
             }
             ("_", "portDisconnect") => Handled::With(Ok(Value::Null), self.port_disconnect_from(&arg_str(args, 0), ctx, None)),
             ("_", "cosmetic") => now!(Ok(Value::Null)),
+            // window.close() in one of the extension's pages (page_transport.js): its popup,
+            // sidebar, options window or tab closes. Not what holds a page in a frame, and a
+            // background page stays.
+            ("_", "close") => {
+                let kind = self.ctxs.get(ctx).map(|c| c.kind.clone()).unwrap_or_default();
+                if !matches!(kind.as_str(), "popup" | "sidebar" | "options" | "tab") {
+                    return now!(Ok(Value::Null));
+                }
+                self.ui(origin, ctx, call_id, ext_id, "view.close", json!({"kind": kind, "tabId": origin.tab_id}))
+            }
             // Cross-origin requests from extension pages with host permission
             // (Firefox exempts these from CORS). Performed natively by the GUI layer.
             ("_", "fetch") => {
@@ -3003,6 +3014,33 @@ mod tests {
         // The extension's page in a tab is a page.
         let tab_page = Origin { view: "tab:7".into(), tab_id: 7, window_id: 1, document: rt.registry.get("t@x").unwrap().url("options.html") };
         assert!(reply(&rt.call(&tab_page, &tok, "p", "tabs.query", json!([{}]), 10)).is_ok());
+    }
+
+    #[test]
+    fn a_page_closes_what_shows_it() {
+        let (_d, mut rt, tok) = setup();
+        let closes = |fx: &[Effect]| fx.iter().find_map(|e| match e {
+            Effect::Ui { method, args, .. } if method == "view.close" => Some(args.clone()),
+            _ => None,
+        });
+        // window.close() in the popup, and in the extension's page in a tab.
+        let popup = page(&rt, "t@x", "popup:t@x", 1);
+        rt.call(&popup, &tok, "p", "_.register", json!([{"kind": "popup"}]), 1);
+        assert_eq!(closes(&rt.call(&popup, &tok, "p", "_.close", json!([]), 2)), Some(json!({"kind": "popup", "tabId": -1})));
+        let tab = Origin { view: "tab:7".into(), tab_id: 7, window_id: 1, document: rt.registry.get("t@x").unwrap().url("page.html") };
+        rt.call(&tab, &tok, "t", "_.register", json!([{"kind": "tab"}]), 3);
+        assert_eq!(closes(&rt.call(&tab, &tok, "t", "_.close", json!([]), 4)), Some(json!({"kind": "tab", "tabId": 7})));
+        // A background page stays, and so does the tab around the extension's page in a frame.
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 5);
+        assert_eq!(closes(&rt.call(&bg, &tok, "bg", "_.close", json!([]), 6)), None);
+        rt.call(&tab, &tok, "f", "_.register", json!([{"kind": "frame", "frameId": 1}]), 7);
+        assert_eq!(closes(&rt.call(&tab, &tok, "f", "_.close", json!([]), 8)), None);
+        // A content script closes nothing, whatever it says it is.
+        let web = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://kde.org/".into() };
+        rt.call(&web, &tok, "cs", "_.register", json!([{"kind": "tab"}]), 9);
+        let fx = rt.call(&web, &tok, "cs", "_.close", json!([]), 10);
+        assert!(closes(&fx).is_none() && reply(&fx).is_err());
     }
 
     #[test]

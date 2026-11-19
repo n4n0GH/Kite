@@ -10,3 +10,11 @@ function documentOf(view) {
     const frame = view ? view.mainFrame : null
     return frame && frame.isValid ? frame.url.toString() : ""
 }
+
+// The clipboard, asked for through the engine by a page in a view of an extension's own (its
+// popup, sidebar, options or background page), where there is nobody to ask. Such a view's
+// settings let its pages write, and read if the extension's manifest asks to, so what still
+// arrives here is a page that may not: it is told no, or it would wait for good.
+function refuseClipboard(permission, clipboardType) {
+    if (permission.permissionType === clipboardType) permission.deny()
+}

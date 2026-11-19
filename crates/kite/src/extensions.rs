@@ -112,6 +112,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "urlRunsInPrivate"]
         fn url_runs_in_private(self: &Extensions, url: &QString) -> bool;
+        /// Whether a moz-extension: address (or origin) is an enabled extension's that
+        /// has the API permission, from its manifest or granted since.
+        #[qinvokable]
+        #[cxx_name = "urlHasPermission"]
+        fn url_has_permission(self: &Extensions, url: &QString, permission: &QString) -> bool;
         #[qinvokable]
         #[cxx_name = "setEnabled"]
         fn set_enabled(self: Pin<&mut Extensions>, id: &QString, enabled: bool);
@@ -502,6 +507,11 @@ impl qobject::Extensions {
     fn url_runs_in_private(&self, url: &QString) -> bool {
         let Ok(u) = url::Url::parse(&url.to_string()) else { return false };
         app().runtime().registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|e| e.info.enabled && e.runs_in_private())
+    }
+
+    fn url_has_permission(&self, url: &QString, permission: &QString) -> bool {
+        let Ok(u) = url::Url::parse(&url.to_string()) else { return false };
+        u.scheme() == "moz-extension" && app().runtime().registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|e| e.info.enabled && e.has_permission(&permission.to_string()))
     }
 
     fn set_enabled(self: Pin<&mut Self>, id: &QString, enabled: bool) {

@@ -144,6 +144,10 @@ QQC2.Pane {
                 url: info ? info.panel : "about:blank"
                 webChannel: WebChannel { registeredObjects: [sbBridge] }
                 settings.localContentCanAccessRemoteUrls: true
+                // (As in ExtensionPopup.)
+                settings.javascriptCanAccessClipboard: true
+                settings.javascriptCanPaste: !!info && Extensions.urlHasPermission(info.panel, "clipboardRead")
+                onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
                 onNewWindowRequested: request => root.win.openTab(request.requestedUrl.toString(), {background: false})
                 ExtBridge {
                     id: sbBridge; viewKey: "sidebar:" + (panel.info ? panel.info.ext : ""); viewKind: "sidebar"; windowId: root.win.windowId; tabId: root.win.currentTab ? root.win.currentTab.tabId : -1

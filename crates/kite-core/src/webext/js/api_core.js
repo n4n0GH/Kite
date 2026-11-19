@@ -291,7 +291,7 @@ function __kiteMakeAPI(cfg, transport) {
       props = Object.assign({}, props);
       if (props.onclick) { const id = props.id = props.id || ('kite-' + Math.random().toString(36).slice(2)); const fn = props.onclick; delete props.onclick; menus.onClicked.addListener((info, tab) => { if (info.menuItemId === id) fn(info, tab); }); }
       const p = call('menus.create', props);
-      p.then(() => cb && cb(), (e) => { lastError = e; try { cb && cb(); } finally { lastError = null; } });
+      p.then(() => cb && cb(), (e) => { lastError = { message: e && e.message || String(e) }; try { cb && cb(); } finally { lastError = null; } });
       return props.id;
     },
     getTargetElement: (id) => (typeof document !== 'undefined' ? (globalThis.__kiteLastContextTarget || null) : null),
@@ -419,9 +419,11 @@ function __kiteMakeAPI(cfg, transport) {
       if (typeof v === 'function' && !(v instanceof KiteEvent)) {
         out[key] = function (...args) {
           const cb = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+          // (menus.create answers with the id at once, and calls back itself.)
+          if (key === 'create' && obj === menus) return v.call(obj, args[0], cb);
           let r;
           try { r = v.apply(obj, args); } catch (e) { if (!cb) throw e; lastError = { message: e.message }; try { cb(); } finally { lastError = null; } return; }
-          if (!r || typeof r.then !== 'function' || key === 'create' && obj === menus) return r;
+          if (!r || typeof r.then !== 'function') return r;
           if (!cb) return r;
           r.then((res) => { try { cb(res); } catch (e) { console.error(e); } }, (e) => { lastError = { message: e && e.message || String(e) }; try { cb(); } catch (x) { console.error(x); } finally { lastError = null; } });
         };

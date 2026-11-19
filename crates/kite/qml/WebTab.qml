@@ -323,6 +323,8 @@ Item {
     // cached icon until the page is back.
     onDiscardedChanged: {
         if (!discarded) return
+        // (Its extension pages and content scripts are gone with the page, unannounced.)
+        Extensions.viewClosed(bridge.viewKey)
         Browser.faviconTrack(web.objectName, false)
         faviconOut = true
         const c = Browser.cachedFavicon(url)
@@ -772,6 +774,9 @@ Item {
                 settings.pdfViewerEnabled: !!wt.app.liveSettings["web.pdfViewer"]
                 settings.pluginsEnabled: !!wt.app.liveSettings["web.pdfViewer"]
                 settings.localContentCanAccessRemoteUrls: wt.isExtensionPage
+                // An extension's page in a tab (or in a window it opened for itself) writes to
+                // the clipboard as its popup does. Reading is asked for: onPermissionRequested.
+                settings.javascriptCanAccessClipboard: wt.isExtensionPage
 
                 onUrlChanged: {
                     wt.formDirty = false
@@ -958,6 +963,11 @@ Item {
                 }
 
                 onPermissionRequested: permission => {
+                    // An extension's own page reads the clipboard if its manifest asks to, as in its popup.
+                    if (permission.permissionType === WebEnginePermission.PermissionType.ClipboardReadWrite && Extensions.urlHasPermission(permission.origin.toString(), "clipboardRead")) {
+                        permission.grant()
+                        return
+                    }
                     if (permission.permissionType === WebEnginePermission.PermissionType.Notifications && wt.window.privateMode && !wt.app.setting("privacy.privateNotifications")) {
                         permission.deny()
                         return
@@ -1039,6 +1049,8 @@ Item {
                     wt.setWakeLock(false)
                     wt.stopMidi()
                     wt.releasePointerLock()
+                    // (Its extension pages and content scripts are gone with it, unannounced.)
+                    Extensions.viewClosed(bridge.viewKey)
                 }
 
                 // Extension content scripts (userscript:kite:<id>:...) count as extension output.

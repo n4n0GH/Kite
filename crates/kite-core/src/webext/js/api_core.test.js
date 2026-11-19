@@ -43,6 +43,21 @@ test('calls, errors and chrome callbacks with lastError', async () => {
   assert.strictEqual(api.chrome.runtime.lastError, null);
 });
 
+test('menus.create answers with the id and calls back, in both styles', async () => {
+  const { api, calls, replies } = make();
+  // (As Bitwarden does: the next entry is only made once this one has called back.)
+  let id;
+  await new Promise((r) => { id = api.chrome.contextMenus.create({ id: 'root', title: 'Root', contexts: ['all'] }, r); });
+  assert.strictEqual(id, 'root');
+  assert.deepStrictEqual(calls.at(-1), ['menus.create', [{ id: 'root', title: 'Root', contexts: ['all'] }]]);
+  await new Promise((r) => api.browser.menus.create({ id: 'child', parentId: 'root', title: 'Child' }, r));
+  assert.strictEqual(api.chrome.contextMenus.create({ id: 'quiet', title: 'No callback' }), 'quiet');
+  replies['menus.create'] = { __kiteError: 'ID already exists: root' };
+  const err = await new Promise((r) => api.chrome.contextMenus.create({ id: 'root', title: 'Again' }, () => r(api.chrome.runtime.lastError)));
+  assert.strictEqual(err.message, 'ID already exists: root');
+  assert.strictEqual(api.chrome.runtime.lastError, null);
+});
+
 test('runtime.sendMessage argument normalisation', async () => {
   const { api, calls } = make();
   await api.browser.runtime.sendMessage({ a: 1 });

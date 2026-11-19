@@ -452,9 +452,12 @@ QtObject {
             app: app,
             windowId: nextWindowId++,
             privateMode: !!opts.privateMode || Browser.isPrivate(),
+            popupType: !!opts.popup,
         })
         windows = windows.concat([w])
         if (opts.geometry) { w.x = opts.geometry[0]; w.y = opts.geometry[1]; w.width = opts.geometry[2]; w.height = opts.geometry[3] }
+        // (Before it is shown: a window an extension asked for at a size comes up at it.)
+        if (opts.size) { if (opts.size[0] > 0) w.width = opts.size[0]; if (opts.size[1] > 0) w.height = opts.size[1] }
         Extensions.browserEvent("windowCreated", JSON.stringify({window: w.extInfo()}))
         // A private window's purple titlebar: Plasma reads the scheme as the window is shown.
         Browser.colorSchemeForNewWindows(w.purple)
@@ -504,15 +507,25 @@ QtObject {
         if (replace) for (const w of before) w.close()
     }
 
+    // The browser window for what a popup window (BrowserWindow.popupType) opens: the one last
+    // used of its kind, or a new one.
+    function browserWindowFor(popup) {
+        const fits = w => !w.popupType && w.privateMode === popup.privateMode
+        if (activeWindow && fits(activeWindow)) return activeWindow
+        return windows.slice().reverse().find(fits) || newWindow({privateMode: popup.privateMode, empty: true})
+    }
+
     function windowClosed(w) {
         // Closing the last window quits Kite: it is the session to restore,
         // so save it while it is still listed (not as a closed window).
-        const last = !quitting && windows.length === 1 && windows[0] === w
+        // (An extension's popup windows aren't the session: with the last browser window
+        // they go too.)
+        const last = !quitting && !w.popupType && windows.filter(x => !x.popupType).length === 1
         if (last) saveSession()
         windows = windows.filter(x => x !== w)
         Extensions.browserEvent("windowRemoved", JSON.stringify({windowId: w.windowId}))
         if (w.privateMode && !windows.some(x => x.privateMode)) Browser.forgetPrivateDownloads()
-        if (!quitting && !last && !w.privateMode) Browser.pushClosedWindow(JSON.stringify(w.saveState()))
+        if (!quitting && !last && !w.privateMode && !w.popupType) Browser.pushClosedWindow(JSON.stringify(w.saveState()))
         if (activeWindow === w) activeWindow = windows.length ? windows[windows.length - 1] : null
         if (last) quit(true)
         else if (!quitting) saveSession()
@@ -683,7 +696,7 @@ QtObject {
     // ---- session --------------------------------------------------------------
     function saveSession() {
         if (Browser.isPrivate()) return
-        Browser.saveSession(JSON.stringify(windows.filter(w => !w.privateMode).map(w => w.saveState())))
+        Browser.saveSession(JSON.stringify(windows.filter(w => !w.privateMode && !w.popupType).map(w => w.saveState())))
     }
     // (Again once Chromium's processes are surely up.)
     property Timer crashHandlerCheck: Timer { interval: 10000; onTriggered: Browser.checkCrashHandler() }
@@ -1039,10 +1052,13 @@ QtObject {
             const d = a[0] || {}
             if (d.incognito && !_extSeesPrivate) throw new Error("Extension does not have permission for incognito mode")
             const urls = d.url ? (Array.isArray(d.url) ? d.url : [d.url]) : []
-            const w = newWindow({urls: urls, privateMode: d.incognito, empty: urls.length === 0 && d.tabId !== undefined})
+            // A window of the extension's own (a popup, or what was once a panel): bare, for one
+            // page (BrowserWindow.popupType).
+            const popup = ["popup", "panel", "detached_panel"].includes(d.type) && urls.length === 1
+            const w = newWindow({urls: urls, privateMode: d.incognito, empty: urls.length === 0 && d.tabId !== undefined, popup: popup, size: [d.width || 0, d.height || 0]})
             if (d.tabId !== undefined) { const t = findTab(d.tabId); if (t) w.openTab(t.url, {}) ; if (t) t.close() }
-            if (d.width) w.width = d.width
-            if (d.height) w.height = d.height
+            if (d.left !== undefined) w.x = d.left
+            if (d.top !== undefined) w.y = d.top
             if (d.state === "maximized") w.showMaximized()
             if (d.state === "fullscreen") w.showFullScreen()
             return w.extInfo(true)
@@ -1065,6 +1081,14 @@ QtObject {
         case "openOptions": {
             if (a.inTab) openUrl(a.url, "tab", currentWindowFor())
             else optionsDialog.open(a.url, a.name)
+            return null
+        }
+        // window.close() in an extension's own page: what shows it closes.
+        case "view.close": {
+            if (a.kind === "popup") for (const w of windows) w.closeExtensionPopup(ext)
+            else if (a.kind === "options") optionsDialog.close()
+            else if (a.kind === "sidebar") { for (const w of windows) if (w.sidebarExtension === ext) w.showSidebar("") }
+            else { const t = findTab(a.tabId); if (t && t.isExtensionPage) t.close() }
             return null
         }
         case "action.openPopup": {
@@ -1143,7 +1167,11 @@ QtObject {
                 profile: app.profile
                 url: modelData.url
                 settings.localContentCanAccessRemoteUrls: true
+                // (As in ExtensionPopup. A background page is never in front, so it copies and
+                // reads the old way, execCommand, which only these two settings allow.)
                 settings.javascriptCanAccessClipboard: true
+                settings.javascriptCanPaste: Extensions.urlHasPermission(modelData.url, "clipboardRead")
+                onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
                 webChannel: WebChannel { registeredObjects: [bgBridge] }
                 id: bgView
                 ExtBridge {

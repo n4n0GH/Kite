@@ -22,6 +22,12 @@ QQC2.ApplicationWindow {
     // glance: the chrome by these colors (each part that fixes its own colors
     // has a PrivateColors), the titlebar by the color scheme Main.qml has
     // Plasma give the window. Both are kite_core::privatecolors.
+    // A window an extension opened for a page of its own (windows.create with type "popup":
+    // a password manager asking about a passkey, say). It is bare: the title bar and the page,
+    // no tab bar, toolbar or sidebar, and one tab. Only while it shows that extension page:
+    // around anything else the window is a browser window again, address and all.
+    property bool popupType: false
+    readonly property bool bare: popupType && (!currentTab || currentTab.isExtensionPage)
     readonly property bool purple: privateMode && !!app.liveSettings["privacy.privateWindowColor"]
     readonly property var purpleColors: JSON.parse(Browser.privateWindowColors())
     PrivateColors { target: bw; active: bw.purple; palette: bw.purpleColors.chrome }
@@ -531,8 +537,8 @@ QQC2.ApplicationWindow {
 
     width: app.setting("window.width")
     height: app.setting("window.height")
-    minimumWidth: 480
-    minimumHeight: 320
+    minimumWidth: bare ? 240 : 480
+    minimumHeight: bare ? 160 : 320
     // (Ends in the application's name, or Qt adds it again: QPlatformWindow::formatWindowTitle.)
     title: (currentTab && currentTab.title ? currentTab.title + " — " : "") + (privateMode ? "Private Browsing — " : "") + "Kite"
     color: Kirigami.Theme.backgroundColor
@@ -540,7 +546,7 @@ QQC2.ApplicationWindow {
     onActiveChanged: if (active) app.windowActivated(bw)
     onClosing: close => {
         // The last window takes Kite with it.
-        if (!app.quitting && app.windows.length === 1 && app.askBeforeQuit(() => bw.close(), bw)) {
+        if (!app.quitting && !popupType && app.windows.filter(w => !w.popupType).length === 1 && app.askBeforeQuit(() => bw.close(), bw)) {
             close.accepted = false
             return
         }
@@ -682,6 +688,8 @@ QQC2.ApplicationWindow {
 
     function openTab(url, opts) {
         opts = opts || {}
+        // (A popup window keeps to its one page: what opens from it is a tab of a browser window.)
+        if (popupType && tabModel.count > 0) return app.browserWindowFor(bw).openTab(url, Object.assign({}, opts, {index: undefined, openerTabId: undefined, pane: undefined}))
         // (An extension's new tab page, say, if it isn't allowed here.)
         if (privateMode && url && url.startsWith("moz-extension:") && !Extensions.urlRunsInPrivate(url)) url = app.privateNewTabUrl()
         const id = app.nextTabId++
@@ -775,7 +783,7 @@ QQC2.ApplicationWindow {
         Extensions.browserEvent("tabRemoved", JSON.stringify({tabId: id, windowId: windowId, windowClosing: false}))
         tabClosed(id)
         if (tabModel.count === 0) {
-            if (app.setting("tabs.closeWindowWithLastTab") || app.windows.length > 1) { bw.close(); return }
+            if (app.setting("tabs.closeWindowWithLastTab") || app.windows.length > 1 || popupType) { bw.close(); return }
             paneTab = [-1, -1]
             openTab(app.newTabUrl(), {background: false, pane: 0})
             return
@@ -904,7 +912,7 @@ QQC2.ApplicationWindow {
     }
 
     function extInfo(populate) {
-        const info = {id: windowId, focused: active, top: y, left: x, width: width, height: height, incognito: privateMode, type: "normal",
+        const info = {id: windowId, focused: active, top: y, left: x, width: width, height: height, incognito: privateMode, type: popupType ? "popup" : "normal",
                       state: visibility === Window.Maximized ? "maximized" : visibility === Window.Minimized ? "minimized" : visibility === Window.FullScreen ? "fullscreen" : "normal",
                       alwaysOnTop: false, title: title}
         if (populate) { info.tabs = []; for (let i = 0; i < tabModel.count; ++i) info.tabs.push(tabAt(i).extInfo()) }
@@ -951,6 +959,8 @@ QQC2.ApplicationWindow {
         return true
     }
 
+    // (An extension's page closing itself: window.close().)
+    function closeExtensionPopup(extId) { if (extPopup.opened && extPopup.action && extPopup.action.ext === extId) extPopup.close() }
     function openExtensionPopup(extId) {
         const a = toolbarActions.find(x => x.ext === extId && x.kind === "browserAction")
         if (!a) return
@@ -1056,7 +1066,7 @@ QQC2.ApplicationWindow {
     header: ColumnLayout {
         id: headerBox
         spacing: 0
-        visible: !bw.contentFullScreen
+        visible: !bw.contentFullScreen && !bw.bare
 
         BrowserMenuBar {
             id: browserMenuBar
@@ -1101,7 +1111,7 @@ QQC2.ApplicationWindow {
         id: footerSlot
         browser: bw
         position: "bottom"
-        inUse: bw.tabPosition === "bottom" && !bw.contentFullScreen
+        inUse: bw.tabPosition === "bottom" && !bw.contentFullScreen && !bw.bare
         shown: bw.tabBarShown
     }
 
@@ -1123,7 +1133,7 @@ QQC2.ApplicationWindow {
         // Split view lists each pane's tabs on its side; else the list is on
         // the chosen side.
         readonly property bool verticalTabs: bw.tabPosition === "vertical" || bw.tabPosition === "verticalRight"
-        readonly property bool inUse: !bw.contentFullScreen && (bw.split ? verticalTabs : bw.tabPosition === (side === "left" ? "vertical" : "verticalRight"))
+        readonly property bool inUse: !bw.contentFullScreen && !bw.bare && (bw.split ? verticalTabs : bw.tabPosition === (side === "left" ? "vertical" : "verticalRight"))
         readonly property bool shown: inUse && bw.tabBarShown
         property real savedWidth: Kirigami.Units.gridUnit * 14
         property real shownWidth: shown ? savedWidth : 0
@@ -1154,7 +1164,7 @@ QQC2.ApplicationWindow {
 
         Sidebar {
             id: sidebarPanel
-            visible: bw.sidebar !== "" && !bw.contentFullScreen
+            visible: bw.sidebar !== "" && !bw.contentFullScreen && !bw.bare
             QQC2.SplitView.preferredWidth: Kirigami.Units.gridUnit * 16
             QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 10
             win: bw
@@ -1530,6 +1540,6 @@ QQC2.ApplicationWindow {
     }
 
     Component.onCompleted: {
-        if (app.setting("window.maximized")) showMaximized()
+        if (app.setting("window.maximized") && !popupType) showMaximized()
     }
 }

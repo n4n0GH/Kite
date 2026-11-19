@@ -13,8 +13,10 @@ Window {
     width: Kirigami.Units.gridUnit * 40
     height: Kirigami.Units.gridUnit * 30
     color: Kirigami.Theme.backgroundColor
+    property string pageUrl: ""
     function open(url, name) {
         title = name + " — Options"
+        pageUrl = url
         view.active = true
         view.item.url = url
         visible = true; raise(); requestActivate()
@@ -31,6 +33,10 @@ Window {
             profile: w.profile
             webChannel: WebChannel { registeredObjects: [bridge] }
             settings.localContentCanAccessRemoteUrls: true
+            // (As in ExtensionPopup.)
+            settings.javascriptCanAccessClipboard: true
+            settings.javascriptCanPaste: Extensions.urlHasPermission(w.pageUrl, "clipboardRead")
+            onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
             onWindowCloseRequested: w.close()
             id: optionsView
             ExtBridge {

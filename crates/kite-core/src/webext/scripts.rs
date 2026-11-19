@@ -129,6 +129,16 @@ fn css_injector(css: &str) -> String {
     )
 }
 
+/// Around the files of a `document_start` entry. Such a script is promised the page's root
+/// element: Firefox and Chrome run it as that element is made, and the usual way to put a script
+/// or a style into the page, `(document.head || document.documentElement).append(…)`, counts on it.
+/// The engine runs these scripts earlier, before the page has any element, so they wait for the
+/// first one here; that is still before any script of the page's own runs. The price: what the
+/// files declare at their top level is shared among them, and no longer with the extension's
+/// other entries (the page's CSP rules out running them later in any other way).
+const AT_ROOT_OPEN: &str = "\n;(function (run) {\n  if (document.documentElement) return run.call(globalThis);\n  const seen = new MutationObserver(() => { if (document.documentElement) { seen.disconnect(); run.call(globalThis); } });\n  seen.observe(document, { childList: true });\n})(function () {";
+const AT_ROOT_CLOSE: &str = "\n});\n";
+
 fn read(ext: &Extension, path: &str) -> String {
     let text = ext.resolve(path).and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_else(|| {
         log::warn!("{}: missing content script file {path}", ext.info.id);
@@ -218,10 +228,18 @@ pub fn content_scripts(ext: &Extension, token: &str, world: u32, dynamic: &[Valu
         if !css.is_empty() {
             src += &css_injector(&css.join("\n"));
         }
+        let at_root = matches!(cs.run_at, RunAt::DocumentStart) && !js.is_empty();
+        if at_root {
+            src += AT_ROOT_OPEN;
+        }
         for (i, f) in js.iter().enumerate() {
             // Each file is top-level script code so declarations are shared
-            // across files and entries, like Firefox's per-extension sandbox.
+            // across files and entries, like Firefox's per-extension sandbox
+            // (but see AT_ROOT_OPEN).
             src += &format!("\n// ---- file {i} ----\n{f}\n;");
+        }
+        if at_root {
+            src += AT_ROOT_CLOSE;
         }
         out.push(UserScript {
             name,
@@ -320,13 +338,16 @@ mod tests {
         assert!(s[0].source.starts_with("// ==UserScript==\n// @name kite:g@x:0\n// @match *://*.kde.org/*\n// @exclude http*://bugs.kde.org/*\n// @run-at document-start\n"));
         assert!(s[0].source.contains("const shared = 1;") && s[0].source.contains("body{color:red}"));
         assert!(s[0].source.contains("\"token\":\"tok\""));
+        // At document_start the files wait for the page's root element, after the API is there.
+        let (api, wait, file) = (s[0].source.find("__kiteMakeAPI").unwrap(), s[0].source.find(AT_ROOT_OPEN).unwrap(), s[0].source.find("const shared = 1;").unwrap());
+        assert!(api < wait && wait < file && s[0].source.ends_with(AT_ROOT_CLOSE));
         assert_eq!((s[0].world, s[0].all_frames, s[0].injection_point), (11, true, 0));
         let bg = background_page(e).unwrap();
         assert!(bg.find("__kite__/api.js").unwrap() < bg.find("/a.js").unwrap());
         assert_eq!(background_url(e).unwrap(), e.url(BACKGROUND_PAGE));
         let dynamic = content_scripts(e, "tok", 11, &[serde_json::json!({"id": "x", "matches": ["<all_urls>"], "js": [{"code": "1+1"}], "runAt": "document_end"})]);
         assert_eq!(dynamic.len(), 2);
-        assert!(dynamic[1].source.contains("1+1"));
+        assert!(dynamic[1].source.contains("1+1") && !dynamic[1].source.contains(AT_ROOT_OPEN));
         assert!(bridge_js(&["t1".into()], "/*qwc*/").contains("[\"t1\"]"));
         // An extension page says it is Firefox's before anything else runs, or not at all.
         let api = page_api_js(e, "tok", "/*qwc*/", 0, Some("Mozilla/5.0 (X11) \"Firefox\"/140.0"));

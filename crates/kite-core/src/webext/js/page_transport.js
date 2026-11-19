@@ -83,5 +83,13 @@
     if (inFrame) rawFetch('/__kite__/rpc', { method: 'POST', cache: 'no-store', keepalive: true, body: JSON.stringify({ token: cfg.token, ctx, method: '_.unregister', args: [], callId: 0 }) }).catch(() => {});
     else if (kite) kite.call(cfg.token, ctx, '_.unregister', '[]', 0);
   });
-  // Extension pages in Kite close themselves via window.close(): map to tabs.remove for tab pages.
+  // window.close() closes an extension's popup, sidebar, options window or tab, as in Firefox and
+  // Chrome. (The engine lets a page close itself only while it has no history: not after the
+  // first step of a popup that moves from screen to screen within one page.)
+  if (!inFrame) window.close = () => { transport.call('_.close', []).catch(() => {}); };
+  // Escape closes a popup, as in Firefox, unless the page took the key for itself. (Asked of the
+  // page: the engine doesn't hand an unused Escape back to Kite as it does other keys.)
+  addEventListener('keydown', (e) => {
+    if (cfg.kind === 'popup' && e.key === 'Escape' && !e.isComposing) setTimeout(() => { if (!e.defaultPrevented) window.close(); });
+  });
 })(__KITE_CFG__);

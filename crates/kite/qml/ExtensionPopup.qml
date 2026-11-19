@@ -47,6 +47,7 @@ QQC2.Popup {
     // Presses on the popup's own button don't close it here; the button's
     // click toggles it instead (otherwise press closes and release reopens).
     closePolicy: QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutsideParent
+    focus: true
 
     function show(action, anchor) {
         if (opened && anchorItem === anchor) {
@@ -63,9 +64,13 @@ QQC2.Popup {
         view.active = true
         view.item.url = action.popup
         open()
+        // (Typing goes to the popup at once, as in Firefox: it may have been opened with a shortcut.)
+        view.item.forceActiveFocus()
     }
 
-    onClosed: { active = false; view.active = false; popupUrl = "" }
+    // (The runtime is told the page is gone: the bridge outlives the view, and a page that still
+    // counted would be waited for by every message of its extension that nobody answers.)
+    onClosed: { active = false; view.active = false; popupUrl = ""; Extensions.viewClosed(bridge.viewKey) }
 
     // Only while open: a web view holds a renderer process even when it shows nothing,
     // and each window has one of these popups.
@@ -78,7 +83,11 @@ QQC2.Popup {
             profile: popup.profile
             webChannel: WebChannel { registeredObjects: [bridge] }
             settings.localContentCanAccessRemoteUrls: true
+            // The clipboard: writing as any extension page may (Firefox lets them, from a click),
+            // reading only with the manifest's clipboardRead.
             settings.javascriptCanAccessClipboard: true
+            settings.javascriptCanPaste: Extensions.urlHasPermission(popup.popupUrl, "clipboardRead")
+            onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
             settings.scrollAnimatorEnabled: popup.win.app.liveSettings["web.smoothScrolling"]
             backgroundColor: "white"
             onWindowCloseRequested: popup.close()

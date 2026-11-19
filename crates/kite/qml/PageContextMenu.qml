@@ -120,19 +120,33 @@ QQC2.Menu {
 
     // Extension items
     QQC2.MenuSeparator { visible: menu.extItems.length > 0; height: visible ? implicitHeight : 0 }
+    // An entry, or a submenu with its entries. (Made here, one after the other: a component can't
+    // start an object while another of its own is still being made, which a submenu filling
+    // itself with submenus asks of it, and the first of them was left out.)
+    function extObject(node, owner) {
+        if (node.children && node.children.length > 0) {
+            const sub = extSubComp.createObject(owner, {node: node})
+            for (const child of node.children) {
+                const o = extObject(child, sub)
+                if (o instanceof QQC2.Menu) sub.addMenu(o); else sub.addItem(o)
+            }
+            return sub
+        }
+        const at = owner ? owner.contentItem : null
+        return node.type === "separator" ? sepComp.createObject(at) : extItemComp.createObject(at, {node: node, ctxMenu: menu})
+    }
+    // (Before the last section: its separator, source, page info and Inspect Element.)
+    function extInsertAt() {
+        for (let k = count - 1; k >= 0; k--) if (itemAt(k) === lastSection) return k
+        return count
+    }
     Instantiator {
         model: menu.extItems
         delegate: QtObject {
             required property var modelData
-            property QtObject item: modelData.children && modelData.children.length > 0
-                ? extSubComp.createObject(null, {node: modelData, ctxMenu: menu})
-                : modelData.type === "separator" ? sepComp.createObject(null) : extItemComp.createObject(null, {node: modelData, ctxMenu: menu})
+            property QtObject item: menu.extObject(modelData, null)
         }
-        onObjectAdded: (i, o) => {
-            // (Before the last section: its separator, source and Inspect Element.)
-            const at = menu.count - 3
-            if (o.item instanceof QQC2.Menu) menu.insertMenu(at, o.item); else menu.insertItem(at, o.item)
-        }
+        onObjectAdded: (i, o) => { if (o.item instanceof QQC2.Menu) menu.insertMenu(menu.extInsertAt(), o.item); else menu.insertItem(menu.extInsertAt(), o.item) }
         onObjectRemoved: (i, o) => { if (o.item instanceof QQC2.Menu) menu.removeMenu(o.item); else menu.removeItem(o.item); o.item.destroy() }
     }
     function clickExt(node) {
@@ -156,29 +170,16 @@ QQC2.Menu {
     }
     property Component extSubComp: Component {
         QQC2.Menu {
-            id: sub
             property var node
-            property var ctxMenu
             title: node.title
             icon.source: node.icon || ""
             icon.name: node.iconName || ""
             icon.color: node.iconName ? palette.text : "transparent"
-            Instantiator {
-                model: sub.node.children
-                delegate: QtObject {
-                    required property var modelData
-                    property QtObject item: modelData.children && modelData.children.length > 0
-                        ? menu.extSubComp.createObject(null, {node: modelData, ctxMenu: sub.ctxMenu})
-                        : modelData.type === "separator" ? menu.sepComp.createObject(null) : menu.extItemComp.createObject(null, {node: modelData, ctxMenu: sub.ctxMenu})
-                }
-                onObjectAdded: (i, o) => { if (o.item instanceof QQC2.Menu) sub.insertMenu(i, o.item); else sub.insertItem(i, o.item) }
-                onObjectRemoved: (i, o) => { if (o.item instanceof QQC2.Menu) sub.removeMenu(o.item); else sub.removeItem(o.item); o.item.destroy() }
-            }
         }
     }
     property Component sepComp: Component { QQC2.MenuSeparator {} }
 
-    QQC2.MenuSeparator {}
+    QQC2.MenuSeparator { id: lastSection }
     QQC2.MenuItem { text: "View Page Source"; icon.name: "text-html"; enabled: !!menu.tab && !menu.tab.showsSource; onTriggered: menu.tab.window.openTab("view-source:" + menu.tab.url, {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
     QQC2.MenuItem { text: "View Page Info"; icon.name: "documentinfo"; enabled: !!menu.tab; onTriggered: menu.tab.app.showPageInfo(menu.tab) }
     // (Where the blocker isn't working here, nor would a rule.)

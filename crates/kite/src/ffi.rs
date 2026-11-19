@@ -347,9 +347,9 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     };
     // Same-extension or browser-initiated loads may load anything; other
     // origins only web_accessible_resources (Firefox semantics). An opaque
-    // origin ("null": sandboxed or srcdoc/data: frames) is a web page's,
-    // never the extension's: treating it as same-origin handed any page the
-    // extension's token through api.js.
+    // origin ("null": sandboxed or srcdoc/data: frames) is never taken for
+    // the extension's: treating it as same-origin handed any page the
+    // extension's token through api.js. (What it does get: further down.)
     let same_origin = initiator.is_empty() || initiator.trim_end_matches('/').eq_ignore_ascii_case(ext.base_url().trim_end_matches('/'));
     if path == scripts::API_PATH {
         if !same_origin {
@@ -365,7 +365,13 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
             None => (404, "text/plain".into(), vec![]),
         };
     }
-    if !same_origin && !web_accessible(ext, &path) {
+    // What isn't web-accessible, asked for by another origin. An opaque one may be a page of
+    // the extension's own in a sandboxed frame, drawing with its own script and stylesheet (a
+    // password manager's menu inside a form field; Firefox knows whose sandbox it is, the
+    // engine here says "null" for a web page's just the same). It gets what a page is drawn
+    // with (`for_sandboxed_frames`), never a page: those stay for the sites the manifest names.
+    let foreign = !same_origin && !web_accessible(ext, &path);
+    if foreign && initiator != "null" {
         return (403, "text/plain".into(), vec![]);
     }
     let Some(file) = ext.resolve(&path) else { return (403, "text/plain".into(), vec![]) };
@@ -374,6 +380,9 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
         Ok(bytes) => {
             let mime = mime_guess::from_path(&file).first_or_octet_stream().essence_str().to_owned();
             let mime = if path.ends_with(".mjs") { "application/javascript".into() } else { mime };
+            if foreign && !for_sandboxed_frames(&mime) {
+                return (403, "text/plain".into(), vec![]);
+            }
             if mime == "text/html" {
                 let html = String::from_utf8_lossy(&bytes);
                 (200, mime, scripts::inject_api_into_html(&html).into_bytes())
@@ -385,8 +394,17 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                 (200, mime, bytes)
             }
         }
+        // (Not telling another origin which files there are.)
+        Err(_) if foreign => (403, "text/plain".into(), vec![]),
         Err(_) => (404, "text/plain".into(), b"Not found".to_vec()),
     }
+}
+
+/// The kinds of file a sandboxed frame may load from an extension without their being
+/// web-accessible: what a page is drawn with. Not documents (a page of the extension's, framed
+/// by any site), nor data a script would read.
+fn for_sandboxed_frames(mime: &str) -> bool {
+    matches!(mime, "text/css" | "application/javascript" | "text/javascript") || mime.starts_with("image/") || mime.starts_with("font/")
 }
 
 /// `__kite__/rpc` and `__kite__/poll` for extension pages in sub-frames.
