@@ -35,6 +35,12 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.6" date="2026-11-19">
+      <description>
+        <p>Parental controls: a profile can be a child's. It blocks adult sites by community-kept lists, holds search engines to their safe search, can't install extensions or plugins, and can't be left for another profile without the parent password. Set up in the profile picker or in Settings, under Parental Controls. This works inside Kite; a system account of the child's own is what holds beyond that.</p>
+        <p>The profile picker shows the profiles as cards, and each profile can have a picture: choose an image, then move and zoom it into place. The Profiles menu shows the pictures too. The default profile can now be renamed.</p>
+      </description>
+    </release>
     <release version="0.10.5" date="2026-11-18">
       <description>
         <p>Fixes a crash: when a page had opened another page in a tab or popup window and the opening tab was closed, moving the pointer over the opened page crashed Kite. Extensions are now told that they run in Firefox, which is what they are made for (Settings, Plugins and Extensions; on by default). What Kite fetches itself, such as extensions' requests, add-ons and filter lists, now trusts the certificate authorities of your system, so an extension can reach a self-hosted server with a certificate authority of its own.</p>
