@@ -39,9 +39,13 @@ QtObject {
     function autofillKey(key) { if (viewKind === "tab") autofillKeyPressed(key) }
     function autofillSubmit(json) { if (viewKind === "tab") autofillSubmitted(json) }
 
-    function call(token, ctx, method, args, callId) {
-        Extensions.call(viewKey, tabId, windowId, token, ctx, method, args, callId)
-    }
+    // A call to the extension API. The bridge's host hands it to the runtime
+    // (onCalled), with the page its view shows: extcall.js. The view can't be
+    // kept here for that: everything this object has, the web channel shows
+    // to the page, and a property holding the view would hand the page the
+    // view itself, and through it the window.
+    signal called(string token, string ctx, string method, string args, int callId)
+    function call(token, ctx, method, args, callId) { called(token, ctx, method, args, callId) }
 
     // Screen Wake Lock (crates/kite/src/js/wakelock.js, relayed by the bridge
     // world): WebTab prompts and answers with wakeLockAnswer.

@@ -10,6 +10,13 @@
 //! embedded in scripts running with that extension's privileges (its pages and
 //! its content-script world). Calls carry the token, so a web page or another
 //! extension cannot impersonate it.
+//!
+//! The token says which extension, not which part of it: content scripts hold
+//! it too, inside the processes of the web pages they run in. What a caller
+//! is comes from where the call arrived ([`Origin::document`]), and a content
+//! script may call only what [`content_may_call`] lists, so a web page's
+//! process that got hold of a token has a content script's reach, not the
+//! extension's.
 
 use super::native::NativeOp;
 use super::blocking::BlockingHub;
@@ -31,6 +38,12 @@ pub struct Origin {
     /// Tab id if the view is a browser tab, else -1.
     pub tab_id: i64,
     pub window_id: i64,
+    /// The document the call came through, as the engine has it: the page the
+    /// view shows, or the origin a request was made from. Only one of the
+    /// extension's own (`moz-extension://<its uuid>/…`) is one of its pages;
+    /// from anything else, or with none, the caller is a content script,
+    /// whatever it says of itself.
+    pub document: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,6 +202,10 @@ pub struct Runtime {
     pub dnr: HashMap<String, RuleSet>,
     dnr_disabled: HashMap<String, Vec<String>>,
     dynamic_scripts: HashMap<String, Vec<Value>>,
+    /// Extensions that let their content scripts use `storage.session`
+    /// (`setAccessLevel`). Without that it is for their pages only, as in
+    /// Chrome: it is where a password manager keeps what unlocks its vault.
+    session_storage_open: std::collections::HashSet<String>,
     /// activeTab: (extension, tab) → the origin the user invoked the
     /// extension on (its button, a menu entry, a shortcut). It lasts until
     /// the tab shows another origin.
@@ -231,6 +248,40 @@ fn obj(v: &Value) -> Map<String, Value> {
 }
 fn token() -> String {
     uuid::Uuid::new_v4().simple().to_string()
+}
+
+/// Is `document` (an address or an origin) one of the extension's own pages?
+fn own_document(ext: &Extension, document: &str) -> bool {
+    url::Url::parse(document).is_ok_and(|u| u.scheme() == super::SCHEME && u.host_str().is_some_and(|h| h.eq_ignore_ascii_case(&ext.info.uuid)))
+}
+
+/// What a content script may call: messaging, storage and what says where it
+/// runs, as in Firefox. Everything else is for the extension's pages, which
+/// content scripts ask through messages.
+pub fn content_may_call(method: &str) -> bool {
+    if let Some(rest) = method.strip_prefix("storage.") {
+        let op = rest.rsplit('.').next().unwrap_or(rest);
+        return matches!(op, "get" | "set" | "remove" | "clear" | "getBytesInUse" | "getKeys");
+    }
+    matches!(
+        method,
+        "_.register"
+            | "_.unregister"
+            | "_.listen"
+            | "_.respond"
+            | "_.portPost"
+            | "_.portDisconnect"
+            | "_.cosmetic"
+            | "runtime.sendMessage"
+            | "extension.sendMessage"
+            | "runtime.connect"
+            | "runtime.getPlatformInfo"
+            | "runtime.getBrowserInfo"
+            | "extension.isAllowedIncognitoAccess"
+            | "extension.isAllowedFileSchemeAccess"
+            | "i18n.getAcceptLanguages"
+            | "i18n.detectLanguage"
+    )
 }
 
 type R = Result<Value, String>;
@@ -280,6 +331,7 @@ impl Runtime {
             dnr: HashMap::new(),
             dnr_disabled: HashMap::new(),
             dynamic_scripts: HashMap::new(),
+            session_storage_open: Default::default(),
             active_grants: HashMap::new(),
             pending_startup: HashMap::new(),
             uninstall_urls: HashMap::new(),
@@ -390,6 +442,7 @@ impl Runtime {
         self.page_actions.remove(id);
         self.sidebars.remove(id);
         self.ready.remove(id);
+        self.session_storage_open.remove(id);
         self.ctxs.retain(|_, c| c.ext != id);
         if let Some(set) = self.dnr.get_mut(id) {
             set.session_rules.clear();
@@ -454,8 +507,12 @@ impl Runtime {
             Value::Null => vec![],
             v => vec![v],
         };
-        let handled = self.dispatch(origin, &ext_id, ctx, method, &args, call_id);
         let reply = |result: R| Effect::Reply { view: origin.view.clone(), ctx: ctx.into(), call_id, result };
+        if let Err(why) = self.may_call(origin, &ext_id, ctx, method) {
+            log::warn!("{ext_id}: {method} refused for {ctx} in {}: {why}", origin.view);
+            return vec![reply(Err(why))];
+        }
+        let handled = self.dispatch(origin, &ext_id, ctx, method, &args, call_id);
         match handled {
             Handled::Now(r) => vec![reply(r)],
             Handled::Later(e) => e,
@@ -464,6 +521,25 @@ impl Runtime {
                 e
             }
         }
+    }
+
+    /// Did the call come from a content script? Decided by where it arrived
+    /// from, never by what the caller says it is.
+    fn from_content(&self, origin: &Origin, ext_id: &str) -> bool {
+        !self.registry.get(ext_id).is_some_and(|e| own_document(e, &origin.document))
+    }
+
+    /// May this caller call `method`, as the context it names?
+    fn may_call(&self, origin: &Origin, ext_id: &str, ctx: &str, method: &str) -> Result<(), String> {
+        let content = self.from_content(origin, ext_id);
+        if content && !content_may_call(method) {
+            return Err(format!("{method} isn't available to content scripts"));
+        }
+        // A context is its extension's, and a page's context isn't a content script's to speak for.
+        if self.ctxs.get(ctx).is_some_and(|c| c.ext != ext_id || (content && c.kind != "content")) {
+            return Err("That context is another's".into());
+        }
+        Ok(())
     }
 
     /// The GUI finished a [`Effect::Ui`] request.
@@ -1324,7 +1400,12 @@ impl Runtime {
     /// them as events; the returned extensions have blocking
     /// `onBeforeRequest` listeners for it and must be asked through
     /// [`Runtime::blocking`] (outside the runtime lock).
-    pub fn web_request(&mut self, details: &Value, in_private: bool) -> (Vec<Effect>, Vec<String>) {
+    ///
+    /// `owner`: the request is an extension's own (made by one of its pages,
+    /// or inside one), given by [`Runtime::request_owner`]. Only that
+    /// extension hears of it, as in Firefox: to another, it would give away
+    /// what the first one's pages ask for and where.
+    pub fn web_request(&mut self, details: &Value, in_private: bool, owner: Option<&str>) -> (Vec<Effect>, Vec<String>) {
         if self.web_request.is_empty() {
             return (vec![], vec![]);
         }
@@ -1336,6 +1417,9 @@ impl Runtime {
         for (ext, listeners) in &self.web_request {
             let Some(e) = self.registry.get(ext) else { continue };
             if !e.info.enabled || (in_private && !e.runs_in_private()) {
+                continue;
+            }
+            if owner.is_some_and(|o| o != ext) {
                 continue;
             }
             let hosts = MatchSet::parse(e.host_patterns().iter().map(String::as_str));
@@ -1360,6 +1444,15 @@ impl Runtime {
             }
         }
         (fx, ask)
+    }
+
+    /// The extension a request belongs to, if it is one's own: made by one of
+    /// its pages (`initiator`) or inside one (`first_party`). `Some("")` for
+    /// an extension page that is no longer anyone's.
+    pub fn request_owner(&self, initiator: &str, first_party: &str) -> Option<String> {
+        let prefix = format!("{}:", super::SCHEME);
+        let of = |u: &str| u.starts_with(&prefix).then(|| self.registry.extensions.iter().find(|e| own_document(e, u)).map(|e| e.info.id.clone()).unwrap_or_default());
+        of(initiator).or_else(|| of(first_party))
     }
 
     /// May tabs start loading? Extensions that can block requests
@@ -1502,7 +1595,8 @@ impl Runtime {
             ("_", "register") => {
                 let info = arg(args, 0);
                 log::debug!("context {ctx} registered: {} in {} (tab {}, frame {})", info["kind"], origin.view, origin.tab_id, info["frameId"]);
-                let kind = info["kind"].as_str().unwrap_or("content").to_owned();
+                // (A content script is one whatever it calls itself: `from_content`.)
+                let kind = if self.from_content(origin, ext_id) { "content".to_owned() } else { info["kind"].as_str().unwrap_or("content").to_owned() };
                 let url = info["url"].as_str().unwrap_or_default().to_owned();
                 self.ctxs.insert(
                     ctx.into(),
@@ -1713,6 +1807,11 @@ impl Runtime {
                 if !e.has_permission("storage") && !e.has_permission("unlimitedStorage") {
                     return now!(Err("Missing \"storage\" permission".into()));
                 }
+                // The session area is for the extension's pages, unless it opened it.
+                let session_open = self.session_storage_open.contains(ext_id);
+                if area == "session" && !session_open && self.from_content(origin, ext_id) {
+                    return now!(Err("Access to storage is not allowed from this context.".into()));
+                }
                 let r = match op {
                     "get" => self.storage.get(ext_id, area, &arg(args, 0)).map_err(|e| e.to_string()),
                     "getBytesInUse" => self.storage.bytes_in_use(ext_id, area, &arg(args, 0)).map(|n| json!(n)).map_err(|e| e.to_string()),
@@ -1727,14 +1826,25 @@ impl Runtime {
                             Ok(ch) if ch.is_empty() => now!(Ok(Value::Null)),
                             Ok(ch) => {
                                 let ch = Value::Object(ch);
-                                let mut fx = self.fire(ext_id, "storage.onChanged", json!([ch, area]), true);
-                                fx.extend(self.fire(ext_id, &format!("storage.{area}.onChanged"), json!([ch]), true));
+                                // (Content scripts hear of the session area only when it's open to them.)
+                                let to_content = area != "session" || session_open;
+                                let mut fx = self.fire(ext_id, "storage.onChanged", json!([ch, area]), to_content);
+                                fx.extend(self.fire(ext_id, &format!("storage.{area}.onChanged"), json!([ch]), to_content));
                                 Handled::With(Ok(Value::Null), fx)
                             }
                             Err(err) => now!(Err(err.to_string())),
                         };
                     }
-                    "setAccessLevel" => Ok(Value::Null),
+                    "setAccessLevel" => {
+                        if area == "session" {
+                            if arg(args, 0)["accessLevel"] == "TRUSTED_AND_UNTRUSTED_CONTEXTS" {
+                                self.session_storage_open.insert(ext_id.to_owned());
+                            } else {
+                                self.session_storage_open.remove(ext_id);
+                            }
+                        }
+                        Ok(Value::Null)
+                    }
                     _ => Err(format!("storage.{name} is not supported")),
                 };
                 now!(r)
@@ -2848,6 +2958,11 @@ mod tests {
         (dir, rt, tok)
     }
 
+    /// A call from one of the extension's own pages, shown by `view`.
+    fn page(rt: &Runtime, ext: &str, view: &str, window_id: i64) -> Origin {
+        Origin { view: view.into(), tab_id: -1, window_id, document: rt.registry.get(ext).unwrap().url("page.html") }
+    }
+
     fn reply(fx: &[Effect]) -> Result<Value, String> {
         fx.iter()
             .find_map(|e| match e {
@@ -2858,9 +2973,102 @@ mod tests {
     }
 
     #[test]
+    fn a_caller_is_what_its_document_makes_it() {
+        let (_d, mut rt, tok) = setup();
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        rt.call(&bg, &tok, "bg", "_.ready", json!([]), 1);
+        // With the extension's token, from a web page's document (its content
+        // script, or the page's process having read the token there).
+        let web = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://evil.example/".into() };
+        // Calling itself a page doesn't make it one.
+        assert!(reply(&rt.call(&web, &tok, "cs", "_.register", json!([{"kind": "background", "url": "https://evil.example/"}]), 1)).is_ok());
+        assert_eq!(reply(&rt.call(&bg, &tok, "bg", "runtime.getContexts", json!([{}]), 2)).unwrap().as_array().unwrap().len(), 1);
+        for method in ["tabs.query", "tabs.executeScript", "cookies.getAll", "history.search", "runtime.getContexts", "runtime.reload", "_.ready", "_.fetch", "webRequest._listen", "storage.local.setAccessLevel", "storage.session.setAccessLevel"] {
+            assert!(reply(&rt.call(&web, &tok, "cs", method, json!([{}]), 3)).unwrap_err().contains("content scripts"), "{method}");
+        }
+        // What content scripts are for still works.
+        assert!(reply(&rt.call(&web, &tok, "cs", "storage.local.set", json!([{"k": 1}]), 4)).is_ok());
+        assert_eq!(reply(&rt.call(&web, &tok, "cs", "storage.local.get", json!(["k"]), 5)), Ok(json!({"k": 1})));
+        assert!(rt.call(&web, &tok, "cs", "runtime.sendMessage", json!(["", "hi"]), 6).iter().any(|e| matches!(e, Effect::Deliver { view, .. } if view == "bg:t@x")));
+        // Nor can it speak as the background page's context.
+        assert!(reply(&rt.call(&web, &tok, "bg", "runtime.sendMessage", json!(["", "hi"]), 7)).is_err());
+        assert!(reply(&rt.call(&web, &tok, "bg", "_.unregister", json!([]), 8)).is_err());
+        // The same from an opaque origin, another extension's page, or with no document at all.
+        let other = "moz-extension://00000000-0000-4000-8000-000000000000/page.html";
+        for document in ["", "null", "about:blank", other] {
+            let o = Origin { view: "tab:6".into(), tab_id: 6, window_id: 1, document: document.into() };
+            assert!(reply(&rt.call(&o, &tok, "x", "tabs.query", json!([{}]), 9)).is_err(), "{document:?}");
+        }
+        // The extension's page in a tab is a page.
+        let tab_page = Origin { view: "tab:7".into(), tab_id: 7, window_id: 1, document: rt.registry.get("t@x").unwrap().url("options.html") };
+        assert!(reply(&rt.call(&tab_page, &tok, "p", "tabs.query", json!([{}]), 10)).is_ok());
+    }
+
+    #[test]
+    fn session_storage_is_for_pages_unless_opened() {
+        let (_d, mut rt, tok) = setup();
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        let web = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://kde.org/".into() };
+        rt.call(&web, &tok, "cs", "_.register", json!([{"kind": "content", "url": "https://kde.org/"}]), 1);
+        rt.call(&web, &tok, "cs", "_.listen", json!(["storage.onChanged", true]), 1);
+        let heard = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Deliver { view, .. } if view == "tab:5"));
+        // The vault key of a password manager, say.
+        assert!(!heard(&rt.call(&bg, &tok, "bg", "storage.session.set", json!([{"key": "secret"}]), 2)));
+        assert!(reply(&rt.call(&web, &tok, "cs", "storage.session.get", json!(["key"]), 3)).is_err());
+        assert!(reply(&rt.call(&web, &tok, "cs", "storage.session.set", json!([{"key": "x"}]), 4)).is_err());
+        assert!(heard(&rt.call(&bg, &tok, "bg", "storage.local.set", json!([{"k": 1}]), 5)));
+        // The extension's own choice opens it.
+        rt.call(&bg, &tok, "bg", "storage.session.setAccessLevel", json!([{"accessLevel": "TRUSTED_AND_UNTRUSTED_CONTEXTS"}]), 6);
+        assert_eq!(reply(&rt.call(&web, &tok, "cs", "storage.session.get", json!(["key"]), 7)), Ok(json!({"key": "secret"})));
+        assert!(heard(&rt.call(&bg, &tok, "bg", "storage.session.set", json!([{"key": "new"}]), 8)));
+        rt.call(&bg, &tok, "bg", "storage.session.setAccessLevel", json!([{"accessLevel": "TRUSTED_CONTEXTS"}]), 9);
+        assert!(reply(&rt.call(&web, &tok, "cs", "storage.session.get", json!(["key"]), 10)).is_err());
+    }
+
+    #[test]
+    fn an_extensions_own_requests_are_not_told_to_others() {
+        let (_d, mut rt, tok, other) = private_setup();
+        // "a@x" watches everything it may.
+        let watcher = bg(&rt, "a@x");
+        rt.call(&watcher, &other, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        rt.call(&watcher, &other, "bg", "webRequest._listen", json!(["onBeforeRequest", {"urls": ["<all_urls>"]}, []]), 2);
+        rt.call(&watcher, &other, "bg", "webRequest._listen", json!(["onBeforeRequest", {"urls": ["<all_urls>"]}, ["blocking"]]), 3);
+        let own = bg(&rt, "t@x");
+        rt.call(&own, &tok, "bg-t", "_.register", json!([{"kind": "background"}]), 1);
+        rt.call(&own, &tok, "bg-t", "webRequest._listen", json!(["onBeforeRequest", {"urls": ["<all_urls>"]}, []]), 2);
+        let heard_by = |fx: &[Effect]| {
+            let mut views = fx.iter().filter_map(|e| if let Effect::Deliver { view, .. } = e { Some(view.clone()) } else { None }).collect::<Vec<_>>();
+            views.sort();
+            views
+        };
+        let base = rt.registry.get("t@x").unwrap().base_url();
+        let page_origin = base.trim_end_matches('/').to_owned();
+        let details = json!({"url": "wss://sync.example/socket?key=abc", "type": "websocket", "tabId": -1});
+        // A web page's request: both hear of it, and the blocking listener is asked.
+        assert_eq!(rt.request_owner("https://site.example", "https://site.example/"), None);
+        let (fx, ask) = rt.web_request(&details, false, None);
+        assert_eq!(heard_by(&fx), ["bg:a@x", "bg:t@x"]);
+        assert_eq!(ask, ["a@x"]);
+        // One of t@x's pages asking: only t@x.
+        let owner = rt.request_owner(&page_origin, &format!("{base}bg.html"));
+        assert_eq!(owner.as_deref(), Some("t@x"));
+        let (fx, ask) = rt.web_request(&details, false, owner.as_deref());
+        assert_eq!(heard_by(&fx), ["bg:t@x"]);
+        assert!(ask.is_empty());
+        // A web frame inside one of its pages: its too.
+        assert_eq!(rt.request_owner("https://site.example", &format!("{base}popup.html")).as_deref(), Some("t@x"));
+        // An extension page that is nobody's (any more): nobody hears.
+        let gone = rt.request_owner("moz-extension://00000000-0000-4000-8000-000000000000", "");
+        assert_eq!(gone.as_deref(), Some(""));
+        let (fx, ask) = rt.web_request(&details, false, gone.as_deref());
+        assert!(fx.is_empty() && ask.is_empty());
+    }
+
+    #[test]
     fn detects_content_blocking_extensions() {
         let (_d, mut rt, tok) = setup();
-        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
         let listen = |rt: &mut Runtime, filter: Value, extra: Value| rt.call(&bg, &tok, "bg", "webRequest._listen", json!(["onBeforeRequest", filter, extra]), 1);
         assert_eq!(rt.content_blocker(), None);
         // Observing, or blocking only some sites, isn't content blocking.
@@ -2882,7 +3090,7 @@ mod tests {
     #[test]
     fn auth_and_storage() {
         let (_d, mut rt, tok) = setup();
-        let o = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let o = page(&rt, "t@x", "bg:t@x", -1);
         assert!(reply(&rt.call(&o, "bogus", "c1", "storage.local.get", json!([null]), 1)).is_err());
         rt.call(&o, &tok, "c1", "_.register", json!([{"kind": "background", "url": "moz-extension://x/bg.html"}]), 1);
         let changed = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Deliver { payload, .. } if payload["name"] == "storage.onChanged"));
@@ -2907,8 +3115,8 @@ mod tests {
     #[test]
     fn messaging_and_ports() {
         let (_d, mut rt, tok) = setup();
-        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: 1 };
-        let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1 };
+        let bg = page(&rt, "t@x", "bg:t@x", 1);
+        let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://kde.org/".into() };
         rt.browser_event("tabCreated", &json!({"tab": {"id": 5, "windowId": 1, "index": 0, "url": "https://kde.org/", "title": "KDE", "active": true}}));
         rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
         rt.call(&bg, &tok, "bg", "_.ready", json!([]), 1);
@@ -2944,7 +3152,7 @@ mod tests {
     #[test]
     fn native_messaging_needs_its_permission_and_a_page() {
         let (_d, mut rt, tok) = setup();
-        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
         rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
         // ("t@x" didn't ask for it.)
         assert!(reply(&rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "h"]), 2)).unwrap_err().contains("nativeMessaging"));
@@ -2963,7 +3171,7 @@ mod tests {
         rt.registry.install_xpi(&xpi, "file", "").unwrap();
         rt.on_installed("n@x", false, "", false);
         let tok = rt.token_of("n@x").unwrap().to_owned();
-        let bg = Origin { view: "bg:n@x".into(), tab_id: -1, window_id: -1 };
+        let bg = page(&rt, "n@x", "bg:n@x", -1);
         rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
         (dir, rt, tok, bg)
     }
@@ -3008,7 +3216,7 @@ mod tests {
         let (_d, mut rt, tok, bg) = native_setup();
         rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "h"]), 2);
         assert!(reply(&rt.call(&bg, &tok, "bg", "runtime.connectNative", json!(["n1", "other"]), 3)).is_err());
-        let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1 };
+        let tab = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://kde.org/".into() };
         rt.call(&tab, &tok, "cs", "_.register", json!([{"kind": "content", "frameId": 0, "url": "https://a/"}]), 4);
         let fx = rt.call(&tab, &tok, "cs", "runtime.connectNative", json!(["n3", "h"]), 5);
         assert!(reply(&fx).is_err());
@@ -3023,7 +3231,7 @@ mod tests {
     #[test]
     fn tabs_actions_menus_alarms() {
         let (_d, mut rt, tok) = setup();
-        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
         rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
         rt.browser_event("windowCreated", &json!({"window": {"id": 1, "type": "normal", "state": "normal"}}));
         rt.browser_event("windowFocused", &json!({"windowId": 1}));
@@ -3063,8 +3271,8 @@ mod tests {
     #[test]
     fn waits_for_background_page() {
         let (_d, mut rt, tok) = setup();
-        let bg = Origin { view: "bg:t@x".into(), tab_id: -1, window_id: -1 };
-        let popup = Origin { view: "popup:t@x".into(), tab_id: -1, window_id: -1 };
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        let popup = page(&rt, "t@x", "popup:t@x", -1);
         rt.call(&popup, &tok, "pp", "_.register", json!([{"kind": "popup"}]), 1);
         // Another extension page is open (it must not swallow the messages).
         rt.call(&popup, &tok, "pp2", "_.register", json!([{"kind": "tab"}]), 1);
@@ -3116,8 +3324,8 @@ mod tests {
         (d, rt, tok, allowed)
     }
 
-    fn bg(id: &str) -> Origin {
-        Origin { view: format!("bg:{id}"), tab_id: -1, window_id: -1 }
+    fn bg(rt: &Runtime, id: &str) -> Origin {
+        page(rt, id, &format!("bg:{id}"), -1)
     }
 
     fn urls(v: &Value) -> Vec<String> {
@@ -3127,7 +3335,7 @@ mod tests {
     #[test]
     fn private_tabs_are_hidden_from_extensions_not_allowed_there() {
         let (_d, mut rt, tok, _) = private_setup();
-        let o = bg("t@x");
+        let o = bg(&rt, "t@x");
         let tabs = reply(&rt.call(&o, &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap();
         assert_eq!(urls(&tabs), ["https://regular.example/"]);
         assert!(reply(&rt.call(&o, &tok, "bg", "tabs.get", json!([20]), 2)).is_err());
@@ -3139,7 +3347,7 @@ mod tests {
     #[test]
     fn private_tabs_are_visible_to_extensions_allowed_there() {
         let (_d, mut rt, _, tok) = private_setup();
-        let o = bg("a@x");
+        let o = bg(&rt, "a@x");
         let tabs = reply(&rt.call(&o, &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap();
         assert_eq!(urls(&tabs), ["https://regular.example/", "https://secret.example/"]);
         assert_eq!(reply(&rt.call(&o, &tok, "bg", "tabs.get", json!([20]), 2)).unwrap()["url"], "https://secret.example/");
@@ -3148,14 +3356,14 @@ mod tests {
         assert_eq!(reply(&rt.call(&o, &tok, "bg", "extension.isAllowedIncognitoAccess", json!([]), 5)).unwrap(), true);
         // ...and the next extension doesn't, after that call.
         let other = rt.token_of("t@x").unwrap().to_owned();
-        assert_eq!(urls(&reply(&rt.call(&bg("t@x"), &other, "bg", "tabs.query", json!([{}]), 6)).unwrap()), ["https://regular.example/"]);
+        assert_eq!(urls(&reply(&rt.call(&bg(&rt, "t@x"), &other, "bg", "tabs.query", json!([{}]), 6)).unwrap()), ["https://regular.example/"]);
     }
 
     #[test]
     fn taking_private_access_back_hides_the_tabs_again() {
         let (_d, mut rt, _, tok) = private_setup();
         rt.registry.set_allow_private("a@x", false).unwrap();
-        assert_eq!(urls(&reply(&rt.call(&bg("a@x"), &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap()), ["https://regular.example/"]);
+        assert_eq!(urls(&reply(&rt.call(&bg(&rt, "a@x"), &tok, "bg", "tabs.query", json!([{}]), 1)).unwrap()), ["https://regular.example/"]);
     }
 
     #[test]
@@ -3183,12 +3391,12 @@ mod tests {
         let (_d, mut rt, tok, allowed) = private_setup();
         rt.browser_event("windowFocused", &json!({"windowId": 1}));
         rt.browser_event("windowFocused", &json!({"windowId": 2}));
-        let focused = |rt: &mut Runtime, id: &str, tok: &str| reply(&rt.call(&bg(id), tok, "bg", "windows.getLastFocused", json!([{}]), 1)).unwrap()["id"].clone();
+        let focused = |rt: &mut Runtime, id: &str, tok: &str| reply(&rt.call(&bg(rt, id), tok, "bg", "windows.getLastFocused", json!([{}]), 1)).unwrap()["id"].clone();
         assert_eq!(focused(&mut rt, "t@x", &tok), 1);
         assert_eq!(focused(&mut rt, "a@x", &allowed), 2);
         // Nothing is lost when a private tab closes.
         rt.browser_event("tabRemoved", &json!({"tabId": 20, "windowId": 2}));
-        assert_eq!(urls(&reply(&rt.call(&bg("a@x"), &allowed, "bg", "tabs.query", json!([{}]), 2)).unwrap()), ["https://regular.example/"]);
+        assert_eq!(urls(&reply(&rt.call(&bg(&rt, "a@x"), &allowed, "bg", "tabs.query", json!([{}]), 2)).unwrap()), ["https://regular.example/"]);
     }
 
     #[test]

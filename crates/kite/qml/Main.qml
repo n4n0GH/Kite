@@ -7,6 +7,7 @@ import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.notification
 import org.kde.kite
+import "extcall.js" as ExtCall
 
 // Application controller (Falkon's MainApplication): owns the web profiles,
 // browser windows, session management, downloads, notifications, extension
@@ -1144,7 +1145,11 @@ QtObject {
                 settings.localContentCanAccessRemoteUrls: true
                 settings.javascriptCanAccessClipboard: true
                 webChannel: WebChannel { registeredObjects: [bgBridge] }
-                ExtBridge { id: bgBridge; viewKey: "bg:" + modelData.ext; viewKind: "background" }
+                id: bgView
+                ExtBridge {
+                    id: bgBridge; viewKey: "bg:" + modelData.ext; viewKind: "background"
+                    onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(bgView), token, ctx, method, args, callId)
+                }
                 onJavaScriptConsoleMessage: (level, message, line, source) => app.logConsole(true, modelData.name, level, message, source, line)
                 onRenderProcessTerminated: (status, code) => { console.warn("Background page of " + modelData.name + " crashed; reloading"); reload() }
             }

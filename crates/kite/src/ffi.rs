@@ -529,14 +529,17 @@ fn ask_web_request_listeners(url: &str, first_party: &str, initiator: &str, rtyp
     if let Some(doc) = frame.document_url {
         details["documentUrl"] = doc.into();
     }
-    let (fx, ask) = rt.web_request(&details, in_private);
+    // An extension's own requests (from its pages, or inside them) are told
+    // to that extension alone: another's listener would read in them what the
+    // first one asks for, and of whom.
+    let owner = rt.request_owner(initiator, first_party);
+    let (fx, ask) = rt.web_request(&details, in_private, owner.as_deref());
     let hub = rt.blocking.clone();
     drop(rt);
     crate::extensions::apply_effects_async(fx);
     // Never ask extensions about their own requests: the background
     // page would be waiting for itself.
-    let from_extension = initiator.starts_with("moz-extension:") || first_party.starts_with("moz-extension:");
-    if ask.is_empty() || from_extension {
+    if ask.is_empty() || owner.is_some() {
         return ListenersSay::Nothing;
     }
     let t0 = std::time::Instant::now();
@@ -612,6 +615,15 @@ pub unsafe extern "C" fn kite_intercept(
     let out = (|| {
         if !(url.starts_with("http") || url.starts_with("ws")) {
             return String::new();
+        }
+        // The connections of extensions' blocking listeners to Kite itself
+        // (webext/blocking.rs) are no one's to see, block or send elsewhere:
+        // what is sent over them says which extension it is.
+        if let Some(rest) = url.strip_prefix("ws://127.0.0.1:") {
+            let port = a.runtime().blocking.port();
+            if port != 0 && rest.split(['/', '?', '#']).next() == Some(port.to_string().as_str()) {
+                return String::new();
+            }
         }
         // Never interfere with add-on installs from AMO.
         if kite_core::webext::amo::is_amo_download(url) {

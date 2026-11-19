@@ -27,7 +27,10 @@ pub mod qobject {
 
         // ---- API plumbing ----
         #[qinvokable]
-        fn call(self: Pin<&mut Extensions>, view: &QString, tab_id: i32, window_id: i32, token: &QString, ctx: &QString, method: &QString, args: &QString, call_id: i32);
+        /// `document`: the address of the page the view shows, from the
+        /// engine (qml/extcall.js, from the bridge's host). It decides whether the caller is
+        /// one of the extension's pages or a content script.
+        fn call(self: Pin<&mut Extensions>, view: &QString, tab_id: i32, window_id: i32, document: &QString, token: &QString, ctx: &QString, method: &QString, args: &QString, call_id: i32);
         #[qinvokable]
         #[cxx_name = "uiReply"]
         fn ui_reply(self: Pin<&mut Extensions>, view: &QString, ctx: &QString, call_id: i32, ok: bool, json: &QString);
@@ -331,8 +334,8 @@ impl qobject::Extensions {
 
     // ---- API plumbing -------------------------------------------------------
     #[allow(clippy::too_many_arguments)]
-    fn call(self: Pin<&mut Self>, view: &QString, tab_id: i32, window_id: i32, token: &QString, ctx: &QString, method: &QString, args: &QString, call_id: i32) {
-        let origin = Origin { view: view.to_string(), tab_id: tab_id as i64, window_id: window_id as i64 };
+    fn call(self: Pin<&mut Self>, view: &QString, tab_id: i32, window_id: i32, document: &QString, token: &QString, ctx: &QString, method: &QString, args: &QString, call_id: i32) {
+        let origin = Origin { view: view.to_string(), tab_id: tab_id as i64, window_id: window_id as i64, document: document.to_string() };
         let args: Value = serde_json::from_str(&args.to_string()).unwrap_or(Value::Array(vec![]));
         let fx = app().runtime().call(&origin, &token.to_string(), &ctx.to_string(), &method.to_string(), args, call_id as i64);
         self.apply(fx);

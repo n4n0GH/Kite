@@ -5,6 +5,7 @@ import QtWebEngine
 import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "extcall.js" as ExtCall
 
 // Falkon's SideBar: bookmarks, history, or an extension's sidebar_action panel.
 QQC2.Pane {
@@ -144,7 +145,10 @@ QQC2.Pane {
                 webChannel: WebChannel { registeredObjects: [sbBridge] }
                 settings.localContentCanAccessRemoteUrls: true
                 onNewWindowRequested: request => root.win.openTab(request.requestedUrl.toString(), {background: false})
-                ExtBridge { id: sbBridge; viewKey: "sidebar:" + (panel.info ? panel.info.ext : ""); viewKind: "sidebar"; windowId: root.win.windowId; tabId: root.win.currentTab ? root.win.currentTab.tabId : -1 }
+                ExtBridge {
+                    id: sbBridge; viewKey: "sidebar:" + (panel.info ? panel.info.ext : ""); viewKind: "sidebar"; windowId: root.win.windowId; tabId: root.win.currentTab ? root.win.currentTab.tabId : -1
+                    onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(panel), token, ctx, method, args, callId)
+                }
             }
         }
     }

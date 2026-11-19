@@ -149,7 +149,9 @@ pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &st
                 // UI iframes live in the tab the user is interacting with.
                 _ => rt.active_tab(),
             };
-            let origin = Origin { view, tab_id, window_id };
+            // (What made the request: the extension's own page in a frame, or
+            // the web page a content script runs in. The runtime goes by it.)
+            let origin = Origin { view, tab_id, window_id, document: initiator.to_owned() };
             rt.call(&origin, v["token"].as_str().unwrap_or(""), &ctx, v["method"].as_str().unwrap_or(""), v["args"].clone(), v["callId"].as_i64().unwrap_or(0))
         };
         crate::extensions::apply_effects_async(fx);

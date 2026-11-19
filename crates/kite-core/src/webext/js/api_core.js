@@ -181,8 +181,11 @@ function __kiteMakeAPI(cfg, transport) {
   }
   function connectBlocking() {
     if (blockingSocket || !blockingListeners) return;
-    const ws = new WebSocket('ws://127.0.0.1:' + cfg.blockingPort + '/' + cfg.token);
+    // The token goes in the first message, never in the address: other
+    // extensions' webRequest listeners are shown addresses.
+    const ws = new WebSocket('ws://127.0.0.1:' + cfg.blockingPort + '/');
     blockingSocket = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ token: cfg.token }));
     ws.onmessage = (m) => { let q; try { q = JSON.parse(m.data); } catch (err) { return; } answerBlocking(q); };
     ws.onclose = () => { if (blockingSocket === ws) blockingSocket = null; if (blockingListeners) setTimeout(connectBlocking, 1000); };
   }

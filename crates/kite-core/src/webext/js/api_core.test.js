@@ -112,7 +112,11 @@ test('blocking webRequest listeners answer over the hub socket', async () => {
   browser.webRequest.onBeforeRequest.addListener(async () => ({ redirectUrl: 'moz-extension://u/noop.js' }), { urls: ['*://*.tracker.test/*'] }, ['blocking']);
   browser.webRequest.onBeforeRequest.addListener((d) => seen.push(d.url), { urls: ['<all_urls>'] });
   assert.strictEqual(sockets.length, 1);
-  assert.strictEqual(sockets[0].url, 'ws://127.0.0.1:4321/tok');
+  // The token is the first message, not part of the address (which other
+  // extensions' webRequest listeners would be shown).
+  assert.strictEqual(sockets[0].url, 'ws://127.0.0.1:4321/');
+  sockets[0].onopen();
+  assert.deepStrictEqual(sockets[0].sent.pop(), { token: 'tok' });
   assert.deepStrictEqual(calls[0][1][2], ['blocking']);
   assert.deepStrictEqual(calls[2][1][2], []);
 

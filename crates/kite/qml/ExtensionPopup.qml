@@ -4,6 +4,7 @@ import QtWebEngine
 import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "extcall.js" as ExtCall
 
 // Browser/page action popup: an extension page shown in a panel under its
 // toolbar button, sized to its content (like Firefox).
@@ -100,6 +101,7 @@ QQC2.Popup {
         id: bridge
         viewKey: "popup:" + (popup.action ? popup.action.ext : "")
         viewKind: "popup"
+        onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(view.item), token, ctx, method, args, callId)
         tabId: popup.win.currentTab ? popup.win.currentTab.tabId : -1
         windowId: popup.win.windowId
     }

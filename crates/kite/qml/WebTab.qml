@@ -6,6 +6,7 @@ import QtWebEngine
 import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "extcall.js" as ExtCall
 
 // A browser wt (Falkon's WebTab + WebView + WebPage).
 Item {
@@ -1479,6 +1480,7 @@ Item {
     ExtBridge {
         id: bridge
         viewKey: "tab:" + wt.tabId; tabId: wt.tabId; windowId: wt.window.windowId; viewKind: "tab"
+        onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(web), token, ctx, method, args, callId)
         inPrivate: wt.window.privateMode
         onPasswordFormSubmitted: json => {
             const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))

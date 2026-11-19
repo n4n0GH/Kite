@@ -16,8 +16,11 @@
 //! * hub → page: `{"id": n, "event": "onBeforeRequest", "details": {...}}`
 //! * page → hub: `{"id": n, "result": {"cancel": true} | {"redirectUrl": ...} | null}`
 //!
-//! Connections authenticate with the extension's per-session token in the
-//! request path (`ws://127.0.0.1:<port>/<token>`).
+//! A connection is an extension page's (the `Origin` its browser sends, which
+//! a web page can't choose), and its first message is the extension's
+//! per-session token: `{"token": "…"}`. The token is never part of the
+//! address: addresses are what other extensions' `webRequest` listeners and
+//! rules are shown.
 
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -60,8 +63,14 @@ pub struct BlockingHub {
 /// holds back requests that belong to a tab.)
 const PROBE_TAB: i64 = i32::MAX as i64 - 1;
 
+/// How long a new connection gets to say whose it is.
+const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// How long an extension that timed out is left out.
 const BACKOFF: Duration = Duration::from_secs(1);
+
+/// How the `Origin` of an extension page's connection starts.
+const EXTENSION_ORIGIN: &str = "moz-extension://";
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -111,23 +120,33 @@ impl BlockingHub {
 
     fn serve(&self, stream: TcpStream) {
         let _ = stream.set_nodelay(true);
-        let mut ext = None;
+        // (Nothing may hold a thread here by saying nothing.)
+        let _ = stream.set_read_timeout(Some(HELLO_TIMEOUT));
         let accepted = tungstenite::accept_hdr(stream, |req: &Request, resp: Response| {
-            let token = req.uri().path().trim_start_matches('/');
-            match lock(&self.tokens).get(token) {
-                Some(e) => {
-                    ext = Some(e.clone());
-                    Ok(resp)
-                }
-                None => {
-                    let mut r = ErrorResponse::new(Some("forbidden".into()));
-                    *r.status_mut() = tungstenite::http::StatusCode::FORBIDDEN;
-                    Err(r)
-                }
+            // Only extension pages: a web page's connection says where it is from.
+            let from_extension = req.headers().get("origin").and_then(|o| o.to_str().ok()).is_some_and(|o| o.starts_with(EXTENSION_ORIGIN));
+            if from_extension {
+                Ok(resp)
+            } else {
+                let mut r = ErrorResponse::new(Some("forbidden".into()));
+                *r.status_mut() = tungstenite::http::StatusCode::FORBIDDEN;
+                Err(r)
             }
         })
         .ok();
-        let (Some(mut reader), Some(ext)) = (accepted, ext) else { return };
+        let Some(mut reader) = accepted else { return };
+        // Whose it is: the token, first.
+        let hello = match reader.read() {
+            Ok(Message::Text(t)) => serde_json::from_str::<Value>(t.as_str()).ok(),
+            _ => None,
+        };
+        let ext = hello.as_ref().and_then(|h| h["token"].as_str()).and_then(|token| lock(&self.tokens).get(token).cloned());
+        let Some(ext) = ext else {
+            let _ = reader.close(None);
+            let _ = reader.flush();
+            return;
+        };
+        let _ = reader.get_ref().set_read_timeout(None);
         // A second handle on the same socket for writing, so the interceptor
         // can send while this thread is blocked reading.
         let Ok(write_stream) = reader.get_ref().try_clone() else { return };
@@ -360,9 +379,24 @@ mod tests {
         assert_eq!(combine(&[]), Decision::default());
     }
 
+    /// An extension page's connection, saying `token` first.
     fn client(port: u16, token: &str) -> WebSocket<TcpStream> {
+        use tungstenite::client::IntoClientRequest;
         let s = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        tungstenite::client(format!("ws://127.0.0.1:{port}/{token}"), s).unwrap().0
+        let mut request = format!("ws://127.0.0.1:{port}/").into_client_request().unwrap();
+        request.headers_mut().insert("Origin", "moz-extension://0000".parse().unwrap());
+        let mut c = tungstenite::client(request, s).unwrap().0;
+        c.send(Message::Text(json!({"token": token}).to_string().into())).unwrap();
+        c
+    }
+
+    /// The first line of what a connection from `origin` to `path` is answered.
+    fn handshake(port: u16, path: &str, origin: &str) -> String {
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n{origin}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").as_bytes()).unwrap();
+        let mut buf = [0u8; 12];
+        s.read_exact(&mut buf).unwrap();
+        String::from_utf8_lossy(&buf).into_owned()
     }
 
     #[test]
@@ -371,12 +405,25 @@ mod tests {
         hub.add_token("tok", "ext@x");
         let port = hub.start().unwrap();
 
-        // Unknown token is refused.
-        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        s.write_all(format!("GET /nope HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").as_bytes()).unwrap();
-        let mut buf = [0u8; 12];
-        s.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf, b"HTTP/1.1 403");
+        // A web page's connection is refused, and one that doesn't say where it's
+        // from; the token in the address, as it once was, gets nowhere either.
+        assert_eq!(handshake(port, "/", "Origin: https://evil.example\r\n"), "HTTP/1.1 403");
+        assert_eq!(handshake(port, "/tok", ""), "HTTP/1.1 403");
+        assert_eq!(handshake(port, "/", "Origin: moz-extension://0000\r\n"), "HTTP/1.1 101");
+        // An extension page with a token that is nobody's: closed, and nothing is asked of it.
+        let mut wrong = client(port, "nope");
+        assert!(!matches!(wrong.read(), Ok(Message::Text(_))));
+        let mut in_address = {
+            use tungstenite::client::IntoClientRequest;
+            let s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let mut request = format!("ws://127.0.0.1:{port}/tok").into_client_request().unwrap();
+            request.headers_mut().insert("Origin", "moz-extension://0000".parse().unwrap());
+            let mut c = tungstenite::client(request, s).unwrap().0;
+            c.send(Message::Text("{}".into())).unwrap();
+            c
+        };
+        assert!(!matches!(in_address.read(), Ok(Message::Text(_))));
+        assert!(!hub.is_connected("ext@x"));
 
         // Not connected: nothing asked, no wait.
         let t = Instant::now();

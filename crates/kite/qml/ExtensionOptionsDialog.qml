@@ -3,6 +3,8 @@ import QtQuick.Window
 import QtWebEngine
 import QtWebChannel
 import org.kde.kirigami as Kirigami
+import org.kde.kite
+import "extcall.js" as ExtCall
 
 // Extension options page shown in its own window (options_ui without open_in_tab).
 Window {
@@ -30,7 +32,11 @@ Window {
             webChannel: WebChannel { registeredObjects: [bridge] }
             settings.localContentCanAccessRemoteUrls: true
             onWindowCloseRequested: w.close()
-            ExtBridge { id: bridge; viewKey: "options"; viewKind: "options" }
+            id: optionsView
+            ExtBridge {
+                id: bridge; viewKey: "options"; viewKind: "options"
+                onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(optionsView), token, ctx, method, args, callId)
+            }
         }
     }
 }
