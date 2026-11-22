@@ -42,6 +42,15 @@ pub fn host_of(url: &str) -> String {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
 
+/// A web page's origin as the page itself has it in `location.origin`
+/// ("https://kde.org", "http://localhost:8080"); "" for anything else.
+pub fn origin_of(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(u) if matches!(u.scheme(), "http" | "https") && u.host_str().is_some() => u.origin().ascii_serialization(),
+        _ => String::new(),
+    }
+}
+
 /// An address as lists show it: without https:// (http:// stays, it's worth knowing)
 /// and without the slash of a main page.
 pub fn display_url(url: &str) -> String {
@@ -264,5 +273,22 @@ mod count_files_tests {
         }
         assert_eq!(count_files(dir.path(), 20), 20);
         assert_eq!(count_files(dir.path(), 5), 6);
+    }
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::origin_of;
+
+    #[test]
+    fn an_origin_as_the_page_has_it() {
+        assert_eq!(origin_of("https://kde.org/a/b?c#d"), "https://kde.org");
+        assert_eq!(origin_of("https://KDE.org:443/"), "https://kde.org");
+        assert_eq!(origin_of("http://localhost:8080/x"), "http://localhost:8080");
+        assert_eq!(origin_of("https://user:pw@kde.org:8443/"), "https://kde.org:8443");
+        assert_eq!(origin_of("https://bücher.example/"), "https://xn--bcher-kva.example");
+        for none in ["", "kite:start", "file:///etc/passwd", "about:blank", "javascript:0", "blob:https://kde.org/x"] {
+            assert_eq!(origin_of(none), "", "{none}");
+        }
     }
 }

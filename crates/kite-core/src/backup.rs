@@ -42,6 +42,9 @@ fn belongs_here(key: &str, value: &Value) -> bool {
         || key == "browsing.safeBrowsingKey"
         // Whether this profile has seen its welcome page.
         || key == "general.welcome"
+        // A program on this machine, started with every download: like the folder they
+        // go to, and nothing a file from someone else may name.
+        || key.starts_with("downloads.external")
         // A page from a file: the file isn't coming along.
         || (matches!(key, "general.homepageMode" | "general.newTabPageMode") && value == "file")
 }
@@ -68,7 +71,39 @@ pub fn parse(text: &str) -> anyhow::Result<Backup> {
     backup.settings.retain(|k, v| {
         !belongs_here(k, v) && !v.is_null() && defs.get(k).is_none_or(|d| std::mem::discriminant(d) == std::mem::discriminant(v))
     });
+    // Addresses Kite goes to by itself are the web's or its own pages: a `javascript:`
+    // one would run in whatever page is open when Home is pressed or a search is made.
+    let goes_somewhere = |v: &Value, kite: bool| v.as_str().is_none_or(|u| is_web(u) || (kite && u.starts_with("kite:")));
+    backup.settings.retain(|k, v| !matches!(k.as_str(), "general.homepage" | "general.newTabPage") || goes_somewhere(v, true));
+    backup.search_engines.retain(|e| is_web(&e.url) && (e.suggestions_url.is_empty() || is_web(&e.suggestions_url)));
     Ok(backup)
+}
+
+fn is_web(address: &str) -> bool {
+    url::Url::parse(address).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+}
+
+/// What a file would do that its numbers don't say, for the question before it's
+/// taken: what somebody else's file could use against the one importing it.
+pub fn cautions(backup: &Backup) -> Vec<String> {
+    let text = |key: &str| backup.settings.get(key).and_then(Value::as_str).unwrap_or_default();
+    let mut out = vec![];
+    if text("privacy.proxy") == "manual" && !text("privacy.proxyHost").is_empty() {
+        let port = backup.settings.get("privacy.proxyPort").and_then(Value::as_i64).map(|p| format!(":{p}")).unwrap_or_default();
+        out.push(format!("It sends everything you browse through the proxy {}{port}.", text("privacy.proxyHost")));
+    }
+    if matches!(text("privacy.dnsOverHttps"), "auto" | "secure") && !text("privacy.dnsServer").is_empty() {
+        out.push(format!("It looks up the names of the sites you visit at {}.", text("privacy.dnsServer")));
+    }
+    let plugins: Vec<&str> = backup.settings.iter().filter(|(_, v)| **v == Value::Bool(true)).filter_map(|(k, _)| k.strip_prefix("plugins.")?.strip_suffix(".enabled")).collect();
+    if !plugins.is_empty() {
+        out.push(format!("It turns on these plugins, if they are installed: {}.", plugins.join(", ")));
+    }
+    let granted: Vec<&str> = backup.site_settings.iter().filter(|s| [s.settings.notifications, s.settings.geolocation, s.settings.midi, s.settings.midi_sysex].contains(&1) || !s.settings.handlers.is_empty()).map(|s| s.host.as_str()).collect();
+    if !granted.is_empty() {
+        out.push(format!("It lets these sites send notifications, see your location, use MIDI devices or open links of some kinds: {}.", granted.join(", ")));
+    }
+    out
 }
 
 /// The settings to change so that they're as in the file: what isn't there goes back
@@ -224,6 +259,45 @@ mod tests {
         // Nor do they get in from a file someone made.
         let b = parse(r#"{"kiteSettings": 1, "settings": {"browsing.safeBrowsingKey": "THEIRS", "window.width": 1, "downloads.directory": "/tmp/evil"}}"#).unwrap();
         assert!(b.settings.is_empty());
+    }
+
+    #[test]
+    fn a_file_from_someone_else_names_no_program_and_no_script_address() {
+        let b = parse(
+            r#"{"kiteSettings": 1,
+                "settings": {"downloads.external": true, "downloads.externalProgram": "sh", "downloads.externalArguments": "-c x",
+                             "general.homepage": "javascript:alert(1)", "general.newTabPage": "kite:start", "appearance.defaultZoom": 110},
+                "searchEngines": [{"name": "Bad", "url": "javascript:alert('%s')", "shortcut": "b", "suggestions_url": "", "post_data": ""},
+                                  {"name": "Good", "url": "https://good.example/?q=%s", "shortcut": "g", "suggestions_url": "", "post_data": ""}]}"#,
+        )
+        .unwrap();
+        let mut kept: Vec<&String> = b.settings.keys().collect();
+        kept.sort();
+        assert_eq!(kept, ["appearance.defaultZoom", "general.newTabPage"]);
+        assert_eq!(b.search_engines.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["Good"]);
+        // And importing leaves this machine's program as it is.
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = settings(&dir);
+        s.set("downloads.externalProgram", json!("/usr/bin/mine")).unwrap();
+        assert!(changes(s.all(), &b).iter().all(|(k, _)| !k.starts_with("downloads.external")));
+    }
+
+    #[test]
+    fn says_what_a_file_would_do_beyond_its_numbers() {
+        let quiet = parse(r#"{"kiteSettings": 1, "settings": {"appearance.defaultZoom": 110}, "siteSettings": [{"host": "a.example", "zoom": 150}]}"#).unwrap();
+        assert!(cautions(&quiet).is_empty());
+        let loud = parse(
+            r#"{"kiteSettings": 1,
+                "settings": {"privacy.proxy": "manual", "privacy.proxyHost": "proxy.example", "privacy.proxyPort": 9050,
+                             "privacy.dnsOverHttps": "secure", "privacy.dnsServer": "https://dns.example/q", "plugins.some-plugin.enabled": true, "plugins.other.enabled": false},
+                "siteSettings": [{"host": "push.example", "notifications": 1}, {"host": "calm.example", "notifications": 2}]}"#,
+        )
+        .unwrap();
+        let c = cautions(&loud).join("\n");
+        for said in ["proxy.example:9050", "https://dns.example/q", "some-plugin", "push.example"] {
+            assert!(c.contains(said), "{said}");
+        }
+        assert!(!c.contains("calm.example") && !c.contains("other"));
     }
 
     #[test]

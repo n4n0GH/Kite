@@ -1958,7 +1958,10 @@ impl Runtime {
                     }
                     Ok(t) => {
                         let opts = if name == "captureTab" { arg(args, 1) } else { args.iter().find(|a| a.is_object()).cloned().unwrap_or(Value::Null) };
-                        self.ui(origin, ctx, call_id, ext_id, "tabs.capture", json!({"tabId": t, "options": opts}))
+                        // Allowed by activeTab, it is for the page that was checked: the tab
+                        // may only be on its way there, still showing another (`checkedUrl`).
+                        let checked = if e.host_patterns().iter().any(|p| p == "<all_urls>") { Value::Null } else { json!(self.tabs.get(&t).and_then(|x| x["url"].as_str()).unwrap_or_default()) };
+                        self.ui(origin, ctx, call_id, ext_id, "tabs.capture", json!({"tabId": t, "options": opts, "checkedUrl": checked}))
                     }
                     Err(err) => now!(Err(err)),
                 }

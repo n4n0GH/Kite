@@ -407,6 +407,13 @@ ManagerWindow {
                 type: Kirigami.MessageType.Warning
                 text: "It adds scripts that will run on: " + (importConfirm.preview.scripts || []).join(", ") + ". Those can read and change what you do there, so only go on if the file is your own or you trust who made it."
             }
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                visible: !!importConfirm.preview.cautions && importConfirm.preview.cautions.length > 0
+                type: Kirigami.MessageType.Warning
+                // (Plain text: host and plugin names are the file's.)
+                text: (importConfirm.preview.cautions || []).join("\n").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + "<br>Only go on if the file is your own or you trust who made it."
+            }
         }
         footer: QQC2.DialogButtonBox {
             QQC2.Button { text: "Cancel"; icon.name: "dialog-cancel"; QQC2.DialogButtonBox.buttonRole: QQC2.DialogButtonBox.RejectRole }

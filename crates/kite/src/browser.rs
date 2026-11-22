@@ -2478,6 +2478,8 @@ impl qobject::Browser {
                 "settings": b.settings.len(), "engines": b.search_engines.len(), "sites": b.site_settings.len(),
                 // Scripts that would run in those sites.
                 "scripts": b.site_settings.iter().filter(|s| !s.settings.js.is_empty()).map(|s| s.host.clone()).collect::<Vec<_>>(),
+                // What else it would do that somebody else's file could use against you.
+                "cautions": kite_core::backup::cautions(&b),
             }),
             Err(e) => json!({"error": e.to_string()}),
         })

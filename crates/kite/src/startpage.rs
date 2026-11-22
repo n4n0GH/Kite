@@ -23,6 +23,12 @@ fn same_site(a: &str, b: &str) -> bool {
     norm(a) == norm(b)
 }
 
+/// A tile is a link on one of Kite's own pages: to the web only, as a `javascript:`
+/// address there would run as that page.
+fn is_web(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+}
+
 fn list(key: &str) -> Vec<serde_json::Value> {
     app().shared.settings().get(key).as_array().cloned().unwrap_or_default()
 }
@@ -37,7 +43,7 @@ pub fn edit(url: &str, initiator: &str) -> Option<(String, String)> {
     }
     let q: std::collections::HashMap<String, String> = url::Url::parse(url).ok()?.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
     // Resolve an added address first: resolve_input reads the settings.
-    let added = q.get("add").map(|i| i.trim().to_owned()).filter(|i| i.contains("://") || (i.contains('.') && !i.contains(' ')) || i.starts_with("localhost")).map(|i| crate::browser::resolve_input(&i));
+    let added = q.get("add").map(|i| i.trim().to_owned()).filter(|i| i.contains("://") || (i.contains('.') && !i.contains(' ')) || i.starts_with("localhost")).map(|i| crate::browser::resolve_input(&i)).filter(|u| is_web(u));
     let a = app();
     let mut settings = a.shared.settings();
     let mut pinned: Vec<serde_json::Value> = settings.get("speeddial.pinned").as_array().cloned().unwrap_or_default();
@@ -93,14 +99,14 @@ pub fn render(message: &str, undo: &str, in_private: bool) -> String {
     // The user's tiles first, then the most visited sites not removed.
     let pinned = list("speeddial.pinned");
     let hidden: Vec<String> = list("speeddial.hidden").iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
-    let mut sites: Vec<(String, String, bool)> = pinned.iter().filter_map(|p| Some((p["url"].as_str()?.to_owned(), p["title"].as_str().unwrap_or("").to_owned(), true))).collect();
+    let mut sites: Vec<(String, String, bool)> = pinned.iter().filter_map(|p| Some((p["url"].as_str().filter(|u| is_web(u))?.to_owned(), p["title"].as_str().unwrap_or("").to_owned(), true))).collect();
     let from_history = !in_private || a.shared.settings().get_bool("privacy.privateHistoryTiles");
     let top_sites = if from_history { kite_core::history::top_sites(&a.shared.db(), MAX_TILES * 3).unwrap_or_default() } else { vec![] };
     for s in top_sites {
         if sites.len() >= MAX_TILES.max(pinned.len()) {
             break;
         }
-        if hidden.iter().any(|h| same_site(h, &s.url)) || sites.iter().any(|(u, _, _)| same_site(u, &s.url)) {
+        if !is_web(&s.url) || hidden.iter().any(|h| same_site(h, &s.url)) || sites.iter().any(|(u, _, _)| same_site(u, &s.url)) {
             continue;
         }
         sites.push((s.url, s.title, false));

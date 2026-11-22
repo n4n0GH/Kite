@@ -98,7 +98,9 @@ const whenUsed = (() => {
   }
 
   function fill(cred) {
-    if (!cred) return;
+    // Only a login meant for this very page: the browser says whose it is, as it may
+    // have been looked up for the page the tab is on its way to.
+    if (!cred || cred.origin !== location.origin) return;
     const pws = inputsOf(document).filter((i) => i.type.toLowerCase() === 'password' && visible(i));
     const pw = pws[0] || inputsOf(document).find((i) => i.type.toLowerCase() === 'password');
     // First: restore named fields from the saved form data (Falkon behaviour).
@@ -273,11 +275,13 @@ const whenUsed = (() => {
     document.addEventListener('focusout', (e) => { if (!filling && e.target === current) blur(); }, true);
     document.addEventListener('input', (e) => { if (!filling && e.target === current) report(current); }, true);
     // Clicking a field that already has focus brings the suggestions back.
-    document.addEventListener('mousedown', (e) => { if (e.target === current && document.activeElement === current && !menuOpen) setTimeout(() => current && report(current), 0); }, true);
+    document.addEventListener('mousedown', (e) => { if (e.isTrusted && e.target === current && document.activeElement === current && !menuOpen) setTimeout(() => current && report(current), 0); }, true);
     window.addEventListener('scroll', follow, true);
     window.addEventListener('resize', follow, true);
+    // The user's own keys only: a page that sent itself Down and Enter would pick an
+    // address from the list by itself, and have it filled in.
     document.addEventListener('keydown', (e) => {
-      if (!menuOpen || e.target !== current) return;
+      if (!e.isTrusted || !menuOpen || e.target !== current) return;
       if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'PageDown', 'PageUp'].includes(e.key)) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -306,9 +310,18 @@ const whenUsed = (() => {
     if (hit && select.value !== hit.value) setValue(select, hit.value);
   }
 
+  // A field somebody can see: not one made invisible or put off the page to collect
+  // what a person picked for the fields in front of them.
+  const shown = (el) => {
+    if (!visible(el)) return false;
+    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+    const r = el.getBoundingClientRect();
+    return r.width >= 4 && r.height >= 4 && r.right + scrollX > 0 && r.bottom + scrollY > 0;
+  };
+
   function fillAddress(values) {
     const start = current;
-    if (!values || !start) return;
+    if (!values || !start || values.origin !== location.origin) return;
     const fields = fieldsOf(scopeOf(start));
     const kinds = new Set(fields.map((f) => f.k.kind));
     filling = true;
@@ -321,6 +334,9 @@ const whenUsed = (() => {
         // Phone fields that start with a country code picker.
         if (k.kind === 'tel' && el.maxLength > 0 && v && v.length > el.maxLength && values['tel-national']) v = values['tel-national'];
         if (!v) continue;
+        // (A list of choices may be a see-through one under the page's own drawing of
+        // it, and gives away only which of the page's choices was made.)
+        if (el !== start && el.tagName !== 'SELECT' && !shown(el)) continue;
         if (el !== start && el.value && el.tagName !== 'SELECT') continue;
         if (el.tagName === 'SELECT') choose(el, v); else setValue(el, v);
       }

@@ -311,9 +311,9 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                 (200, "text/html".into(), kite_core::reader::page(url, &prefs).into_bytes())
             }
             // A known phishing or malware site (dangerous-site protection).
-            "dangerous" => (200, "text/html".into(), dangerous_page(&query_param(url, "url"), &query_param(url, "threat")).into_bytes()),
+            "dangerous" => (200, "text/html".into(), dangerous_page(&web_address(&query_param(url, "url")), &query_param(url, "threat")).into_bytes()),
             // A site that doesn't open in a child's profile (parental controls).
-            "blocked" => (200, "text/html".into(), blocked_page(&query_param(url, "url"), &query_param(url, "why")).into_bytes()),
+            "blocked" => (200, "text/html".into(), blocked_page(&web_address(&query_param(url, "url")), &query_param(url, "why")).into_bytes()),
             // Every setting. It holds what's needed to change them, so no web page gets it.
             // (Not in a child's profile that may not change settings.)
             "config" if from_kite && !app().parental.allows(kite_core::parental::Permission::Settings) => {
@@ -334,7 +334,7 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
                 (200, "text/html".into(), kite_core::welcome::page(crate::state::welcome_token(), &kite_core::config::secret(), &sources, &engines, &engine).into_bytes())
             }
             // HTTPS-only: the site has no working https version.
-            "https-only" => (200, "text/html".into(), https_only_page(&query_param(url, "url")).into_bytes()),
+            "https-only" => (200, "text/html".into(), https_only_page(&web_address(&query_param(url, "url"))).into_bytes()),
             _ => (404, "text/html".into(), b"<h1>Not found</h1>".to_vec()),
         };
     }
@@ -886,12 +886,38 @@ fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// The address a warning page was given, if it is a web page's ("" otherwise). These
+/// pages put it in links and go there by themselves, and any web page can send one
+/// here: a `javascript:` address in a link would run as one of Kite's own pages, and a
+/// `kite:` one be asked for by one.
+fn web_address(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(u) if matches!(u.scheme(), "http" | "https") && u.host_str().is_some() => u.into(),
+        _ => String::new(),
+    }
+}
+
+/// What a warning page may load and run: nothing but its own style, and its own script
+/// by that nonce. Whatever ends up in one of its links, it never runs there.
+fn warning_policy(nonce: &str) -> String {
+    format!(r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; base-uri 'none'; form-action 'none'">"#)
+}
+
+/// A warning page's "Go back", and the script behind it.
+const GO_BACK: &str = r#"<a class="button primary" id="back" href="">Go back</a>"#;
+
+fn go_back_script(nonce: &str) -> String {
+    format!(r#"<script nonce="{nonce}">const back = document.getElementById('back'); if (back) back.addEventListener('click', e => {{ e.preventDefault(); history.back(); }});</script>"#)
+}
+
 /// The page shown when HTTPS-only couldn't load a site over https.
 fn https_only_page(http_url: &str) -> String {
     let host = html_escape(&kite_core::util::host_of(http_url));
     let allow = format!("kite:https-allow?url={}&key={}", url::form_urlencoded::byte_serialize(http_url.as_bytes()).collect::<String>(), crate::state::warning_key());
+    let nonce = kite_core::config::secret();
+    let (policy, script) = (warning_policy(&nonce), go_back_script(&nonce));
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Secure connection not available</title>
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8">{policy}<title>Secure connection not available</title>
 <meta name="color-scheme" content="light dark">
 <style>
 body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
@@ -904,8 +930,8 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
 <h1>Secure connection not available</h1>
 <p>HTTPS-only mode is on, but <span class="host">{host}</span> could not be loaded over a secure connection.</p>
 <p>The site may not support HTTPS. If you continue, the page is loaded without encryption: others on your network could see or change what you send and receive.</p>
-<div class="buttons"><a class="button primary" href="javascript:history.back()">Go back</a><a class="button" href="{allow}">Continue to the HTTP site</a></div>
-</body></html>"#,
+<div class="buttons">{GO_BACK}<a class="button" href="{allow}">Continue to the HTTP site</a></div>
+{script}</body></html>"#,
         allow = html_escape(&allow)
     )
 }
@@ -923,8 +949,10 @@ fn dangerous_page(target: &str, threat: &str) -> String {
         _ => "the malware-filter project's open lists",
     };
     let allow = format!("kite:dangerous-allow?url={}&key={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>(), crate::state::warning_key());
+    let nonce = kite_core::config::secret();
+    let (policy, script) = (warning_policy(&nonce), go_back_script(&nonce));
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title>
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8">{policy}<title>{title}</title>
 <meta name="color-scheme" content="light dark">
 <style>
 body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
@@ -938,8 +966,8 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
 <h1>{title}</h1>
 <p><span class="host">{host}</span>: {text}</p>
 <p class="small">Listed by {source}. Lists can be wrong; only continue if you trust this site.</p>
-<div class="buttons"><a class="button primary" href="javascript:history.back()">Go back</a><a class="button" href="{allow}">Continue anyway</a></div>
-</body></html>"#,
+<div class="buttons">{GO_BACK}<a class="button" href="{allow}">Continue anyway</a></div>
+{script}</body></html>"#,
         allow = html_escape(&allow)
     )
 }
@@ -955,16 +983,21 @@ fn blocked_page(target: &str, why: &str) -> String {
         _ => ("This site is blocked", format!("<span class=\"host\">{host}</span> is on a list of sites that aren't for children.")),
     };
     let allow = format!("kite:blocked-allow?url={}&key={}", url::form_urlencoded::byte_serialize(target.as_bytes()).collect::<String>(), crate::state::warning_key());
-    let buttons = if why == "no-lists" {
-        format!("<a class=\"button primary\" href=\"{}\">Try again</a>", html_escape(target))
+    let nonce = kite_core::config::secret();
+    let (policy, script) = (warning_policy(&nonce), go_back_script(&nonce));
+    // (`target`: a web page's address or none, see `web_address`.)
+    let buttons = if why != "no-lists" {
+        format!("{GO_BACK}<a class=\"button\" href=\"{}\">Allow this site…</a>", html_escape(&allow))
+    } else if target.is_empty() {
+        GO_BACK.to_owned()
     } else {
-        format!("<a class=\"button primary\" href=\"javascript:history.back()\">Go back</a><a class=\"button\" href=\"{}\">Allow this site…</a>", html_escape(&allow))
+        format!("<a class=\"button primary\" href=\"{}\">Try again</a>", html_escape(target))
     };
     let note = if why == "no-lists" { "" } else { "<p class=\"small\">Allowing a site takes the parent password.</p>" };
     // (The lists are on their way when Kite starts: the page is tried again by itself.)
-    let again = if why == "no-lists" { format!("<meta http-equiv=\"refresh\" content=\"3;url={}\">", html_escape(target)) } else { String::new() };
+    let again = if why == "no-lists" && !target.is_empty() { format!("<meta http-equiv=\"refresh\" content=\"3;url={}\">", html_escape(target)) } else { String::new() };
     format!(
-        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>{title}</title>
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8">{policy}<title>{title}</title>
 <meta name="color-scheme" content="light dark">{again}
 <style>
 body {{ font: 15px/1.5 system-ui, sans-serif; max-width: 38em; margin: 12vh auto; padding: 0 1.5em; }}
@@ -979,7 +1012,7 @@ a.primary {{ background: #3daee9; border-color: #3daee9; color: #fff; }}
 <p>{text}</p>
 <div class="buttons">{buttons}</div>
 {note}
-</body></html>"#
+{script}</body></html>"#
     )
 }
 
@@ -1141,4 +1174,36 @@ extern "C" {
     pub fn kite_cpp_print_dialog(title: *const c_char);
     pub fn kite_cpp_print_submit();
     pub fn kite_cpp_print_cancel();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warning_pages_only_take_a_web_pages_address() {
+        assert_eq!(web_address("https://kde.org/a?b=1"), "https://kde.org/a?b=1");
+        assert_eq!(web_address("http://localhost:8080/"), "http://localhost:8080/");
+        for other in ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)", "kite:start?add=x.y", "kite:config", "file:///etc/passwd", "data:text/html,x", "about:blank", "", "kde.org", "https://"] {
+            assert_eq!(web_address(other), "", "{other}");
+        }
+    }
+
+    #[test]
+    fn the_blocked_page_links_to_the_web_or_nowhere() {
+        // Waiting for the lists: it goes back to the site by itself, and by a link.
+        let page = blocked_page(&web_address("https://kde.org/"), "no-lists");
+        assert!(page.contains(r#"href="https://kde.org/">Try again"#) && page.contains(r#"content="3;url=https://kde.org/""#));
+        // Any web page can name an address here: nothing but a web page's is taken.
+        for evil in ["javascript:alert(document.domain)", "kite:start?add=evil.example&title=Bank"] {
+            let page = blocked_page(&web_address(evil), "no-lists");
+            assert!(!page.contains("alert(") && !page.contains("kite:start") && !page.contains("http-equiv=\"refresh\""), "{evil}");
+            assert!(page.contains("Go back"));
+        }
+        // And no script but the page's own runs, whatever is in a link.
+        for why in ["no-lists", "listed", ""] {
+            let page = blocked_page("https://kde.org/", why);
+            assert!(page.contains("script-src 'nonce-") && !page.contains("javascript:"), "{why}");
+        }
+    }
 }

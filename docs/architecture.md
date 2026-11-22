@@ -293,6 +293,8 @@ everything, byte for byte.
 | A page's Trusted Types policy binds content scripts too | QtWebEngine doesn't leave its script worlds out of `require-trusted-types-for 'script'` as Firefox and Chrome do, so `script.src = runtime.getURL(…)` and `innerHTML = …` throw on YouTube and the like. `js/trusted_types.js` lets an extension's own files through as script addresses, by a policy made in that world when first needed. Other strings stay refused, as does everything on a page that lists its policies (`trusted-types …`) |
 | The AppImage only has the KDE plugins it was given | `build-appimage.sh` lists them, as it doesn't use the system's. Without `kio_file`, KDE's file dialog stays empty, and the scanner can't see what's only loaded at runtime |
 | Only a shown tab may hold a certificate warning open | Chromium holds the site's other requests meanwhile (`WebTab.shownInPane`) |
+| `web.url` is the page a tab is going to, not the one it shows | For a load Kite starts itself (a typed address, an address it cleaned of tracking parameters, an extension's `tabs.update`), it changes before the new page is there, while the old one still runs and still talks to Kite. A page can have Kite start such a load. So "which site is this" for anything a page asks for or is handed (saved logins and addresses, permissions kept per site, where an extension may run its script) goes by the loaded document: `WebTab.shownUrl()`, `ExtCall.documentOf(view)`, `Main.showsCheckedPage`. What is handed to a page says whose it is (`origin`), and the page's script checks that (`forms.js`) |
+| A `kite:` page is one origin with all the others | `kite:config` included, which can change every setting. So no address from outside goes into a link or a reload on one without being checked to be the web's (`ffi::web_address`, `startpage::is_web`): a `javascript:` link would run as Kite's own page, and a `kite:` one be asked for by it. The warning pages, which web pages can lead to, run only their own script (`ffi::warning_policy`) |
 
 ## On disk
 
@@ -348,7 +350,9 @@ a test in `browser.rs` checks that every plugin is registered.
 
 **A new `kite:` page**
 Add a branch to `serve` in `ffi.rs`, with the page in `kite-core` where possible. Escape everything
-that comes from outside, and check the initiator if loading it does anything.
+that comes from outside, and check the initiator if loading it does anything. An address from
+outside that becomes a link goes through `web_address` first; a page web content can reach gets a
+policy like `warning_policy`.
 
 **A new extension API**
 Add the call to the `match` in `Runtime` in `webext/runtime.rs`, and to `js/api_core.js`. If it

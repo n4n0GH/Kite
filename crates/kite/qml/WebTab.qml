@@ -83,9 +83,15 @@ Item {
         addressPrompt = null
         if (p) FormFill.answer(p.request, choice)
     }
+    // The page this tab shows, as the engine has it. `web.url` is already the address of
+    // a page Kite has only begun to load, while the one before still runs and still
+    // talks to Kite: whatever is decided by "which site is this" for something a page
+    // asked for, or is handed to a page, goes by this. (A page can have Kite start such
+    // a load itself: an address whose tracking parameters Kite removes, say.)
+    function shownUrl() { return ExtCall.documentOf(web) }
     function refreshLogins() {
-        const list = loginForm ? JSON.parse(Passwords.logins(web.url.toString())) : []
-        const top = originOf(web.url.toString())
+        const list = loginForm ? JSON.parse(Passwords.logins(shownUrl())) : []
+        const top = originOf(shownUrl())
         for (const id in loginFrames) {
             const f = loginFrames[id]
             if (!f.isValid) continue
@@ -101,12 +107,13 @@ Item {
     // would otherwise go into http://site too, where anyone on the network
     // can add a script that reads it. On http a login is filled when picked.
     function autofillHere() {
-        return Passwords.autofillEnabled() && web.url.toString().startsWith("https://")
+        return Passwords.autofillEnabled() && shownUrl().startsWith("https://")
     }
 
     function fillLogin(id, frameId) {
         if (frameId === undefined) {
-            const data = Passwords.fillData(web.url.toString(), id)
+            // (The page checks the login is for it: see forms.js.)
+            const data = Passwords.fillData(shownUrl(), id)
             if (data !== "null") bridge.fillLogin(data)
             return
         }
@@ -200,7 +207,7 @@ Item {
                 frameLoginForm = true
                 refreshLogins()
                 const own = logins.find(l => l.frameId === msg.f && !l.frameHost)
-                if (arg && own && originOf(url) === originOf(web.url.toString()) && autofillHere()) fillLogin(own.id, msg.f)
+                if (arg && own && originOf(url) === originOf(shownUrl()) && autofillHere()) fillLogin(own.id, msg.f)
                 break
             }
             case "formSubmitted": {
@@ -932,7 +939,7 @@ Item {
 
                 onFileDialogRequested: request => {
                     request.accepted = true
-                    pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window, app: wt.app, site: Browser.hostOf(wt.url)})
+                    pageFileDialogComponent.createObject(wt, {request: request, parentWindow: wt.window, app: wt.app, site: Browser.hostOf(wt.shownUrl())})
                 }
                 onNewWindowRequested: request => {
                     // (A link a site was allowed to open: that site's page, in the new tab.)
@@ -1059,13 +1066,13 @@ Item {
                 onJavaScriptConsoleMessage: (level, message, line, source) => {
                     // A change from kite:config. (Browser checks its token: another
                     // page's message could arrive just after going there.)
-                    if (web.url.toString().startsWith("kite:config") && message.startsWith("kite-config:")) {
+                    if (wt.shownUrl().startsWith("kite:config") && message.startsWith("kite-config:")) {
                         const answer = Browser.configCommand(message.substring(12))
                         if (answer !== "null") web.runJavaScript("__kiteConfigDone(" + answer + ")")
                         return
                     }
                     // The welcome page's choices (Browser checks its token too).
-                    if (web.url.toString().startsWith("kite:welcome") && message.startsWith("kite-welcome:")) {
+                    if (wt.shownUrl().startsWith("kite:welcome") && message.startsWith("kite-welcome:")) {
                         const answer = Browser.welcomeCommand(message.substring(13))
                         if (answer === "null") return
                         if (JSON.parse(answer).go) { web.url = wt.app.newTabUrl(); return }
@@ -1284,7 +1291,7 @@ Item {
     function setWakeLock(on) {
         if (on === wakeLockHeld) return
         wakeLockHeld = on
-        Browser.setWakeLock(tabId, on, Browser.hostOf(web.url.toString()))
+        Browser.setWakeLock(tabId, on, Browser.hostOf(shownUrl()))
     }
     function answerWakeLock(ids, granted) {
         if (granted) setWakeLock(true)
@@ -1292,7 +1299,7 @@ Item {
     }
     function requestWakeLock(id) {
         if (!secureHere()) { answerWakeLock([id], false); return }
-        const site = Browser.hostOf(web.url.toString()) || web.url.toString()
+        const site = Browser.hostOf(shownUrl()) || shownUrl()
         const key = (window.privateMode ? "private:" : "") + site
         const decided = app.wakeLockSites[key]
         if (decided !== undefined) { answerWakeLock([id], decided); return }
@@ -1380,12 +1387,12 @@ Item {
     property string midiSite: ""       // whose session this tab has
     property bool midiSysex: false
     property var midiPorts: []
-    function midiSiteNow() { return Browser.hostOf(web.url.toString()) || web.url.toString() }
+    function midiSiteNow() { return Browser.hostOf(shownUrl()) || shownUrl() }
     // MIDI and wake locks are for secure pages only. The page's own script checks
     // too, but a page can skip that; and as answers are kept per host, an http page
     // would otherwise get what was allowed for the https site of the same name.
     function secureHere() {
-        const u = web.url.toString()
+        const u = shownUrl()
         return /^(https|file):/i.test(u) || /^http:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(u)
     }
     // 0 = ask, 1 = allow, 2 = block; of plain access, or with SysEx too.
@@ -1497,14 +1504,14 @@ Item {
         onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(web), token, ctx, method, args, callId)
         inPrivate: wt.window.privateMode
         onPasswordFormSubmitted: json => {
-            const r = JSON.parse(Passwords.formSubmitted(web.url.toString(), wt.window.privateMode, json))
+            const r = JSON.parse(Passwords.formSubmitted(wt.shownUrl(), wt.window.privateMode, json))
             if (r) wt.savePrompt = r
         }
         onAutofillFocused: json => wt.showAutofill(bridge, JSON.parse(json))
         onAutofillBlurred: wt.closeAutofill()
         onAutofillKeyPressed: key => wt.autofillKey(key)
         onAutofillSubmitted: json => {
-            const r = JSON.parse(FormFill.formSubmitted(web.url.toString(), wt.window.privateMode, json))
+            const r = JSON.parse(FormFill.formSubmitted(wt.shownUrl(), wt.window.privateMode, json))
             if (r) wt.addressPrompt = r
         }
         onWakeLockRequested: id => wt.requestWakeLock(id)
@@ -1539,7 +1546,7 @@ Item {
         AutofillPopup {
             id: autofillPopup
             onPickedAddress: id => {
-                const data = FormFill.fillData((autofillPopup.field && autofillPopup.field.url) || web.url.toString(), id)
+                const data = FormFill.fillData((autofillPopup.field && autofillPopup.field.url) || wt.shownUrl(), id)
                 if (data !== "null") autofillPopup.bridge.fillAddress(data)
             }
             onPickedPassword: password => autofillPopup.bridge.fillPassword(password)

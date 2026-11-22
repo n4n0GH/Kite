@@ -160,7 +160,9 @@ specific tool, Kite adds a runner locked to that tool, and nothing else.
 The one so far is `YtDownloader` (in `org.kde.kite`), for the YouTube Download plugin. It runs only
 `yt-dlp`, found on `PATH` (never a path a plugin names), and Kite builds every argument: a plugin asks it
 to save a URL at a quality into a folder, Kite checks the URL is a YouTube video and rebuilds it, checks
-the quality against a fixed list, and runs yt-dlp with arguments it wrote. So the most a plugin can make
+the quality against a fixed list, and runs yt-dlp with arguments it wrote, and without any configuration
+file (`--ignore-config`: yt-dlp reads one from the folder it saves to, and such a file can name a program
+to run; the user's own yt-dlp configuration is left out with it). So the most a plugin can make
 it do is save a YouTube video; it can't be turned into a way to run something else. Adding a tool means
 adding a runner like it in Rust (`crates/kite/src/ytdlp.rs`), not a general one.
 

@@ -363,7 +363,9 @@ impl qobject::Passwords {
             Some(found)
         });
         match entry {
-            Some(e) if e.host == create_host(&url) => js(&json!({"username": e.username, "password": e.password, "data": e.data})),
+            // (`origin`: whose login it is. The page it reaches fills it in only if that
+            // is the page's own, forms.js: the tab may be on its way to another by then.)
+            Some(e) if e.host == create_host(&url) => js(&json!({"username": e.username, "password": e.password, "data": e.data, "origin": kite_core::util::origin_of(&url)})),
             _ => q("null"),
         }
     }

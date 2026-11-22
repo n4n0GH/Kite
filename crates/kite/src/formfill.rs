@@ -201,7 +201,12 @@ impl qobject::FormFill {
             Some(a)
         });
         match a {
-            Some(a) => q(json!(a.values()).to_string()),
+            // (`origin`: the page it was asked for, which forms.js holds it to.)
+            Some(a) => {
+                let mut values = json!(a.values());
+                values["origin"] = json!(kite_core::util::origin_of(&page_url.to_string()));
+                q(values.to_string())
+            }
             None => q("null"),
         }
     }

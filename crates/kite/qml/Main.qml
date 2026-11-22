@@ -977,6 +977,18 @@ QtObject {
         return t
     }
 
+    // Whether a tab shows the page an extension's permission was checked against
+    // (`checkedUrl`; none: nothing to hold it to). The runtime knows a tab by the
+    // address it is going to, which `view.url` is too, while the page before is still
+    // the one shown: an extension allowed on one site could send any tab there and, in
+    // that moment, run its script in the page being left or take its picture. So this
+    // goes by the document the engine has loaded.
+    function showsCheckedPage(t, checkedUrl) {
+        if (checkedUrl === undefined || checkedUrl === null) return true
+        const origin = u => { const m = String(u).match(/^[a-z][a-z0-9+.-]*:(\/\/[^\/?#]*)?/i); return m ? m[0].toLowerCase() : "" }
+        return origin(ExtCall.documentOf(t.view)) === origin(checkedUrl)
+    }
+
     // Executes extension API calls that need the GUI. Return a value to reply
     // immediately, or `undefined` and call Extensions.uiReply later.
     function handleExtensionRequest(view, ctx, callId, ext, method, a) {
@@ -1028,6 +1040,7 @@ QtObject {
         }
         case "tabs.capture": {
             const t = tabOrThrow(a.tabId)
+            if (!showsCheckedPage(t, a.checkedUrl)) throw new Error("Missing activeTab permission")
             t.view.grabToImage(r => {
                 const fmt = (a.options && a.options.format === "jpeg") ? "jpg" : "png"
                 const path = Browser.tempFile("capture-" + Date.now() + "." + fmt)
@@ -1038,11 +1051,7 @@ QtObject {
         }
         case "tabs.runInWorld": {
             const t = tabOrThrow(a.tabId)
-            // The permission was checked against this page: not into another
-            // one that has loaded since (an extension could navigate the tab
-            // and inject straight after).
-            const origin = u => { const m = String(u).match(/^[a-z][a-z0-9+.-]*:(\/\/[^\/?#]*)?/i); return m ? m[0].toLowerCase() : "" }
-            if (a.checkedUrl !== undefined && origin(t.view.url) !== origin(a.checkedUrl)) throw new Error("Missing host permission for the tab")
+            if (!showsCheckedPage(t, a.checkedUrl)) throw new Error("Missing host permission for the tab")
             t.view.runJavaScript(a.code, a.world, r => {
                 if (a.scripting) reply(true, [{frameId: 0, result: r === undefined ? null : r}])
                 else reply(true, a.wrapResult ? [r === undefined ? null : r] : [])

@@ -142,6 +142,10 @@ const SAVED: &str = "kite-saved";
 fn build_args(url: &str, folder: &str, quality: &str, ffmpeg: bool, js_runtime: &str) -> Vec<String> {
     let s = |x: &str| x.to_owned();
     let mut a = vec![
+        // No configuration file: yt-dlp reads `yt-dlp.conf` from the folder it saves to
+        // (and from the user's own), and such a file can name a program to run. That
+        // folder is where downloads land, under the name the site gave them.
+        s("--ignore-config"),
         s("--newline"),
         s("--no-playlist"),
         s("--progress"),
@@ -358,6 +362,8 @@ mod tests {
         let a = build_args("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/home/u/Downloads", "best", true, "");
         assert_eq!(&a[a.len() - 2..], &["--".to_owned(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_owned()]);
         assert!(a.iter().any(|x| x == "--no-playlist"));
+        // Before anything else: no configuration file is read, the save folder's least of all.
+        assert_eq!(a[0], "--ignore-config");
         assert_eq!(a[a.iter().position(|x| x == "-P").unwrap() + 1], "/home/u/Downloads");
         assert!(!a.iter().any(|x| x == "-f"));
         let fmt = |q, ff| {
