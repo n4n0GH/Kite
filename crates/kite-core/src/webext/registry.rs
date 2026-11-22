@@ -72,11 +72,18 @@ impl Extension {
     pub fn resolve(&self, rel: &str) -> Option<PathBuf> {
         let rel = percent_encoding::percent_decode_str(rel.trim_start_matches('/')).decode_utf8().ok()?;
         let rel = rel.split(['?', '#']).next().unwrap_or("");
+        self.file(rel)
+    }
+    /// The file at a path inside the extension that is already decoded, taken as it
+    /// is: for a request, whose path is decoded once and then both checked against
+    /// what other sites may load and looked up as that same text.
+    pub fn file(&self, rel: &str) -> Option<PathBuf> {
         let mut p = self.info.path.clone();
         for comp in rel.split('/') {
             match comp {
                 "" | "." => {}
                 ".." => return None,
+                c if c.contains(['\\', '\0']) => return None,
                 c => p.push(c),
             }
         }
@@ -400,6 +407,11 @@ mod tests {
         let e = r.get("t@x").unwrap();
         assert_eq!((e.info.uuid.as_str(), e.info.enabled, e.info.version.as_str()), (uuid.as_str(), false, "2.0"));
         assert!(e.resolve("../../etc/passwd").is_none());
+        // A path that is decoded already is taken as it is.
+        assert!(e.file("manifest.json").unwrap().exists());
+        assert!(e.file("a/../../manifest.json").is_none());
+        assert_eq!(e.file("%2e%2e/x").unwrap().file_name().unwrap(), "x", "not decoded again");
+        assert!(e.file("a\\b").is_none());
         assert!(e.resolve("manifest.json").unwrap().exists());
         let r2 = Registry::open(d.path().into());
         assert_eq!(r2.extensions.len(), 1);

@@ -107,15 +107,19 @@ fn pattern_to_glob(p: &str) -> String {
 }
 
 fn metadata(name: &str, cs: &ContentScript) -> String {
+    // A line each, and what is not one line is left out: a pattern with a line break in
+    // it (from a manifest, which nothing else checks) would add a header line of its own,
+    // a `@match` for pages the extension was never given.
+    let one_line = |s: &&String| !s.chars().any(char::is_control);
     let mut h = String::from("// ==UserScript==\n");
-    h += &format!("// @name {name}\n");
-    for m in &cs.matches {
+    h += &format!("// @name {}\n", name.replace(char::is_control, " "));
+    for m in cs.matches.iter().filter(one_line) {
         h += &format!("// @match {m}\n");
     }
-    for g in &cs.include_globs {
+    for g in cs.include_globs.iter().filter(one_line) {
         h += &format!("// @include {g}\n");
     }
-    for g in cs.exclude_globs.iter().cloned().chain(cs.exclude_matches.iter().map(|m| pattern_to_glob(m))) {
+    for g in cs.exclude_globs.iter().filter(one_line).cloned().chain(cs.exclude_matches.iter().filter(one_line).map(|m| pattern_to_glob(m))) {
         h += &format!("// @exclude {g}\n");
     }
     h += match cs.run_at {

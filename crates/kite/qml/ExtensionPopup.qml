@@ -81,7 +81,7 @@ QQC2.Popup {
             // A local file may not read other local files (Chrome's default; Qt's is on).
             settings.localContentCanAccessFileUrls: false
             profile: popup.profile
-            webChannel: WebChannel { registeredObjects: [bridge] }
+            webChannel: WebChannel { registeredObjects: [bridge.channel] }
             settings.localContentCanAccessRemoteUrls: true
             // The clipboard: writing as any extension page may (Firefox lets them, from a click),
             // reading only with the manifest's clipboardRead.
@@ -93,12 +93,17 @@ QQC2.Popup {
             onWindowCloseRequested: popup.close()
             onContentsSizeChanged: popup.takeSize()
             onLoadingChanged: info => { if (info.status === WebEngineView.LoadSucceededStatus) popup.takeSize() }
-            onNewWindowRequested: request => { popup.win.openTab(request.requestedUrl.toString(), {background: false}); popup.close() }
+            onNewWindowRequested: request => {
+                const to = request.requestedUrl.toString()
+                if (ExtCall.mayOpenFrom(to, popup.popupUrl)) popup.win.openTab(to, {background: false})
+                popup.close()
+            }
             onNavigationRequested: request => {
-                // Links that leave the extension open in a tab.
-                if (request.isMainFrame && !request.url.toString().startsWith("moz-extension:") && request.url.toString() !== "about:blank") {
+                // Links that leave the extension open in a tab (those to the web, or nowhere).
+                const to = request.url.toString()
+                if (request.isMainFrame && !ExtCall.staysHome(to, popup.popupUrl)) {
                     request.reject()
-                    popup.win.openTab(request.url.toString(), {background: false})
+                    if (ExtCall.mayOpenFrom(to, popup.popupUrl)) popup.win.openTab(to, {background: false})
                     popup.close()
                 }
             }

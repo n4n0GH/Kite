@@ -142,13 +142,22 @@ QQC2.Pane {
                 readonly property var info: root.extSidebars.find(s => "ext:" + s.ext === root.mode) || null
                 profile: root.win.app.profile
                 url: info ? info.panel : "about:blank"
-                webChannel: WebChannel { registeredObjects: [sbBridge] }
+                webChannel: WebChannel { registeredObjects: [sbBridge.channel] }
                 settings.localContentCanAccessRemoteUrls: true
                 // (As in ExtensionPopup.)
                 settings.javascriptCanAccessClipboard: true
                 settings.javascriptCanPaste: !!info && Extensions.urlHasPermission(info.panel, "clipboardRead")
                 onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
-                onNewWindowRequested: request => root.win.openTab(request.requestedUrl.toString(), {background: false})
+                onNewWindowRequested: request => { if (ExtCall.mayOpenFrom(request.requestedUrl.toString(), info ? info.panel : "")) root.win.openTab(request.requestedUrl.toString(), {background: false}) }
+                // (As in ExtensionPopup: the panel stays the extension's, a link to the web opens in a tab.)
+                onNavigationRequested: request => {
+                    const to = request.url.toString(), home = info ? info.panel : ""
+                    if (request.isMainFrame && !ExtCall.staysHome(to, home)) {
+                        request.reject()
+                        // (Not from inside this handler: that re-enters Chromium.)
+                        if (ExtCall.mayOpenFrom(to, home)) Qt.callLater(() => root.win.openTab(to, {background: false}))
+                    }
+                }
                 ExtBridge {
                     id: sbBridge; viewKey: "sidebar:" + (panel.info ? panel.info.ext : ""); viewKind: "sidebar"; windowId: root.win.windowId; tabId: root.win.currentTab ? root.win.currentTab.tabId : -1
                     onCalled: (token, ctx, method, args, callId) => Extensions.call(viewKey, tabId, windowId, ExtCall.documentOf(panel), token, ctx, method, args, callId)

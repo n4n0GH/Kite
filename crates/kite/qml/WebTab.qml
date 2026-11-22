@@ -1497,7 +1497,7 @@ Item {
         }
     }
 
-    WebChannel { id: channel; registeredObjects: [bridge] }
+    WebChannel { id: channel; registeredObjects: [bridge.channel] }
     ExtBridge {
         id: bridge
         viewKey: "tab:" + wt.tabId; tabId: wt.tabId; windowId: wt.window.windowId; viewKind: "tab"

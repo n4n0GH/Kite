@@ -221,12 +221,21 @@ fn readable_cross_origin(url: &str) -> bool {
     if u.scheme() != "moz-extension" {
         return false;
     }
-    let path = u.path().trim_start_matches('/');
+    let Some(path) = extension_path(&u) else { return false };
     if path.starts_with("__kite__/") {
         return false;
     }
     let rt = app().runtime();
-    rt.registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|ext| web_accessible(ext, path))
+    rt.registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|ext| web_accessible(ext, &path))
+}
+
+/// The file an extension address is for: its path, decoded once. That text is what is
+/// checked against what other sites may load, and what is then looked up. (Checked as
+/// written and looked up decoded, "page.html%3F.png" passed for a picture and served
+/// the page.) None if it can't be a file's path.
+fn extension_path(u: &url::Url) -> Option<String> {
+    let path = percent_encoding::percent_decode_str(u.path().trim_start_matches('/')).decode_utf8().ok()?;
+    (!path.contains(['?', '#', '\\', '\0'])).then(|| path.into_owned())
 }
 
 fn web_accessible(ext: &kite_core::webext::registry::Extension, path: &str) -> bool {
@@ -340,9 +349,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     }
     let Ok(u) = url::Url::parse(url) else { return (400, "text/plain".into(), vec![]) };
     let uuid = u.host_str().unwrap_or("");
-    let path = u.path().trim_start_matches('/').to_owned();
+    let Some(path) = extension_path(&u) else { return (404, "text/plain".into(), vec![]) };
     let rt = app().runtime();
-    let Some(ext) = rt.registry.by_uuid(uuid).filter(|e| e.info.enabled) else {
+    // (In a private window, only an extension allowed there is: to the others' files
+    // and pages a private tab is as if they weren't installed.)
+    let Some(ext) = rt.registry.by_uuid(uuid).filter(|e| e.info.enabled && (!in_private || e.runs_in_private())) else {
         return (404, "text/plain".into(), b"Extension not found".to_vec());
     };
     // Same-extension or browser-initiated loads may load anything; other
@@ -360,6 +371,11 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
         return (200, "application/javascript".into(), scripts::page_api_js(ext, &token, qwebchannel_js(), rt.blocking.port(), firefox_ua).into_bytes());
     }
     if path == scripts::BACKGROUND_PAGE {
+        // Kite's to load, once: in a frame of some site it would be a second copy of the
+        // extension's background scripts, running there.
+        if !same_origin {
+            return (403, "text/plain".into(), vec![]);
+        }
         return match scripts::background_page(ext) {
             Some(html) => (200, "text/html".into(), html.into_bytes()),
             None => (404, "text/plain".into(), vec![]),
@@ -374,7 +390,7 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     if foreign && initiator != "null" {
         return (403, "text/plain".into(), vec![]);
     }
-    let Some(file) = ext.resolve(&path) else { return (403, "text/plain".into(), vec![]) };
+    let Some(file) = ext.file(&path) else { return (403, "text/plain".into(), vec![]) };
     let file = if file.is_dir() { file.join("index.html") } else { file };
     match std::fs::read(&file) {
         Ok(bytes) => {
@@ -411,7 +427,7 @@ fn for_sandboxed_frames(mime: &str) -> bool {
 /// Returns 1 if the request is held (completed later via
 /// `kite_cpp_rpc_complete`), else 0 with `status`/`out` filled in.
 #[no_mangle]
-pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, body: *const u8, body_len: usize, job: u64, status: *mut i32, out: *mut KiteBuf) -> i32 {
+pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, body: *const u8, body_len: usize, job: u64, status: *mut i32, out: *mut KiteBuf) -> i32 {
     let url = s(url);
     let initiator = s(initiator);
     let body = if body.is_null() { &[][..] } else { std::slice::from_raw_parts(body, body_len) };
@@ -422,7 +438,7 @@ pub unsafe extern "C" fn kite_rpc(url: *const c_char, initiator: *const c_char, 
     };
     let (ext_id, base) = {
         let rt = app().runtime();
-        match rt.registry.by_uuid(u.host_str().unwrap_or("")).filter(|e| e.info.enabled) {
+        match rt.registry.by_uuid(u.host_str().unwrap_or("")).filter(|e| e.info.enabled && (in_private == 0 || e.runs_in_private())) {
             Some(e) => (e.info.id.clone(), e.base_url()),
             None => {
                 *status = 404;
@@ -571,6 +587,10 @@ fn ask_web_request_listeners(url: &str, first_party: &str, initiator: &str, rtyp
         return ListenersSay::Block;
     }
     if let Some((ext, to)) = d.redirect {
+        if !a.runtime().redirect_allowed(&ext, &to, rtype == "mainFrame") {
+            log::warn!("webRequest: {ext} redirected {url} to {}, which is not followed: not an address an extension may send a request to", &to[..to.floor_char_boundary(80)]);
+            return ListenersSay::Nothing;
+        }
         log::debug!("webRequest: {ext} redirected {url} to {to}");
         return ListenersSay::Redirect(to);
     }
@@ -1187,6 +1207,20 @@ mod tests {
         for other in ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)", "kite:start?add=x.y", "kite:config", "file:///etc/passwd", "data:text/html,x", "about:blank", "", "kde.org", "https://"] {
             assert_eq!(web_address(other), "", "{other}");
         }
+    }
+
+    #[test]
+    fn an_extension_files_path_is_decoded_once() {
+        let path = |address: &str| extension_path(&url::Url::parse(address).unwrap());
+        assert_eq!(path("moz-extension://a/img/a%20b.png").as_deref(), Some("img/a b.png"));
+        assert_eq!(path("moz-extension://a/page.html?x=1#y").as_deref(), Some("page.html"));
+        // What is checked against web_accessible_resources is what is served: a "?" or
+        // "#" that only shows once decoded isn't the end of the path, it is no file's path.
+        assert_eq!(path("moz-extension://a/page.html%3F.png"), None);
+        assert_eq!(path("moz-extension://a/page.html%23.png"), None);
+        assert_eq!(path("moz-extension://a/img%5C..%5Cpage.html"), None);
+        // Once, not until nothing is left to decode.
+        assert_eq!(path("moz-extension://a/%2541.png").as_deref(), Some("%41.png"));
     }
 
     #[test]

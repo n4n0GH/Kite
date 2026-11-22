@@ -18,3 +18,27 @@ function documentOf(view) {
 function refuseClipboard(permission, clipboardType) {
     if (permission.permissionType === clipboardType) permission.deny()
 }
+
+// The extension an address belongs to, as "moz-extension://<id>/"; "" for any other address.
+function extensionOf(url) {
+    const m = /^moz-extension:\/\/[^\/?#]+/i.exec(String(url))
+    return m ? m[0].toLowerCase() + "/" : ""
+}
+
+// Whether a view of an extension's own (its popup, sidebar, options or background page,
+// made for a page at `home`) may itself go to `url`: only to that extension's pages. Such
+// a view has the web channel in its page's own world and may use the clipboard, both of
+// which are the extension's; a web page loaded into it would have them.
+function staysHome(url, home) {
+    const u = String(url)
+    return u === "about:blank" || (extensionOf(home) !== "" && extensionOf(u) === extensionOf(home))
+}
+
+// Whether a tab may be opened at `url` for an extension's page at `home` that linked to
+// it or asked for a window: the web, or that extension's own pages. As for the tabs an
+// extension opens through the API (the runtime's tab_url_allowed): a tab Kite opens is
+// Kite's own load, which gets Kite's pages and local files where a page's link would not.
+function mayOpenFrom(url, home) {
+    const u = String(url)
+    return /^https?:/i.test(u) || u === "about:blank" || (extensionOf(home) !== "" && extensionOf(u) === extensionOf(home))
+}

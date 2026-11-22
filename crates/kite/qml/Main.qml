@@ -76,6 +76,7 @@ QtObject {
         for (const p of [profile, privateProfile]) configureProfile(p)
         // Objects containing web views need the profile to exist first.
         optionsDialog = _optionsComp.createObject(null, {profile: profile})
+        optionsDialog.linkOpened.connect(url => openUrl(url, "tab"))
         authFlow = _authComp.createObject(null, {profile: profile})
     }
 
@@ -1182,7 +1183,9 @@ QtObject {
                 settings.javascriptCanAccessClipboard: true
                 settings.javascriptCanPaste: Extensions.urlHasPermission(modelData.url, "clipboardRead")
                 onPermissionRequested: permission => ExtCall.refuseClipboard(permission, WebEnginePermission.PermissionType.ClipboardReadWrite)
-                webChannel: WebChannel { registeredObjects: [bgBridge] }
+                webChannel: WebChannel { registeredObjects: [bgBridge.channel] }
+                // (As in ExtensionPopup: a background page stays the extension's.)
+                onNavigationRequested: request => { if (request.isMainFrame && !ExtCall.staysHome(request.url.toString(), modelData.url)) request.reject() }
                 id: bgView
                 ExtBridge {
                     id: bgBridge; viewKey: "bg:" + modelData.ext; viewKind: "background"

@@ -176,7 +176,7 @@ tested without a browser. See [An extension API call](#an-extension-api-call).
 | `Main` (one) | `qml/Main.qml` | Web profiles, the windows, the action list, session saving, plugin helpers, page scripts, answering extensions' UI requests |
 | `BrowserWindow` (one per window) | `qml/BrowserWindow.qml` | `tabModel`, tab groups and trees, split view, `runAction`, the window's menus |
 | `WebTab` (one per tab) | `qml/WebTab.qml` | One `WebEngineView` and everything per-page: loading, permissions, certificate errors, unloading |
-| `ExtBridge` (one per view) | `qml/ExtBridge.qml` | The `QWebChannel` object for extension traffic |
+| `ExtBridge` (one per view) | `qml/ExtBridge.qml` | A view's end of the web channel: the object pages are shown (`channel`, signals and functions only), and beside it whose view it is |
 
 **A `WebTab` must not be the delegate of the `Repeater` over `tabModel`.** The delegate is a small
 item that creates the tab with `webTabComponent` and retires it. A removed delegate loses its QML
@@ -294,6 +294,9 @@ everything, byte for byte.
 | The AppImage only has the KDE plugins it was given | `build-appimage.sh` lists them, as it doesn't use the system's. Without `kio_file`, KDE's file dialog stays empty, and the scanner can't see what's only loaded at runtime |
 | Only a shown tab may hold a certificate warning open | Chromium holds the site's other requests meanwhile (`WebTab.shownInPane`) |
 | `web.url` is the page a tab is going to, not the one it shows | For a load Kite starts itself (a typed address, an address it cleaned of tracking parameters, an extension's `tabs.update`), it changes before the new page is there, while the old one still runs and still talks to Kite. A page can have Kite start such a load. So "which site is this" for anything a page asks for or is handed (saved logins and addresses, permissions kept per site, where an extension may run its script) goes by the loaded document: `WebTab.shownUrl()`, `ExtCall.documentOf(view)`, `Main.showsCheckedPage`. What is handed to a page says whose it is (`origin`), and the page's script checks that (`forms.js`) |
+| What the web channel shows a page, the page can also write | Properties of a published object are the page's to set, and a property holding an object hands over that object. So `ExtBridge.channel`, the published one, has signals and functions and no property but a read-only `viewKind`; the view's key, tab and window are on `ExtBridge` itself, which the channel doesn't reach. A view registers `bridge.channel`, never `bridge` |
+| A view of an extension's own stays on that extension's pages | Popup, sidebar, options and background views have the channel in the page's own world and may use the clipboard. Each refuses to go anywhere else (`ExtCall.staysHome`) and opens links to the web in a tab (`ExtCall.mayOpenFrom`), which is not done from inside `onNavigationRequested`: that crashes |
+| An extension's file is found by its path decoded once | `ffi::extension_path`. That text is checked against `web_accessible_resources` and then looked up (`Extension::file`). Checked as written and looked up decoded, `page.html%3F.png` passed for a picture and served the page |
 | A `kite:` page is one origin with all the others | `kite:config` included, which can change every setting. So no address from outside goes into a link or a reload on one without being checked to be the web's (`ffi::web_address`, `startpage::is_web`): a `javascript:` link would run as Kite's own page, and a `kite:` one be asked for by it. The warning pages, which web pages can lead to, run only their own script (`ffi::warning_policy`) |
 
 ## On disk

@@ -1384,6 +1384,11 @@ impl Runtime {
 
     /// (`in_private`, here and below: a request from a private window, which
     /// only extensions allowed there get to know about.)
+    /// Whether `ext_id` may send a request to `to` (see [`redirect_target_allowed`]).
+    pub fn redirect_allowed(&self, ext_id: &str, to: &str, page_load: bool) -> bool {
+        self.registry.get(ext_id).is_some_and(|e| redirect_target_allowed(e, to, page_load))
+    }
+
     pub fn dnr_check(&self, url: &str, initiator: &str, method: &str, qt_type: &str, in_private: bool) -> dnr::Outcome {
         if self.dnr.is_empty() {
             return dnr::Outcome::None;
@@ -1397,6 +1402,10 @@ impl Runtime {
                     // Blocking and upgrading need no more; redirecting or
                     // changing headers needs the request's host (Chrome's rule).
                     o @ (dnr::Outcome::Redirect(_) | dnr::Outcome::Headers(_)) if !dnr_may_modify(e, url, &o) => dnr::Outcome::None,
+                    dnr::Outcome::Redirect(to) if !redirect_target_allowed(e, &to, qt_type == "mainFrame") => {
+                        log::warn!("{}: a rule's redirect of {url} to {} is not followed: not an address an extension may send a request to", e.info.id, &to[..to.floor_char_boundary(80)]);
+                        dnr::Outcome::None
+                    }
                     o => o,
                 }),
         )
@@ -2037,14 +2046,8 @@ impl Runtime {
                     return now!(Err("Missing scripting permission".into()));
                 }
                 // Each page it matches must be one of its hosts.
-                let hosts: Vec<MatchPattern> = e.host_patterns().iter().filter_map(|p| MatchPattern::parse(p).ok()).collect();
-                for s in &list {
-                    for m in s["matches"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-                        let covered = MatchPattern::parse(m).is_ok_and(|p| hosts.iter().any(|h| h.covers(&p)));
-                        if !covered {
-                            return now!(Err(format!("Missing host permission for {m}")));
-                        }
-                    }
+                if let Some(refused) = list.iter().find_map(|s| script_matches_refused(e, s)) {
+                    return now!(Err(refused));
                 }
                 let entry = self.dynamic_scripts.entry(ext_id.into()).or_default();
                 let mut ids = vec![];
@@ -2090,6 +2093,15 @@ impl Runtime {
             ("scripting", "getRegisteredContentScripts") => now!(Ok(Value::Array(self.dynamic_scripts(ext_id).into_iter().filter(|s| s["kiteParent"].is_null()).collect()))),
             ("scripting", "updateContentScripts") => {
                 let list = arg(args, 0).as_array().cloned().unwrap_or_default();
+                if !e.has_permission("scripting") {
+                    return now!(Err("Missing scripting permission".into()));
+                }
+                // As when it was registered: the pages a script is moved to must be the
+                // extension's hosts too, or one registered for a single site could then
+                // be given every site.
+                if let Some(refused) = list.iter().find_map(|s| script_matches_refused(e, s)) {
+                    return now!(Err(refused));
+                }
                 if let Some(cur) = self.dynamic_scripts.get_mut(ext_id) {
                     for upd in list {
                         if let Some(s) = cur.iter_mut().find(|s| s["id"] == upd["id"]) {
@@ -2476,6 +2488,12 @@ impl Runtime {
             ("webRequest", "_listen") => {
                 let ev = arg_str(args, 0);
                 let filter = arg(args, 1);
+                if !e.has_permission("webRequest") {
+                    return now!(Err("Missing webRequest permission".into()));
+                }
+                if arg(args, 2).as_array().is_some_and(|a| a.iter().any(|x| x == "blocking")) && !e.has_permission("webRequestBlocking") {
+                    return now!(Err("Missing webRequestBlocking permission".into()));
+                }
                 let urls = MatchSet::parse(filter["urls"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>()).unwrap_or_default());
                 let types = filter["types"].as_array().map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_owned)).collect()).unwrap_or_default();
                 let blocking = arg(args, 2).as_array().is_some_and(|a| a.iter().any(|x| x == "blocking"));
@@ -2972,7 +2990,7 @@ mod tests {
         let xpi = make_xpi(&[(
             "manifest.json",
             r#"{"manifest_version":2,"name":"T","version":"1","browser_specific_settings":{"gecko":{"id":"t@x"}},
-               "permissions":["storage","tabs","menus","alarms","<all_urls>"],"browser_action":{"default_title":"Tee"},
+               "permissions":["storage","tabs","menus","alarms","webRequest","webRequestBlocking","<all_urls>"],"browser_action":{"default_title":"Tee"},
                "background":{"scripts":["bg.js"]}}"#,
         )]);
         rt.registry.install_xpi(&xpi, "file", "").unwrap();
@@ -3026,6 +3044,86 @@ mod tests {
         // The extension's page in a tab is a page.
         let tab_page = Origin { view: "tab:7".into(), tab_id: 7, window_id: 1, document: rt.registry.get("t@x").unwrap().url("options.html") };
         assert!(reply(&rt.call(&tab_page, &tok, "p", "tabs.query", json!([{}]), 10)).is_ok());
+    }
+
+    /// The extension "one@x" with these permissions.
+    fn with_permissions(permissions: &str) -> (tempfile::TempDir, Runtime, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rt = Runtime::new(Shared::temporary(dir.path()).unwrap()).unwrap();
+        let manifest = format!(r#"{{"manifest_version":2,"name":"One","version":"1","browser_specific_settings":{{"gecko":{{"id":"one@x"}}}},"permissions":{permissions},"background":{{"scripts":["bg.js"]}}}}"#);
+        rt.registry.install_xpi(&make_xpi(&[("manifest.json", manifest.as_str())]), "file", "").unwrap();
+        rt.on_installed("one@x", false, "", false);
+        let tok = rt.token_of("one@x").unwrap().to_owned();
+        (dir, rt, tok)
+    }
+
+    /// An extension that is allowed on one site, and may register scripts and watch requests.
+    fn one_site() -> (tempfile::TempDir, Runtime, String) {
+        with_permissions(r#"["scripting","webRequest","https://one.example/*"]"#)
+    }
+
+    #[test]
+    fn a_registered_script_stays_on_the_extensions_sites() {
+        let (_d, mut rt, tok) = one_site();
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        let script = |matches: Value| json!([[{"id": "s", "matches": matches, "js": ["c.js"]}]]);
+        assert!(reply(&rt.call(&bg, &tok, "bg", "scripting.registerContentScripts", script(json!(["https://one.example/*"])), 1)).is_ok());
+        // Not to another site when registered, and not afterwards either.
+        assert!(reply(&rt.call(&bg, &tok, "bg", "scripting.registerContentScripts", script(json!(["<all_urls>"])), 2)).is_err());
+        for wider in [json!(["<all_urls>"]), json!(["https://one.example/*", "https://bank.example/*"]), json!(["*://*/*"])] {
+            assert!(reply(&rt.call(&bg, &tok, "bg", "scripting.updateContentScripts", script(wider.clone()), 3)).unwrap_err().contains("host permission"), "{wider}");
+        }
+        assert_eq!(rt.dynamic_scripts("one@x")[0]["matches"], json!(["https://one.example/*"]), "as it was");
+        // Nor a pattern that would be two lines of the script's header.
+        for key in ["matches", "excludeMatches", "includeGlobs", "excludeGlobs"] {
+            let mut two_lines = json!({"id": "s", "matches": ["https://one.example/*"]});
+            two_lines[key] = json!(["https://one.example/*\n// @match *://*/*"]);
+            assert!(reply(&rt.call(&bg, &tok, "bg", "scripting.updateContentScripts", json!([[two_lines]]), 4)).is_err(), "{key}");
+        }
+        // What it may change, it still can.
+        assert!(reply(&rt.call(&bg, &tok, "bg", "scripting.updateContentScripts", json!([[{"id": "s", "matches": ["https://one.example/a/*"], "runAt": "document_start"}]]), 5)).is_ok());
+        assert_eq!(rt.dynamic_scripts("one@x")[0]["matches"], json!(["https://one.example/a/*"]));
+    }
+
+    #[test]
+    fn listening_to_requests_takes_the_permissions_for_it() {
+        let (_d, mut rt, tok) = one_site();
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        let listen = |extra: Value| json!(["onBeforeRequest", {"urls": ["https://one.example/*"]}, extra]);
+        assert!(reply(&rt.call(&bg, &tok, "bg", "webRequest._listen", listen(json!([])), 1)).is_ok());
+        // (It has webRequest, not webRequestBlocking.)
+        assert!(reply(&rt.call(&bg, &tok, "bg", "webRequest._listen", listen(json!(["blocking"])), 2)).unwrap_err().contains("webRequestBlocking"));
+        // And one without either hears of nothing.
+        let (_d2, mut other, tok2) = with_permissions(r#"["https://one.example/*"]"#);
+        let bg2 = page(&other, "one@x", "bg:one@x", -1);
+        assert!(reply(&other.call(&bg2, &tok2, "bg", "webRequest._listen", listen(json!([])), 3)).unwrap_err().contains("webRequest"));
+        assert!(!other.has_web_request_listeners());
+    }
+
+    #[test]
+    fn a_request_is_only_sent_on_to_the_web_or_the_extensions_own_files() {
+        let (_d, rt, _tok) = one_site();
+        let own = rt.registry.get("one@x").unwrap().url("blocked.html");
+        for (to, page_load, sub) in [
+            ("https://elsewhere.example/x", true, true),
+            ("http://elsewhere.example/x", true, true),
+            (own.as_str(), true, true),
+            // A stand-in for what a page loads into itself, not a page of its own.
+            ("data:text/javascript,0", false, true),
+            ("file:///etc/passwd", false, false),
+            ("FILE:///etc/passwd", false, false),
+            ("kite:config", false, false),
+            ("kite:start?add=evil.example", false, false),
+            (" javascript:alert(1)", false, false),
+            ("view-source:https://kde.org/", false, false),
+            ("chrome://gpu", false, false),
+            ("moz-extension://00000000-0000-4000-8000-000000000000/page.html", false, false),
+            ("", false, false),
+        ] {
+            assert_eq!(rt.redirect_allowed("one@x", to, true), page_load, "a page load to {to:?}");
+            assert_eq!(rt.redirect_allowed("one@x", to, false), sub, "another request to {to:?}");
+        }
+        assert!(!rt.redirect_allowed("nobody@x", "https://kde.org/", false));
     }
 
     #[test]
@@ -3389,7 +3487,7 @@ mod tests {
         let xpi = make_xpi(&[(
             "manifest.json",
             r#"{"manifest_version":2,"name":"A","version":"1","browser_specific_settings":{"gecko":{"id":"a@x"}},
-               "permissions":["tabs","<all_urls>"],"browser_action":{"default_title":"A"},"commands":{"go":{"suggested_key":{"default":"Ctrl+Y"}}},
+               "permissions":["tabs","webRequest","webRequestBlocking","<all_urls>"],"browser_action":{"default_title":"A"},"commands":{"go":{"suggested_key":{"default":"Ctrl+Y"}}},
                "background":{"scripts":["bg.js"]}}"#,
         )]);
         rt.registry.install_xpi(&xpi, "file", "").unwrap();
@@ -3510,6 +3608,33 @@ fn is_restricted_host(url: &str) -> bool {
 fn tab_url_allowed(e: &Extension, url: &str) -> bool {
     let lower = url.trim_start().to_ascii_lowercase();
     lower.starts_with("http:") || lower.starts_with("https:") || lower == "about:blank" || url.starts_with(&e.base_url())
+}
+
+/// Why a content script registered or changed at runtime is refused, if it is. Each
+/// page it names must be one of the extension's hosts. And a pattern is one line: they
+/// are written into the script's header a line each, where a line break in one would
+/// add a line of the extension's own making (another `@match`).
+fn script_matches_refused(e: &Extension, script: &Value) -> Option<String> {
+    let strings = |key: &str| script[key].as_array().into_iter().flatten().filter_map(Value::as_str);
+    for key in ["matches", "excludeMatches", "exclude_matches", "includeGlobs", "include_globs", "excludeGlobs", "exclude_globs"] {
+        if strings(key).any(|s| s.chars().any(char::is_control)) {
+            return Some(format!("Invalid pattern in {key}"));
+        }
+    }
+    let hosts: Vec<MatchPattern> = e.host_patterns().iter().filter_map(|p| MatchPattern::parse(p).ok()).collect();
+    let uncovered = strings("matches").find(|m| !MatchPattern::parse(m).is_ok_and(|p| hosts.iter().any(|h| h.covers(&p))));
+    uncovered.map(|m| format!("Missing host permission for {m}"))
+}
+
+/// Where an extension may send a request (a webRequest listener's `redirectUrl`, a
+/// declarativeNetRequest rule's): the web and its own files, and for what a page loads
+/// into itself, a `data:` stand-in. Never Kite's pages, local files, scripts or another
+/// extension's pages. A redirected page load is started by Kite itself, so it would be
+/// served as Kite's own (`kite:` pages go by who asks), and a file opened is one the
+/// extension's script could then read.
+pub fn redirect_target_allowed(e: &Extension, to: &str, page_load: bool) -> bool {
+    let lower = to.trim_start().to_ascii_lowercase();
+    lower.starts_with("http:") || lower.starts_with("https:") || (!page_load && lower.starts_with("data:")) || to.starts_with(&e.base_url())
 }
 
 fn has_dnr_permission(e: &Extension) -> bool {

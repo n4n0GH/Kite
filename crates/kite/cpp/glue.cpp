@@ -61,7 +61,7 @@ KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *s
 KiteBuf kite_certificate_page(const char *host, const char *chainJson, const char *error);
 KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method, int inPrivate);
 void kite_cookie_event(const char *json, int removed, int initial);
-int kite_rpc(const char *url, const char *initiator, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
+int kite_rpc(const char *url, const char *initiator, int inPrivate, const unsigned char *body, size_t bodyLen, quint64 job, int *status, KiteBuf *out);
 void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
 bool kite_do_not_track();
@@ -233,7 +233,7 @@ public:
             const quint64 id = g_nextJob++;
             int status = 0;
             KiteBuf out{nullptr, 0, 0};
-            if (kite_rpc(url.constData(), initiator.constData(), reinterpret_cast<const unsigned char *>(body.constData()), size_t(body.size()), id, &status, &out) == 1) {
+            if (kite_rpc(url.constData(), initiator.constData(), m_private ? 1 : 0, reinterpret_cast<const unsigned char *>(body.constData()), size_t(body.size()), id, &status, &out) == 1) {
                 g_rpcJobs.insert(id, job);
                 QObject::connect(job, &QObject::destroyed, [id] { g_rpcJobs.remove(id); kite_rpc_job_gone(id); });
                 return;
