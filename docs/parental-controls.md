@@ -110,6 +110,10 @@ Yandex, Yahoo and others) are blocked while safe search is on; if one of them wa
 search engine, DuckDuckGo takes its place. With a proxy set in Kite, names are resolved by the
 proxy and this doesn't hold.
 
+Two things would go around it, as Kite or a program it starts asks the site itself, by its usual
+name: search suggestions in the address bar, and the YouTube Download plugin. Neither works in a
+child's profile while safe search is on (the plugin also not where YouTube is blocked).
+
 **The parent's own lists.** "Always allowed" and "Always blocked" sites, and "Open only the sites
 allowed below" for a profile that should reach a handful of sites and nothing else. The parent's
 lists come before the downloaded ones.

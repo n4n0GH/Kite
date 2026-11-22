@@ -719,6 +719,11 @@ pub unsafe extern "C" fn kite_intercept(
         if !(url.starts_with("http") || url.starts_with("ws")) {
             return String::new();
         }
+        // A child's profile that may not open private windows: nothing loads in one.
+        // (The interface doesn't open them there; this is what holds if a way to was missed.)
+        if in_private != 0 && !a.parental.allows(kite_core::parental::Permission::PrivateWindows) {
+            return "block".into();
+        }
         // The connections of extensions' blocking listeners to Kite itself
         // (webext/blocking.rs) are no one's to see, block or send elsewhere:
         // what is sent over them says which extension it is.

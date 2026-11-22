@@ -976,7 +976,10 @@ const SETTINGS_LOCKED: &str = "Settings are locked in this profile (parental con
 /// Parental controls are changed by the parent: with the password given, once one is set.
 fn parent_is_here() -> Result<kite_core::parental::Parental, String> {
     let store = kite_core::parental::Parental::open().map_err(|e| e.to_string())?;
-    if store.has_password() && !app().parental.unlocked.load(std::sync::atomic::Ordering::Relaxed) {
+    let unlocked = app().parental.unlocked.load(std::sync::atomic::Ordering::Relaxed);
+    // (A child's profile is one whatever the file says by now: with the file gone while
+    // Kite runs there is no password to ask for, and this profile is still not the parent's.)
+    if (store.has_password() || app().parental.is_child()) && !unlocked {
         return Err("Unlock Parental Controls with the parent password first.".into());
     }
     Ok(store)
@@ -1148,6 +1151,12 @@ impl qobject::Browser {
         let text = text.to_string();
         let a = app();
         if !a.shared.settings().get_bool("general.showSearchSuggestions") || text.trim().is_empty() || a.private {
+            return;
+        }
+        // A child's profile with safe search: none. Kite asks the search engine for
+        // these itself, not by the address that keeps the engine to safe search, and
+        // what an engine suggests for a few letters isn't filtered by anything.
+        if a.parental.restrictions().is_some_and(|r| r.safe_search) {
             return;
         }
         let def = a.shared.settings().get_str("general.searchEngine");

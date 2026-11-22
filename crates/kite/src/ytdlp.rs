@@ -251,6 +251,14 @@ impl qobject::YtDownloader {
         if self.active.contains_key(&url) {
             return false;
         }
+        // A child's profile: yt-dlp fetches from YouTube itself, past the site filter and
+        // past the address that keeps YouTube to its restricted mode. So not where
+        // YouTube is blocked, and not with safe search on.
+        let parental = &crate::state::app().parental;
+        if parental.restrictions().is_some_and(|r| r.safe_search) || (parental.filter.is_on() && parental.filter.check("www.youtube.com").is_some()) {
+            log::warn!("YtDownloader.start: not in this profile (parental controls)");
+            return false;
+        }
         // (A folder, named in full: with none yt-dlp saves to where Kite was started,
         // and looks there for more to read.)
         if !Path::new(&folder.to_string()).is_absolute() {
