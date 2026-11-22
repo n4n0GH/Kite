@@ -89,6 +89,13 @@ pub enum Handled {
     Held,
 }
 
+/// The name of a frame's mailbox, which is the view the runtime answers. With its
+/// extension in it: a context's name is the caller's to give, and by that alone
+/// another extension that learnt one could have asked for what was waiting there.
+fn mailbox(ext_id: &str, ctx: &str) -> String {
+    format!("{VIEW_PREFIX}{ext_id}/{ctx}")
+}
+
 /// Handle an `__kite__/rpc` or `__kite__/poll` request for extension `ext_id`
 /// (whose pages live at `ext_base`).
 pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &str, body: &[u8], job: u64) -> Handled {
@@ -112,7 +119,7 @@ pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &st
         if ctx.is_empty() {
             return Handled::Now(400, "{}".into());
         }
-        let view = format!("{VIEW_PREFIX}{ctx}");
+        let view = mailbox(ext_id, &ctx);
         let (result, replaced) = with_mail(|m| {
             m.seen.insert(view.clone(), Instant::now());
             match m.queued.remove(&view) {
@@ -133,7 +140,7 @@ pub fn handle(path_and_query: &str, ext_id: &str, ext_base: &str, initiator: &st
         if ctx.is_empty() {
             return Handled::Now(400, "{}".into());
         }
-        let view = format!("{VIEW_PREFIX}{ctx}");
+        let view = mailbox(ext_id, &ctx);
         with_mail(|m| {
             m.seen.entry(view.clone()).or_insert_with(Instant::now);
         });

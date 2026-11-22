@@ -35,7 +35,8 @@ Window {
             profile: w.profile
             onUrlChanged: {
                 const u = url.toString()
-                if (u.indexOf(".extensions.allizom.org/") > 0 || u.indexOf(".chromiumapp.org/") > 0) {
+                // (The host an extension's redirect address has, not those words anywhere in an address.)
+                if (/^https:\/\/[^\/?#@]+\.(extensions\.allizom\.org|chromiumapp\.org)\//i.test(u)) {
                     w.finished = true
                     w.visible = false
                     if (w.onDone) w.onDone(u)

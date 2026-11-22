@@ -209,14 +209,14 @@ pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char
     let (code, ty, body) = serve(url, initiator, in_private != 0);
     *status = code;
     *mime = KiteBuf::from_vec(ty.into_bytes());
-    *cors = (code == 200 && readable_cross_origin(url)) as std::ffi::c_int;
+    *cors = (code == 200 && readable_cross_origin(url, initiator)) as std::ffi::c_int;
     KiteBuf::from_vec(body)
 }
 
 /// Whether other origins may read this response: only an extension's
 /// web_accessible_resources (Firefox semantics). Everything else, `kite:`
 /// pages included, stays opaque to them.
-fn readable_cross_origin(url: &str) -> bool {
+fn readable_cross_origin(url: &str, initiator: &str) -> bool {
     let Ok(u) = url::Url::parse(url) else { return false };
     if u.scheme() != "moz-extension" {
         return false;
@@ -226,7 +226,7 @@ fn readable_cross_origin(url: &str) -> bool {
         return false;
     }
     let rt = app().runtime();
-    rt.registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|ext| web_accessible(ext, &path))
+    rt.registry.by_uuid(u.host_str().unwrap_or("")).is_some_and(|ext| web_accessible(ext, &path, initiator))
 }
 
 /// The file an extension address is for: its path, decoded once. That text is what is
@@ -238,11 +238,16 @@ fn extension_path(u: &url::Url) -> Option<String> {
     (!path.contains(['?', '#', '\\', '\0'])).then(|| path.into_owned())
 }
 
-fn web_accessible(ext: &kite_core::webext::registry::Extension, path: &str) -> bool {
-    ext.manifest.web_accessible_resources.iter().any(|g| {
+/// Whether the site asking (`initiator`, its origin) may load that file of the
+/// extension's: one it lists for any site, or for sites that one is among.
+fn web_accessible(ext: &kite_core::webext::registry::Extension, path: &str, initiator: &str) -> bool {
+    let listed = |g: &String| {
         let g = g.trim_start_matches('/');
         regex::Regex::new(&kite_core::webext::matchpattern::glob_to_regex(g)).map(|r| r.is_match(path)).unwrap_or(false)
-    })
+    };
+    let site = format!("{}/", initiator.trim_end_matches('/'));
+    ext.manifest.web_accessible_resources.iter().any(listed)
+        || ext.manifest.web_accessible_for.iter().any(|(sites, files)| files.iter().any(listed) && kite_core::webext::matchpattern::MatchSet::parse(sites.iter().map(String::as_str)).matches(&site))
 }
 
 fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>) {
@@ -386,7 +391,7 @@ fn serve(url: &str, initiator: &str, in_private: bool) -> (i32, String, Vec<u8>)
     // password manager's menu inside a form field; Firefox knows whose sandbox it is, the
     // engine here says "null" for a web page's just the same). It gets what a page is drawn
     // with (`for_sandboxed_frames`), never a page: those stay for the sites the manifest names.
-    let foreign = !same_origin && !web_accessible(ext, &path);
+    let foreign = !same_origin && !web_accessible(ext, &path, initiator);
     if foreign && initiator != "null" {
         return (403, "text/plain".into(), vec![]);
     }

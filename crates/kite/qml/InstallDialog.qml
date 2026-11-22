@@ -47,6 +47,13 @@ Window {
                 ? "Offered by " + dlg.info.site + ", not addons.mozilla.org: Mozilla hasn't reviewed it. Add it only if you trust this site."
                 : "From a file, not addons.mozilla.org: Mozilla hasn't reviewed it. Add it only if you trust where the file came from."
         }
+        // The same add-on only by its own word (its id): from another place than the one installed.
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: !!dlg.info.replaces
+            type: Kirigami.MessageType.Warning
+            text: "It takes the place of the one you have, which came from " + (dlg.info.replaces === "amo" ? "addons.mozilla.org" : dlg.info.replaces === "web" ? "a website" : "a file") + ", and gets what that one has stored. Go on only if you are sure it is the same add-on."
+        }
         QQC2.Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap

@@ -233,7 +233,17 @@ impl Registry {
         let mut info = match existing {
             Some(i) => {
                 let old = self.extensions.remove(i);
-                InstallInfo { updated_at: now, ..old.info }
+                let mut info = InstallInfo { updated_at: now, ..old.info };
+                // From somewhere else than the one it replaces: it is that only by the id it
+                // gives itself. It is listed as what it is, and what the user allowed the
+                // other (optional permissions, private windows) isn't this one's.
+                if info.source != source {
+                    info.source = source.into();
+                    info.amo_slug = amo_slug.into();
+                    info.granted_optional.clear();
+                    info.allow_private = false;
+                }
+                info
             }
             None => {
                 self.broken.retain(|(i, _)| i.id != id);
@@ -389,6 +399,24 @@ mod tests {
 
     use super::*;
     use crate::webext::xpi::make_xpi;
+    #[test]
+    fn one_from_elsewhere_doesnt_inherit_what_the_other_was_allowed() {
+        let d = tempfile::tempdir().unwrap();
+        let mut r = Registry::open(d.path().into());
+        let xpi = |version: &str| make_xpi(&[("manifest.json", format!(r#"{{"manifest_version":2,"name":"T","version":"{version}","browser_specific_settings":{{"gecko":{{"id":"t@x"}}}}}}"#).as_str())]);
+        r.install_xpi(&xpi("1.0"), "amo", "t-slug").unwrap();
+        r.set_allow_private("t@x", true).unwrap();
+        r.get_mut("t@x").unwrap().info.granted_optional = vec!["history".into()];
+        // Its update from the same place keeps what it was allowed.
+        r.install_xpi(&xpi("1.1"), "amo", "t-slug").unwrap();
+        let e = r.get("t@x").unwrap();
+        assert_eq!((e.info.source.as_str(), e.info.allow_private, e.info.granted_optional.len()), ("amo", true, 1));
+        // A file saying it is that add-on: listed as a file's, and allowed nothing yet.
+        r.install_xpi(&xpi("9.0"), "file", "").unwrap();
+        let e = r.get("t@x").unwrap();
+        assert_eq!((e.info.source.as_str(), e.info.amo_slug.as_str(), e.info.allow_private, e.info.granted_optional.len()), ("file", "", false, 0));
+    }
+
     #[test]
     fn install_update_uninstall() {
         let d = tempfile::tempdir().unwrap();

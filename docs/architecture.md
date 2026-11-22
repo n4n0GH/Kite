@@ -358,7 +358,11 @@ outside that becomes a link goes through `web_address` first; a page web content
 policy like `warning_policy`.
 
 **A new extension API**
-Add the call to the `match` in `Runtime` in `webext/runtime.rs`, and to `js/api_core.js`. If it
+Add the call to the `match` in `Runtime` in `webext/runtime.rs`, and to `js/api_core.js`. If Firefox
+only offers it with a permission, check that: for a whole namespace in `namespace_permissions`, for
+single calls with `self.require`. An address an extension hands over that Kite then loads or fetches
+itself (a tab, a redirect, a popup, an icon, a sign-in window) is held to the web or the extension's
+own files, and again at every redirect: Kite's own loads get what a page's would be refused. If it
 needs the interface, return a `Ui` effect through `self.ui(...)` and add a `case` to the handler in
 `Main.qml`.
 

@@ -629,14 +629,17 @@ impl Runtime {
         fx
     }
 
-    fn sender(&self, ctx: &Context, ext: &str) -> Value {
+    /// Who sent a message or opened a port, for the extension `to` that hears of it. The
+    /// tab comes as that extension may see it (a popup's or sidebar's is the window's
+    /// current tab, whose address isn't every extension's to know).
+    fn sender(&self, ctx: &Context, ext: &str, to: &str) -> Value {
         let mut s = json!({"id": ext, "url": ctx.url, "frameId": ctx.frame_id, "envType": if ctx.kind == "content" { "content_child" } else { "addon_child" }});
         if let Some(o) = origin_of(&ctx.url) {
             s["origin"] = o.into();
         }
         if ctx.tab_id >= 0 {
-            if let Some(t) = self.tabs.get(&ctx.tab_id) {
-                s["tab"] = t.clone();
+            if let (Some(t), Some(e)) = (self.tabs.get(&ctx.tab_id), self.registry.get(to)) {
+                s["tab"] = self.tab_for(e, t);
             }
         }
         s
@@ -1105,7 +1108,8 @@ impl Runtime {
             id,
             PendingMsg { reply_view: origin.view.clone(), reply_ctx: from_ctx.into(), call_id, remaining: targets.len(), targets: targets.clone() },
         );
-        let sender = self.sender(&c, ext);
+        let to = self.ctxs.get(&targets[0]).map_or_else(|| ext.to_owned(), |t| t.ext.clone());
+        let sender = self.sender(&c, ext, &to);
         Handled::Later(self.deliver(&targets, json!({"type": kind, "msgId": id, "message": message, "sender": sender})))
     }
 
@@ -1128,6 +1132,10 @@ impl Runtime {
         let Some(p) = self.ports.get_mut(port) else { return vec![] };
         log::debug!("port {port}: disconnect from {from} (opener {}, others {:?})", p.opener, p.others);
         let payload = json!({"type": "portDisconnect", "portId": port, "error": error});
+        // (Only an end of the port closes it, or leaves it.)
+        if p.opener != from && !p.others.iter().any(|o| o == from) {
+            return vec![];
+        }
         if p.native {
             self.ports.remove(port);
             return vec![Effect::Native(NativeOp::Close { port: port.to_owned() })];
@@ -1384,6 +1392,13 @@ impl Runtime {
 
     /// (`in_private`, here and below: a request from a private window, which
     /// only extensions allowed there get to know about.)
+    /// Whether `ext_id` may have Kite fetch `url` for it (`_.fetch`: one of its pages
+    /// reading across origins): the web, on one of its hosts. Asked again for each
+    /// address a fetch is sent on to.
+    pub fn may_fetch(&self, ext_id: &str, url: &str) -> bool {
+        (url.starts_with("http://") || url.starts_with("https://")) && self.registry.get(ext_id).is_some_and(|e| MatchSet::parse(e.host_patterns().iter().map(String::as_str)).matches(url))
+    }
+
     /// Whether `ext_id` may send a request to `to` (see [`redirect_target_allowed`]).
     pub fn redirect_allowed(&self, ext_id: &str, to: &str, page_load: bool) -> bool {
         self.registry.get(ext_id).is_some_and(|e| redirect_target_allowed(e, to, page_load))
@@ -1593,6 +1608,13 @@ impl Runtime {
                 Handled::Now($e)
             };
         }
+        // What an extension only has with a permission for it (in Firefox the API isn't
+        // there without). The other calls check theirs where they are handled.
+        if let Some(permissions) = namespace_permissions(ns) {
+            if !permissions.iter().any(|p| e.has_permission(p)) {
+                return now!(Err(format!("Missing \"{}\" permission", permissions[0])));
+            }
+        }
         match (ns, name) {
             // ---------------- internal ----------------
             // A context started (true) or stopped listening to an event of
@@ -1630,7 +1652,9 @@ impl Runtime {
                         listens: self.early_listens.remove(ctx).unwrap_or_default(),
                     },
                 );
-                let tab = (origin.tab_id >= 0).then(|| self.tabs.get(&origin.tab_id).cloned()).flatten();
+                // (As the extension may see that tab: for a popup or sidebar it is the window's
+                // current one, whatever it shows.)
+                let tab = (origin.tab_id >= 0).then(|| self.tabs.get(&origin.tab_id).map(|t| self.tab_for(e, t))).flatten();
                 now!(Ok(json!({"tabId": origin.tab_id, "windowId": origin.window_id, "tab": tab})))
             }
             ("_", "unregister") => {
@@ -1669,6 +1693,10 @@ impl Runtime {
                 let port = arg_str(args, 0);
                 log::debug!("port {port}: post from {ctx} (known: {})", self.ports.contains_key(&port));
                 let Some(p) = self.ports.get(&port) else { return now!(Err("Attempt to postMessage on disconnected port".into())) };
+                // (One of its ends: a port's name is its opener's to choose, and may be known to others.)
+                if p.opener != ctx && !p.others.iter().any(|o| o == ctx) {
+                    return now!(Err("Attempt to postMessage on disconnected port".into()));
+                }
                 if p.native {
                     if p.opener != ctx {
                         return now!(Err("Attempt to postMessage on disconnected port".into()));
@@ -1768,6 +1796,11 @@ impl Runtime {
                     let fx = self.deliver(&[ctx.to_owned()], json!({"type": "portDisconnect", "portId": port, "error": NO_RECEIVER}));
                     return Handled::With(Ok(Value::Null), fx);
                 }
+                // (A name already taken stays its port's: connecting under it again would
+                // put this caller in place of the one that opened it.)
+                if self.ports.contains_key(&port) {
+                    return now!(Err("That port exists already".into()));
+                }
                 log::debug!("port {port}: {ctx} connected to {targets:?}");
                 self.ports.insert(port.clone(), Port { opener: ctx.into(), others: targets.clone(), native: false });
                 // Another extension's connection is told as that (runtime.onConnectExternal),
@@ -1775,7 +1808,8 @@ impl Runtime {
                 // its callers for its own pages and content scripts.
                 let external = self.ctxs.get(&targets[0]).is_some_and(|t| t.ext != ext_id);
                 let kind = if external { "connectExternal" } else { "connect" };
-                let fx = self.deliver(&targets, json!({"type": kind, "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id)}));
+                let to = self.ctxs.get(&targets[0]).map_or_else(|| ext_id.to_owned(), |t| t.ext.clone());
+                let fx = self.deliver(&targets, json!({"type": kind, "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id, &to)}));
                 Handled::With(Ok(Value::Null), fx)
             }
             ("runtime", "getPlatformInfo") => now!(Ok(json!({"os": "linux", "arch": std::env::consts::ARCH.replace("x86_64", "x86-64").replace("aarch64", "arm")}))),
@@ -2182,6 +2216,12 @@ impl Runtime {
                     "getTitle" => now!(Ok(json!(st.title))),
                     "setPopup" | "setPanel" => {
                         let base = e.base_url();
+                        // One of the extension's own pages (or none): the popup and the
+                        // sidebar are views with the extension's reach, not for a web page.
+                        let p = d["popup"].as_str().or(d["panel"].as_str()).unwrap_or_default();
+                        if p.contains("://") && !p.starts_with(&base) {
+                            return now!(Err("That isn't one of the extension's pages".into()));
+                        }
                         Handled::With(
                             Ok(Value::Null),
                             self.action_set(&ns_owned, ext_id, &d, move |s, d| {
@@ -2232,6 +2272,10 @@ impl Runtime {
                                         Value::Object(m) => m.iter().filter_map(|(k, v)| Some((k.parse::<u32>().ok()?, v.as_str()?.to_owned()))).filter(|(k, _)| *k >= 16).min_by_key(|(k, _)| *k).map(|(_, v)| v),
                                         _ => None,
                                     }
+                                    // (A file of the extension's, or a picture given as data: not an
+                                    // address the interface would fetch itself, past the page's network
+                                    // settings, nor a file on this machine.)
+                                    .filter(|p| !p.contains(':') || p.starts_with(&base) || p.starts_with("data:image/"))
                                     .map(|p| if p.contains(':') { p } else { format!("{base}{}", p.trim_start_matches('/')) })
                                 };
                                 s.icon = icon;
@@ -2710,7 +2754,15 @@ impl Runtime {
                 }
                 self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args.to_vec()))
             }
-            ("identity", "launchWebAuthFlow") => self.ui(origin, ctx, call_id, ext_id, method, arg(args, 0)),
+            ("identity", "launchWebAuthFlow") => {
+                // A sign-in page on the web: the window for it is Kite's own load, which
+                // would get a local file or one of Kite's pages.
+                let url = arg(args, 0)["url"].as_str().unwrap_or_default().trim_start().to_ascii_lowercase();
+                if !(url.starts_with("https://") || url.starts_with("http://")) {
+                    return now!(Err("launchWebAuthFlow takes the address of a web page".into()));
+                }
+                self.ui(origin, ctx, call_id, ext_id, method, arg(args, 0))
+            }
             ("tabs", "warmup") | ("tabs", "hide") | ("tabs", "show") => now!(Ok(Value::Null)),
             _ => now!(Err(format!("{method} is not supported by Kite yet"))),
         }
@@ -3202,6 +3254,56 @@ mod tests {
         let bg = page(&rt, "one@x", "bg:one@x", -1);
         assert!(opens(&rt.call(&bg, &tok, "bg", "downloads.open", json!([1]), 4)));
         assert!(reply(&rt.call(&bg, &tok, "bg", "downloads.open", json!([2]), 5)).is_err());
+    }
+
+    #[test]
+    fn an_api_that_takes_a_permission_isnt_there_without_it() {
+        let (_d, mut rt, tok) = with_permissions(r#"["tabs"]"#);
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        for (method, args) in [
+            ("notifications.create", json!(["n", {"title": "t", "message": "m"}])),
+            ("menus.create", json!([{"id": "m", "title": "t"}])),
+            ("contextMenus.create", json!([{"id": "m", "title": "t"}])),
+            ("sessions.restore", json!([])),
+            ("search.search", json!([{"query": "q"}])),
+            ("identity.launchWebAuthFlow", json!([{"url": "https://login.example/"}])),
+            ("clipboard.setImageData", json!(["", "png"])),
+            ("alarms.create", json!(["a", {"delayInMinutes": 1}])),
+            ("scripting.executeScript", json!([{"target": {"tabId": 1}, "func": "() => 1"}])),
+        ] {
+            assert!(reply(&rt.call(&bg, &tok, "bg", method, args, 1)).unwrap_err().contains("permission"), "{method}");
+        }
+        // Either name of the menus permission will do, for either name of the API.
+        let (_d2, mut rt, tok) = with_permissions(r#"["contextMenus", "identity"]"#);
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        assert!(reply(&rt.call(&bg, &tok, "bg", "menus.create", json!([{"id": "m", "title": "t"}]), 2)).is_ok());
+        // A sign-in window is for a page on the web.
+        for elsewhere in ["file:///etc/passwd", "kite:config", "javascript:0", ""] {
+            assert!(reply(&rt.call(&bg, &tok, "bg", "identity.launchWebAuthFlow", json!([{"url": elsewhere}]), 3)).is_err(), "{elsewhere:?}");
+        }
+        assert!(rt.call(&bg, &tok, "bg", "identity.launchWebAuthFlow", json!([{"url": "https://login.example/"}]), 4).iter().any(|e| matches!(e, Effect::Ui { method, .. } if method == "identity.launchWebAuthFlow")));
+    }
+
+    #[test]
+    fn a_popup_and_an_icon_are_the_extensions_own() {
+        let (_d, mut rt, tok) = setup();
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        let base = rt.registry.get("t@x").unwrap().base_url();
+        for elsewhere in ["https://evil.example/popup.html", "kite://config", "file:///etc/passwd", "moz-extension://00000000-0000-4000-8000-000000000000/p.html"] {
+            assert!(reply(&rt.call(&bg, &tok, "bg", "browserAction.setPopup", json!([{"popup": elsewhere}]), 1)).is_err(), "{elsewhere}");
+            assert!(reply(&rt.call(&bg, &tok, "bg", "sidebarAction.setPanel", json!([{"panel": elsewhere}]), 2)).is_err(), "{elsewhere}");
+        }
+        assert!(reply(&rt.call(&bg, &tok, "bg", "browserAction.setPopup", json!([{"popup": "popup.html"}]), 3)).is_ok());
+        assert_eq!(reply(&rt.call(&bg, &tok, "bg", "browserAction.getPopup", json!([{}]), 4)), Ok(json!(format!("{base}popup.html"))));
+        assert!(reply(&rt.call(&bg, &tok, "bg", "browserAction.setPopup", json!([{"popup": format!("{base}other.html")}]), 5)).is_ok());
+        // An icon from the web or from this machine's files isn't taken; its own file is.
+        let icon = |rt: &Runtime| rt.toolbar_json(-1, false)[0]["icon"].clone();
+        rt.call(&bg, &tok, "bg", "browserAction.setIcon", json!([{"path": "icons/a.png"}]), 6);
+        assert_eq!(icon(&rt), json!(format!("{base}icons/a.png")));
+        for elsewhere in ["https://tracker.example/pixel.png", "file:///home/u/photo.png"] {
+            rt.call(&bg, &tok, "bg", "browserAction.setIcon", json!([{"path": elsewhere}]), 7);
+            assert_ne!(icon(&rt), json!(elsewhere), "{elsewhere}");
+        }
     }
 
     #[test]
@@ -3713,6 +3815,25 @@ fn script_matches_refused(e: &Extension, script: &Value) -> Option<String> {
 pub fn redirect_target_allowed(e: &Extension, to: &str, page_load: bool) -> bool {
     let lower = to.trim_start().to_ascii_lowercase();
     lower.starts_with("http:") || lower.starts_with("https:") || (!page_load && lower.starts_with("data:")) || to.starts_with(&e.base_url())
+}
+
+/// The permission (any one of them) that a whole API takes, for those that are checked in
+/// one place: each of these shows or does something outside the extension's own pages
+/// (a notification, an entry in the user's menus, a window, a closed tab reopened, a
+/// search, the clipboard, a script in a page).
+fn namespace_permissions(ns: &str) -> Option<&'static [&'static str]> {
+    Some(match ns {
+        "scripting" => &["scripting"],
+        "sessions" => &["sessions"],
+        "notifications" => &["notifications"],
+        "search" => &["search"],
+        "identity" => &["identity"],
+        "clipboard" => &["clipboardWrite"],
+        "alarms" => &["alarms"],
+        // (After the alias: `contextMenus` is `menus` here.)
+        "menus" => &["menus", "contextMenus"],
+        _ => return None,
+    })
 }
 
 fn has_dnr_permission(e: &Extension) -> bool {

@@ -81,7 +81,11 @@ pub struct Manifest {
     pub optional_permissions: Vec<String>,
     pub host_permissions: Vec<String>,
     pub commands: Vec<Command>,
+    /// Files any site may load.
     pub web_accessible_resources: Vec<String>,
+    /// Files only some sites may load (manifest version 3's `matches`): those sites'
+    /// patterns, and the files.
+    pub web_accessible_for: Vec<(Vec<String>, Vec<String>)>,
     pub omnibox_keyword: Option<String>,
     pub dnr_rulesets: Vec<(String, bool, String)>,
 }
@@ -245,17 +249,18 @@ impl Manifest {
             _ => vec![],
         };
 
-        let web_accessible_resources = match raw.get("web_accessible_resources") {
-            Some(Value::Array(a)) => a
-                .iter()
-                .flat_map(|e| match e {
-                    Value::String(s) => vec![s.clone()],
-                    Value::Object(_) => strs(e.get("resources")),
-                    _ => vec![],
-                })
-                .collect(),
-            _ => vec![],
-        };
+        // Version 2 lists files, for any site. Version 3 lists them with the sites they
+        // are for (`matches`); a group only for other extensions (`extension_ids`) is
+        // for no site.
+        let mut web_accessible_resources = vec![];
+        let mut web_accessible_for = vec![];
+        for e in raw.get("web_accessible_resources").and_then(Value::as_array).into_iter().flatten() {
+            match e {
+                Value::String(s) => web_accessible_resources.push(s.clone()),
+                Value::Object(o) if o.contains_key("matches") => web_accessible_for.push((strs(e.get("matches")), strs(e.get("resources")))),
+                _ => {}
+            }
+        }
 
         let dnr_rulesets = raw
             .get("declarative_net_request")
@@ -297,6 +302,7 @@ impl Manifest {
             host_permissions,
             commands,
             web_accessible_resources,
+            web_accessible_for,
             omnibox_keyword: raw.get("omnibox").and_then(|o| o.get("keyword")).and_then(Value::as_str).map(str::to_owned),
             dnr_rulesets,
             gecko_id,
@@ -429,6 +435,25 @@ mod tests {
         assert_eq!(m.commands[0].shortcut, "Ctrl+Shift+Y");
         assert_eq!(m.permission_warnings()[0], "Access your data for all websites");
     }
+    #[test]
+    fn files_for_the_web_and_the_sites_they_are_for() {
+        // Version 2: for any site.
+        let m = Manifest::parse(r#"{"manifest_version":2,"name":"X","version":"1","web_accessible_resources":["a.png","img/*"]}"#, None).unwrap();
+        assert_eq!(m.web_accessible_resources, ["a.png", "img/*"]);
+        assert!(m.web_accessible_for.is_empty());
+        // Version 3: each group for its sites; one for other extensions only is for no site.
+        let m = Manifest::parse(
+            r#"{"manifest_version":3,"name":"Y","version":"1","web_accessible_resources":[
+                {"resources":["inject.js"],"matches":["https://one.example/*"]},
+                {"resources":["all.css"],"matches":["<all_urls>"]},
+                {"resources":["theirs.js"],"extension_ids":["other@x"]}]}"#,
+            None,
+        )
+        .unwrap();
+        assert!(m.web_accessible_resources.is_empty());
+        assert_eq!(m.web_accessible_for, [(vec!["https://one.example/*".to_owned()], vec!["inject.js".to_owned()]), (vec!["<all_urls>".to_owned()], vec!["all.css".to_owned()])]);
+    }
+
     #[test]
     fn mv3_and_errors() {
         let m = Manifest::parse(r#"{"manifest_version":3,"name":"Y","version":"1","action":{},"background":{"service_worker":"sw.js","type":"module"},"host_permissions":["https://a.test/*"]}"#, None).unwrap();

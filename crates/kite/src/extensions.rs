@@ -303,9 +303,8 @@ impl qobject::Extensions {
                     }
                 }
                 Effect::Ui { view, ctx, call_id, ext, method, args } if method == "net.fetch" => {
-                    let _ = ext;
                     std::thread::spawn(move || {
-                        let result = native_fetch(&args);
+                        let result = native_fetch(&ext, &args);
                         let fx = app().runtime().ui_reply(&view, &ctx, call_id, result);
                         apply_effects_async(fx);
                     });
@@ -656,6 +655,9 @@ impl qobject::Extensions {
             "id": id, "name": name, "version": manifest.version, "warnings": manifest.permission_warnings(),
             "update": existing.is_some(), "previousVersion": existing, "manifestVersion": manifest.manifest_version,
             "source": if source == "amo" { "amo" } else if site.is_some() { "web" } else { "file" }, "site": site,
+            // It takes the place of one from elsewhere (its id is only what the file says):
+            // "amo", "web" or "file", for the prompt to say so.
+            "replaces": (existing.is_some() && existing_source != source).then(|| if existing_source == "amo" { "amo" } else if existing_source.starts_with("web:") { "web" } else { "file" }),
         });
         self.install_prompt(req, js(&info));
     }
@@ -772,7 +774,8 @@ impl qobject::Extensions {
             let mut updates = vec![];
             for (id, slug, version) in list {
                 if let Ok(d) = amo::details(&slug) {
-                    if kite_core::webext::registry::version_newer(&d.version, &version) {
+                    // (The add-on that is installed, not another one now listed under its name there.)
+                    if d.guid == id && kite_core::webext::registry::version_newer(&d.version, &version) {
                         updates.push(json!({"id": id, "name": d.name, "current": version, "available": d.version, "slug": d.slug}));
                     }
                 }
@@ -782,35 +785,73 @@ impl qobject::Extensions {
     }
 }
 
-/// HTTP request on behalf of an extension page (see runtime `_.fetch`).
-fn native_fetch(d: &Value) -> Result<Value, String> {
-    use base64::Engine;
-    let url = d["url"].as_str().unwrap_or_default();
-    // (Kite fetches this itself, past the request interceptor: a child's profile is
-    // kept from the same sites here.)
-    if app().parental.filter.is_on() && app().parental.filter.check(&kite_core::util::host_of(url)).is_some() {
-        return Err("NetworkError when attempting to fetch resource.".into());
+/// Where a fetch goes after an answer that sends it on (`status`, with its `Location`):
+/// the address, and whether the request stays what it was (307, 308) or becomes a
+/// plain GET, as browsers make it.
+fn fetch_sent_on(from: &str, status: u16, location: Option<&str>) -> Option<(String, bool)> {
+    if !matches!(status, 301 | 302 | 303 | 307 | 308) {
+        return None;
     }
-    let method = d["method"].as_str().unwrap_or("GET").to_uppercase();
+    let to = url::Url::parse(from).ok()?.join(location?).ok()?;
+    Some((to.into(), matches!(status, 307 | 308)))
+}
+
+/// HTTP request on behalf of an extension page (see runtime `_.fetch`).
+fn native_fetch(ext: &str, d: &Value) -> Result<Value, String> {
+    use base64::Engine;
+    const REFUSED: &str = "NetworkError when attempting to fetch resource.";
+    let mut url = d["url"].as_str().unwrap_or_default().to_owned();
+    let mut method = d["method"].as_str().unwrap_or("GET").to_uppercase();
+    // Redirects are followed here, one at a time: each address is held to what the
+    // first one was (below), where the agent would have followed them wherever they led.
     let agent: ureq::Agent = kite_core::net::config()
         .http_status_as_error(false)
+        .max_redirects(0)
         .timeout_global(Some(std::time::Duration::from_secs(60)))
         .build()
         .into();
-    let body: Option<Vec<u8>> = d["body"].as_str().map(|b| base64::engine::general_purpose::STANDARD.decode(b).unwrap_or_default());
-    let mut req = ureq::http::Request::builder().method(method.as_str()).uri(url).header("User-Agent", amo::USER_AGENT);
-    if let Some(h) = d["headers"].as_array() {
-        for pair in h {
+    let mut body: Option<Vec<u8>> = d["body"].as_str().map(|b| base64::engine::general_purpose::STANDARD.decode(b).unwrap_or_default());
+    let first_host = kite_core::util::host_of(&url);
+    let mut hops = 0;
+    let resp = loop {
+        // The extension's hosts only: an address on one of them that answers "go there"
+        // would else read any other site for it.
+        if !app().runtime().may_fetch(ext, &url) {
+            log::warn!("{ext}: a fetch was sent on to {}, which isn't one of its hosts", kite_core::util::host_of(&url));
+            return Err(REFUSED.into());
+        }
+        // (Kite fetches this itself, past the request interceptor: a child's profile is
+        // kept from the same sites here.)
+        if app().parental.filter.is_on() && app().parental.filter.check(&kite_core::util::host_of(&url)).is_some() {
+            return Err(REFUSED.into());
+        }
+        let mut req = ureq::http::Request::builder().method(method.as_str()).uri(url.as_str()).header("User-Agent", amo::USER_AGENT);
+        // (What says who is asking stays with the host it was meant for.)
+        let same_host = kite_core::util::host_of(&url) == first_host;
+        for pair in d["headers"].as_array().into_iter().flatten() {
             if let (Some(k), Some(v)) = (pair[0].as_str(), pair[1].as_str()) {
-                req = req.header(k, v);
+                if same_host || !matches!(k.to_ascii_lowercase().as_str(), "authorization" | "cookie" | "proxy-authorization") {
+                    req = req.header(k, v);
+                }
             }
         }
-    }
-    let resp = match body {
-        Some(b) => agent.run(req.body(b).map_err(|e| e.to_string())?),
-        None => agent.run(req.body(()).map_err(|e| e.to_string())?),
-    }
-    .map_err(|e| format!("NetworkError: {e}"))?;
+        let resp = match &body {
+            Some(b) => agent.run(req.body(b.clone()).map_err(|e| e.to_string())?),
+            None => agent.run(req.body(()).map_err(|e| e.to_string())?),
+        }
+        .map_err(|e| format!("NetworkError: {e}"))?;
+        let location = resp.headers().get("location").and_then(|l| l.to_str().ok());
+        let Some((to, same_request)) = fetch_sent_on(&url, resp.status().as_u16(), location) else { break resp };
+        hops += 1;
+        if hops > 10 {
+            return Err("NetworkError: too many redirects".into());
+        }
+        if !same_request {
+            method = if method == "HEAD" { method } else { "GET".into() };
+            body = None;
+        }
+        url = to;
+    };
     let status = resp.status().as_u16();
     let headers: Vec<Value> = resp.headers().iter().map(|(k, v)| json!([k.as_str(), v.to_str().unwrap_or("")])).collect();
     let mut resp = resp;
@@ -818,17 +859,34 @@ fn native_fetch(d: &Value) -> Result<Value, String> {
     Ok(json!({"status": status, "statusText": "", "url": url, "headers": headers, "body": base64::engine::general_purpose::STANDARD.encode(bytes)}))
 }
 
+/// Whether a child's profile is kept from this address (parental controls). Kite's own
+/// fetches for extensions go past the request interceptor, which is where pages are held to it.
+fn kept_from_child(url: &str) -> bool {
+    app().parental.filter.is_on() && app().parental.filter.check(&kite_core::util::host_of(url)).is_some()
+}
+
+/// A part of the path an extension names for a download: no hidden file or folder, and
+/// nothing that isn't a letter of a name.
+fn download_name_part(part: &str) -> String {
+    let clean: String = part.chars().filter(|c| !c.is_control()).collect();
+    let clean = clean.trim().trim_start_matches('.').to_owned();
+    if clean.is_empty() { "download".into() } else { clean }
+}
+
 /// downloads.download for http(s) and data: URLs, done natively.
 fn native_download(d: &Value) -> Result<Value, String> {
     use base64::Engine;
     let url = d["url"].as_str().unwrap_or_default().to_owned();
+    if !url.starts_with("data:") && kept_from_child(&url) {
+        return Err("Download blocked".into());
+    }
     let a = app();
     let dir = std::path::PathBuf::from(a.shared.settings().get_str("downloads.directory"));
     let suggested = d["filename"].as_str().map(str::to_owned).unwrap_or_else(|| {
         url::Url::parse(&url).ok().and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(str::to_owned))).filter(|s| !s.is_empty()).unwrap_or_else(|| "download".into())
     });
     // Keep the file inside the downloads directory.
-    let rel: std::path::PathBuf = suggested.split('/').filter(|c| !c.is_empty() && *c != "..").collect();
+    let rel: std::path::PathBuf = suggested.split(['/', '\\']).filter(|c| !c.is_empty() && *c != "..").map(download_name_part).collect();
     let mut path = dir.join(&rel);
     if path.exists() && d["conflictAction"].as_str() != Some("overwrite") {
         let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -846,25 +904,36 @@ fn native_download(d: &Value) -> Result<Value, String> {
         id
     };
     std::thread::spawn(move || {
-        let result: anyhow::Result<Vec<u8>> = (|| {
-            if let Some(rest) = url.strip_prefix("data:") {
-                let (meta, data) = rest.split_once(',').ok_or_else(|| anyhow::anyhow!("bad data URL"))?;
-                return Ok(if meta.ends_with(";base64") {
-                    base64::engine::general_purpose::STANDARD.decode(data.trim())?
-                } else {
-                    percent_encoding::percent_decode_str(data).collect()
-                });
-            }
-            let mut r = kite_core::net::agent().get(&url).header("User-Agent", amo::USER_AGENT).call()?;
-            Ok(r.body_mut().with_config().limit(4 * 1024 * 1024 * 1024).read_to_vec()?)
-        })();
-        let state = match result.and_then(|b| {
+        let result: anyhow::Result<i64> = (|| {
             if let Some(p) = path.parent() {
                 std::fs::create_dir_all(p)?;
             }
-            std::fs::write(&path, &b)?;
-            Ok(b.len() as i64)
-        }) {
+            if let Some(rest) = url.strip_prefix("data:") {
+                let (meta, data) = rest.split_once(',').ok_or_else(|| anyhow::anyhow!("bad data URL"))?;
+                let bytes: Vec<u8> = if meta.ends_with(";base64") { base64::engine::general_purpose::STANDARD.decode(data.trim())? } else { percent_encoding::percent_decode_str(data).collect() };
+                std::fs::write(&path, &bytes)?;
+                return Ok(bytes.len() as i64);
+            }
+            // Redirects one at a time, each address held to what the first was; and
+            // written as it arrives, not held in memory first.
+            let agent: ureq::Agent = kite_core::net::config().max_redirects(0).http_status_as_error(false).build().into();
+            let mut at = url.clone();
+            let mut hops = 0;
+            let mut r = loop {
+                let r = agent.get(&at).header("User-Agent", amo::USER_AGENT).call()?;
+                let location = r.headers().get("location").and_then(|l| l.to_str().ok());
+                let Some((to, _)) = fetch_sent_on(&at, r.status().as_u16(), location) else { break r };
+                anyhow::ensure!(to.starts_with("http://") || to.starts_with("https://"), "sent on to an address that isn't the web's");
+                anyhow::ensure!(!kept_from_child(&to), "sent on to a site this profile is kept from");
+                hops += 1;
+                anyhow::ensure!(hops <= 10, "sent on too many times");
+                at = to;
+            };
+            anyhow::ensure!(r.status().is_success(), "the server answered {}", r.status());
+            let mut file = std::fs::File::create(&path)?;
+            Ok(std::io::copy(&mut r.body_mut().with_config().limit(4 * 1024 * 1024 * 1024).reader(), &mut file)? as i64)
+        })();
+        let state = match result {
             Ok(n) => {
                 let mut dl = app().shared.downloads();
                 if let Some(r) = dl.items.iter().find(|r| r.id == id).cloned() {
@@ -873,7 +942,7 @@ fn native_download(d: &Value) -> Result<Value, String> {
                 "complete"
             }
             Err(e) => {
-                log::warn!("download of {url} failed: {e}");
+                log::warn!("download of {} failed: {e}", &url[..url.floor_char_boundary(120)]);
                 let mut dl = app().shared.downloads();
                 if let Some(r) = dl.items.iter().find(|r| r.id == id).cloned() {
                     dl.upsert(kite_core::downloads::DownloadRecord { state: "interrupted".into(), ..r });
@@ -946,5 +1015,36 @@ fn handle_ui_in_rust(method: &str, args: &Value) -> Option<Result<Value, String>
             Some(Ok(Value::Null))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fetch_is_sent_on_only_by_a_redirect_with_somewhere_to_go() {
+        let on = |status, location| fetch_sent_on("https://one.example/a/b?c", status, location);
+        assert_eq!(on(302, Some("https://two.example/x")), Some(("https://two.example/x".into(), false)));
+        assert_eq!(on(301, Some("/login")), Some(("https://one.example/login".into(), false)));
+        assert_eq!(on(303, Some("d")), Some(("https://one.example/a/d".into(), false)));
+        // These keep the request as it was (its method and what it sends).
+        assert_eq!(on(307, Some("//two.example/")), Some(("https://two.example/".into(), true)));
+        assert_eq!(on(308, Some("https://two.example/")), Some(("https://two.example/".into(), true)));
+        // The address it is sent on to is the caller's to check: any kind may be named.
+        assert_eq!(on(302, Some("file:///etc/passwd")).map(|(to, _)| to).as_deref(), Some("file:///etc/passwd"));
+        for (status, location) in [(200, Some("https://two.example/")), (304, Some("/x")), (404, Some("/x")), (302, None)] {
+            assert_eq!(on(status, location), None, "{status} {location:?}");
+        }
+    }
+
+    #[test]
+    fn a_downloads_name_is_no_hidden_file() {
+        assert_eq!(download_name_part("report.pdf"), "report.pdf");
+        assert_eq!(download_name_part(".bashrc"), "bashrc");
+        assert_eq!(download_name_part("...config"), "config");
+        assert_eq!(download_name_part(" a\nb\u{202e}.txt "), "ab\u{202e}.txt");
+        assert_eq!(download_name_part("."), "download");
+        assert_eq!(download_name_part(""), "download");
     }
 }
