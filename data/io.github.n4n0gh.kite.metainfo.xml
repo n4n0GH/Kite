@@ -35,6 +35,12 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.10" date="2026-11-22">
+      <description>
+        <p>Save Page As (Ctrl+S) on a PDF document, a picture, a video or text saves the file itself under its own name. It used to offer an .html file.</p>
+        <p>More extensions work. Those that call browser.* with callbacks now get their answers; the Unhook add-on for YouTube takes effect and keeps its settings. Extensions that send a page elsewhere are told the right tab. An extension can put its own script into pages that require Trusted Types, such as YouTube.</p>
+      </description>
+    </release>
     <release version="0.10.9" date="2026-11-19">
       <description>
         <p>The toolbar can have a Profiles button: add it in Customize Toolbar. It shows the picture of the profile you are in and opens the Profiles menu.</p>
