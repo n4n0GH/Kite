@@ -1709,6 +1709,9 @@ impl Runtime {
                 let target_ext = arg_str(args, 0);
                 let message = arg(args, 1);
                 if !target_ext.is_empty() && target_ext != ext_id {
+                    if self.from_content(origin, ext_id) {
+                        return now!(Err("runtime.sendMessage to another extension isn't available to content scripts".into()));
+                    }
                     // runtime.onMessageExternal of another extension
                     let targets: Vec<String> = self.ctxs.iter().filter(|(_, c)| c.ext == target_ext && c.kind != "content").map(|(k, _)| k.clone()).collect();
                     return self.send_message(origin, ctx, call_id, ext_id, targets, message, "messageExternal");
@@ -1749,6 +1752,10 @@ impl Runtime {
                 } else {
                     let target_ext = arg_str(args, 1);
                     let te = if target_ext.is_empty() { ext_id.to_owned() } else { target_ext };
+                    // (To another extension: from one of this one's pages, as its messages are.)
+                    if te != ext_id && self.from_content(origin, ext_id) {
+                        return now!(Err("runtime.connect to another extension isn't available to content scripts".into()));
+                    }
                     let targets = self.page_targets(&te, ctx);
                     if te == ext_id && self.background_starting(ext_id) {
                         self.queue_for_background(ext_id, origin, ctx, method, args, call_id);
@@ -1763,7 +1770,12 @@ impl Runtime {
                 }
                 log::debug!("port {port}: {ctx} connected to {targets:?}");
                 self.ports.insert(port.clone(), Port { opener: ctx.into(), others: targets.clone(), native: false });
-                let fx = self.deliver(&targets, json!({"type": "connect", "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id)}));
+                // Another extension's connection is told as that (runtime.onConnectExternal),
+                // never as one of the extension's own (onConnect): what listens there takes
+                // its callers for its own pages and content scripts.
+                let external = self.ctxs.get(&targets[0]).is_some_and(|t| t.ext != ext_id);
+                let kind = if external { "connectExternal" } else { "connect" };
+                let fx = self.deliver(&targets, json!({"type": kind, "portId": port, "name": info["name"].as_str().unwrap_or(""), "sender": self.sender(&c, ext_id)}));
                 Handled::With(Ok(Value::Null), fx)
             }
             ("runtime", "getPlatformInfo") => now!(Ok(json!({"os": "linux", "arch": std::env::consts::ARCH.replace("x86_64", "x86-64").replace("aarch64", "arm")}))),
@@ -2661,6 +2673,22 @@ impl Runtime {
                         Handled::With(Ok(json!(ids)), fx)
                     }
                     "getFileIcon" => now!(Ok(Value::Null)),
+                    // What acts on one download: one the extension is told of at all (not a
+                    // private window's). And opening it, with the program the desktop has
+                    // for such a file, takes the permission of its own, as in Firefox: with
+                    // "downloads" alone an extension could fetch a file and have it opened.
+                    "open" | "show" | "pause" | "resume" | "cancel" => {
+                        if name == "open" {
+                            if let Err(err) = self.require(e, "downloads.open") {
+                                return now!(Err(err));
+                            }
+                        }
+                        let id = arg(args, 0).as_u64();
+                        if !self.shared.downloads().items.iter().any(|i| Some(i.id) == id && !i.private) {
+                            return now!(Err("Invalid download id".into()));
+                        }
+                        self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args.to_vec()))
+                    }
                     _ => self.ui(origin, ctx, call_id, ext_id, method, Value::Array(args.to_vec())),
                 }
             }
@@ -3124,6 +3152,56 @@ mod tests {
             assert_eq!(rt.redirect_allowed("one@x", to, false), sub, "another request to {to:?}");
         }
         assert!(!rt.redirect_allowed("nobody@x", "https://kde.org/", false));
+    }
+
+    #[test]
+    fn another_extensions_connection_is_told_as_that() {
+        let (_d, mut rt, tok, other) = private_setup();
+        let mine = bg(&rt, "t@x");
+        let theirs = bg(&rt, "a@x");
+        for (origin, token, ctx) in [(&mine, &tok, "bg-t"), (&theirs, &other, "bg-a")] {
+            rt.call(origin, token, ctx, "_.register", json!([{"kind": "background"}]), 1);
+            rt.call(origin, token, ctx, "_.ready", json!([]), 2);
+        }
+        let told = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Deliver { view, payload, .. } = e { Some((view.clone(), payload["type"].as_str().unwrap_or_default().to_owned(), payload["sender"]["id"].clone())) } else { None });
+        // a@x connects to t@x: for t@x's onConnectExternal, with who it is.
+        let fx = rt.call(&theirs, &other, "bg-a", "runtime.connect", json!(["p1", "t@x", {"name": "n"}]), 3);
+        assert_eq!(told(&fx), Some(("bg:t@x".into(), "connectExternal".into(), json!("a@x"))));
+        // One of t@x's own pages connecting is a connection of its own.
+        let popup = page(&rt, "t@x", "popup:t@x", 1);
+        rt.call(&popup, &tok, "pop", "_.register", json!([{"kind": "popup"}]), 4);
+        let fx = rt.call(&popup, &tok, "pop", "runtime.connect", json!(["p2", "", {"name": "n"}]), 5);
+        assert_eq!(told(&fx), Some(("bg:t@x".into(), "connect".into(), json!("t@x"))));
+        // A content script speaks to its own extension, not to another in its name.
+        let web = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://kde.org/".into() };
+        rt.call(&web, &other, "cs", "_.register", json!([{"kind": "tab"}]), 6);
+        assert!(reply(&rt.call(&web, &other, "cs", "runtime.connect", json!(["p3", "t@x", {}]), 7)).unwrap_err().contains("content scripts"));
+        assert!(reply(&rt.call(&web, &other, "cs", "runtime.sendMessage", json!(["t@x", "hi"]), 8)).unwrap_err().contains("content scripts"));
+        assert!(told(&rt.call(&web, &other, "cs", "runtime.connect", json!(["p4", "", {}]), 9)).is_some_and(|(view, kind, _)| view == "bg:a@x" && kind == "connect"));
+    }
+
+    #[test]
+    fn opening_a_download_takes_its_own_permission() {
+        let record = |id: u64, private: bool| crate::downloads::DownloadRecord { id, url: "https://kde.org/f".into(), path: format!("/tmp/f{id}"), mime: String::new(), total: 1, received: 1, state: "complete".into(), started: 0, finished: 1, private };
+        let opens = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Ui { method, .. } if method == "downloads.open" || method == "downloads.show" || method == "downloads.cancel"));
+        // With "downloads" alone: shown in its folder, not opened.
+        let (_d, mut rt, tok) = with_permissions(r#"["downloads"]"#);
+        rt.shared.downloads().upsert(record(1, false));
+        rt.shared.downloads().upsert(record(2, true));
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        assert!(reply(&rt.call(&bg, &tok, "bg", "downloads.open", json!([1]), 1)).unwrap_err().contains("downloads.open"));
+        assert!(opens(&rt.call(&bg, &tok, "bg", "downloads.show", json!([1]), 2)));
+        // A private window's download isn't the extension's to show, stop or open; nor one that isn't there.
+        for (call, id) in [("downloads.show", 2), ("downloads.cancel", 2), ("downloads.show", 99)] {
+            assert!(reply(&rt.call(&bg, &tok, "bg", call, json!([id]), 3)).unwrap_err().contains("Invalid download id"), "{call} {id}");
+        }
+        // With the permission to open: its own downloads, still not a private one.
+        let (_d2, mut rt, tok) = with_permissions(r#"["downloads", "downloads.open"]"#);
+        rt.shared.downloads().upsert(record(1, false));
+        rt.shared.downloads().upsert(record(2, true));
+        let bg = page(&rt, "one@x", "bg:one@x", -1);
+        assert!(opens(&rt.call(&bg, &tok, "bg", "downloads.open", json!([1]), 4)));
+        assert!(reply(&rt.call(&bg, &tok, "bg", "downloads.open", json!([2]), 5)).is_err());
     }
 
     #[test]

@@ -128,6 +128,21 @@ test('ports', async () => {
   assert.throws(() => p2.postMessage(1));
 });
 
+test('a connection from another extension is not one of its own', () => {
+  const { api, calls } = make();
+  const own = [], external = [];
+  api.browser.runtime.onConnect.addListener((p) => own.push(p.name));
+  api.dispatch({ type: 'connectExternal', portId: 'E1', name: 'theirs', sender: { id: 'other@x' } });
+  // Nobody listens for those: the port is closed, and the extension's own listener heard nothing.
+  assert.deepStrictEqual(own, []);
+  assert.deepStrictEqual(calls.at(-1)[0], '_.portDisconnect');
+  api.browser.runtime.onConnectExternal.addListener((p) => external.push(p.name + ' from ' + p.sender.id));
+  api.dispatch({ type: 'connectExternal', portId: 'E2', name: 'theirs', sender: { id: 'other@x' } });
+  api.dispatch({ type: 'connect', portId: 'O1', name: 'mine', sender: { id: 'x@y' } });
+  assert.deepStrictEqual(external, ['theirs from other@x']);
+  assert.deepStrictEqual(own, ['mine']);
+});
+
 test('event filters', () => {
   const { api } = make();
   const seen = [];

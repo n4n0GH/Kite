@@ -1129,12 +1129,14 @@ QtObject {
             Extensions.uninstall(ext)
             return null
         case "downloads.open": case "downloads.show": {
-            const rec = JSON.parse(Browser.downloads()).find(r => r.id === a[0])
+            // (The runtime has checked it is one the extension is told of, and for opening,
+            // that it has the permission to.)
+            const rec = JSON.parse(Browser.downloads()).find(r => r.id === a[0] && !r.private)
             if (rec && method === "downloads.show") showInFolder(rec.path)
-            else if (rec) Qt.openUrlExternally("file://" + rec.path)
+            else if (rec) Qt.openUrlExternally(fileUrl(rec.path))
             return null
         }
-        case "downloads.showDefaultFolder": Qt.openUrlExternally("file://" + setting("downloads.directory")); return null
+        case "downloads.showDefaultFolder": Qt.openUrlExternally(fileUrl(setting("downloads.directory"))); return null
         case "downloads.pause": case "downloads.resume": case "downloads.cancel": {
             const d = activeDownloads[a[0]]
             if (d) { if (method === "downloads.pause") d.pause(); else if (method === "downloads.resume") d.resume(); else d.cancel() }

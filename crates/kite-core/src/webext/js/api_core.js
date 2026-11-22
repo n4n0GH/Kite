@@ -389,10 +389,12 @@ function __kiteMakeAPI(cfg, transport) {
       }
       case 'message': return handleMessage(runtime.onMessage, p);
       case 'messageExternal': return handleMessage(runtime.onMessageExternal, p);
-      case 'connect': {
+      // (From another extension: for onConnectExternal, never onConnect.)
+      case 'connect': case 'connectExternal': {
         const port = new Port(p.portId, p.name, p.sender);
-        if (!runtime.onConnect.hasListeners()) { port.disconnect(); return; }
-        runtime.onConnect._l.slice().forEach(({ cb }) => { try { cb(port); } catch (e) { console.error(e); } });
+        const event = p.type === 'connect' ? runtime.onConnect : runtime.onConnectExternal;
+        if (!event.hasListeners()) { port.disconnect(); return; }
+        event._l.slice().forEach(({ cb }) => { try { cb(port); } catch (e) { console.error(e); } });
         break;
       }
       case 'portMessage': { const port = ports.get(p.portId); if (port) port.onMessage._l.slice().forEach(({ cb }) => { try { cb(clone(p.message), port); } catch (e) { console.error(e); } }); break; }
