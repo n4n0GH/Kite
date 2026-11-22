@@ -21,6 +21,8 @@
 #   ARCH            target architecture (default: uname -m)
 #   CARGO           cargo binary (default: cargo, or ~/.cargo/bin/cargo)
 #   KITE_TOOLS_DIR  where linuxdeploy is cached (default: target/appimage-tools)
+#   KITE_TOOLS_UNCHECKED  1 to use the downloaded tools without comparing them
+#                   with the checksums below (to try a newer one)
 #   KITE_DIST_DIR   where the AppImage goes (default: dist)
 #   LDAI_UPDATE_INFORMATION  where AppImageUpdate finds a newer Kite (default: this
 #                   project's releases on GitHub; empty leaves it out)
@@ -88,14 +90,43 @@ QT_PLUGINS=$("$QMAKE" -query QT_INSTALL_PLUGINS)
 QT_QML=$("$QMAKE" -query QT_INSTALL_QML)
 
 # ---- tools -------------------------------------------------------------------
+# The tools as this script was written for and tried with (sha256). They come from
+# "continuous" releases, which are whatever was built last: without this, a build took
+# and ran whatever was there that day, and the runtime among them becomes the start of
+# every AppImage made. A download that is another file stops the build. To move on to a
+# newer one: look at what changed upstream, try it with KITE_TOOLS_UNCHECKED=1, then put
+# its checksum here.
+declare -A TOOL_SHA256=(
+    [linuxdeploy-x86_64.AppImage]=df908b19f1ed1cdafa79508d415aa12d6c56ce4d56d4149aa8c09286718706e5
+    [linuxdeploy-plugin-qt-x86_64.AppImage]=cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617
+    [runtime-x86_64]=617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46
+)
+checked() { # name file: is the file the one named above?
+    local want=${TOOL_SHA256[$1]:-} got
+    [[ ${KITE_TOOLS_UNCHECKED:-} == 1 ]] && return 0
+    if [[ -z $want ]]; then
+        say "No checksum is known for $1 (another architecture?): used as downloaded" >&2
+        return 0
+    fi
+    got=$(sha256sum "$2" | cut -d' ' -f1)
+    [[ $got == "$want" ]] && return 0
+    printf '%s\n' "$1 is not the file this script expects:" "  expected sha256 $want" "  it has          $got" \
+        "Its \"continuous\" release has moved on, or the download isn't what it should be." \
+        "See the comment at TOOL_SHA256 in $0 for how to go on." >&2
+    return 1
+}
 fetch() { # name url
     local dest=$TOOLS/$1
     if [[ ! -x $dest ]]; then
         say "Downloading $1" >&2
         mkdir -p "$TOOLS"
         curl -fL --retry 3 -o "$dest.part" "$2"
+        checked "$1" "$dest.part" || { rm -f "$dest.part"; exit 1; }
         chmod +x "$dest.part"
         mv "$dest.part" "$dest"
+    else
+        # (One kept from an earlier build is looked at too.)
+        checked "$1" "$dest" || exit 1
     fi
     echo "$dest"
 }

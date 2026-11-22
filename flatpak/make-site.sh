@@ -12,7 +12,8 @@
 #
 # With the secret key of a GPG key in the environment variable
 # GPG_PRIVATE_KEY, the repository is signed and the files for installing
-# carry the public key, so that Flatpak verifies what it downloads.
+# carry the public key, so that Flatpak verifies what it downloads. With
+# REQUIRE_SIGNING=true as well, there is no going on without that key.
 
 set -eu
 
@@ -22,6 +23,14 @@ url=$3
 branch=${4:-stable}
 app=io.github.n4n0gh.kite
 runtime_repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+
+# What users install and update from is signed, or not made: with REQUIRE_SIGNING=true
+# (a release, or a build published by hand) a missing key ends this here. Without the
+# key, this used to go on and publish a repository nobody could check, with no word of it.
+if [ "${REQUIRE_SIGNING:-}" = true ] && [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+    echo "make-site.sh: no signing key (GPG_PRIVATE_KEY), and this build is to be published: stopping" >&2
+    exit 1
+fi
 
 sign=
 bundle_key=

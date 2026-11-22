@@ -4,6 +4,13 @@
 #
 # Can also be started by hand from the Actions page. The bundle is then an
 # artifact of the run; the repository is only published when asked to.
+#
+# What runs here is named by what it is, not by a name that can be moved: each
+# action by its commit (the tag it was is in the comment beside it), the
+# container by its digest. This run holds the key that signs what users
+# install: a tag pointed elsewhere later would have run with it. To take a
+# newer one, look at what changed, then put its commit or digest here:
+#   git ls-remote https://github.com/<owner>/<action> 'refs/tags/<tag>^{}'
 
 name: Flatpak
 
@@ -25,15 +32,18 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    # (Reads the source and no more: the release is written to by a job of its
+    # own, below, which runs nothing but GitHub's own tools.)
     permissions:
-      contents: write
+      contents: read
     container:
       # Has flatpak-builder and the KDE runtime of this version; keep in step
-      # with runtime-version in the manifest.
-      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      # with runtime-version in the manifest. (The image as it was on
+      # 2026-11-22; the runtime in it is brought up to date by the build.)
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11@sha256:b0a8a2acb9e420dd0e3e083ff552bea5a817e17e41532f1d2287ff49ef9aae0e
       options: --privileged
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # The image has the SDK installed in a layer below the one a container
       # writes to. Updating a runtime moves its folder aside, which Docker's
@@ -48,7 +58,7 @@ jobs:
             mv /var/lib/flatpak.own /var/lib/flatpak
           fi
 
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: kite.flatpak
           manifest-path: flatpak/io.github.n4n0gh.kite.yml
@@ -58,29 +68,45 @@ jobs:
           cache-key: flatpak-builder-${{ hashFiles('flatpak/*.yml', 'flatpak/*.json') }}
 
       # Replaces the bundle with one that updates from the repository, and
-      # prepares the repository for publishing. Signed if the secret is set.
+      # prepares the repository for publishing. Signed if the secret is set;
+      # what is going to be published isn't made without it.
       - name: Prepare repository and bundle
         env:
           GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          REQUIRE_SIGNING: ${{ github.event_name == 'release' || inputs.publish }}
         run: |
           rm -f kite.flatpak
           flatpak/make-site.sh repo site "$SITE_URL" stable
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kite-flatpak
           path: kite.flatpak
+          if-no-files-found: error
 
-      - name: Attach the bundle to the release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
-        with:
-          files: kite.flatpak
-          fail_on_unmatched_files: true
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
+
+  # The one job that may write to the release. It takes the bundle the build
+  # made and attaches it with GitHub's own command line tool, which runners
+  # come with.
+  attach:
+    name: Attach the bundle to the release
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kite-flatpak
+      - name: Attach kite.flatpak
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" kite.flatpak --clobber --repo "$GITHUB_REPOSITORY"
 
   publish:
     name: Publish repository
@@ -95,4 +121,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
