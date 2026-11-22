@@ -42,6 +42,28 @@ pub fn host_of(url: &str) -> String {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
 }
 
+/// The name a file gets that somebody else named (a site, for a download; an extension):
+/// a name, and one the user can see for what it is. Not a path (what comes after the
+/// last slash), not hidden (no dots in front), without the characters that are no
+/// letters of a name, and without those that turn the reading direction around, by
+/// which "evil\u{202e}fdp.exe" reads as "evilexe.pdf". "download" if nothing is left.
+pub fn download_file_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("");
+    let invisible = |c: char| c.is_control() || matches!(c, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200b}'..='\u{200d}' | '\u{feff}');
+    let clean: String = base.chars().filter(|c| !invisible(*c)).collect();
+    let clean = clean.trim().trim_start_matches(['.', ' ']).trim_end();
+    if clean.is_empty() {
+        return "download".into();
+    }
+    // (As long as file systems take: 255 bytes, with room for " (12)" before the ending.)
+    if clean.len() <= 200 {
+        return clean.to_owned();
+    }
+    let ending = clean.rfind('.').filter(|dot| *dot > 0 && clean.len() - dot <= 12).map(|dot| &clean[dot..]).unwrap_or("");
+    let keep = clean.floor_char_boundary(200 - ending.len());
+    format!("{}{ending}", &clean[..keep])
+}
+
 /// A web page's origin as the page itself has it in `location.origin`
 /// ("https://kde.org", "http://localhost:8080"); "" for anything else.
 pub fn origin_of(url: &str) -> String {
@@ -273,6 +295,36 @@ mod count_files_tests {
         }
         assert_eq!(count_files(dir.path(), 20), 20);
         assert_eq!(count_files(dir.path(), 5), 6);
+    }
+}
+
+#[cfg(test)]
+mod download_name_tests {
+    use super::download_file_name;
+
+    #[test]
+    fn a_downloads_name_is_a_name_and_can_be_seen() {
+        for (given, kept) in [
+            ("report.pdf", "report.pdf"),
+            ("What? A \"report\": final.pdf", "What? A \"report\": final.pdf"),
+            ("../../.bashrc", "bashrc"),
+            ("/etc/passwd", "passwd"),
+            ("a\\b\\c.txt", "c.txt"),
+            (".hidden", "hidden"),
+            (" .. .config", "config"),
+            ("evil\u{202e}fdp.exe", "evilfdp.exe"),
+            ("two\nlines\t.txt", "twolines.txt"),
+            ("zero\u{200b}width.txt", "zerowidth.txt"),
+            ("", "download"),
+            ("...", "download"),
+            ("dir/", "download"),
+            ("-rf", "-rf"),
+        ] {
+            assert_eq!(download_file_name(given), kept, "{given:?}");
+        }
+        let long = format!("{}.tar.gz", "ä".repeat(300));
+        let name = download_file_name(&long);
+        assert!(name.len() <= 200 && name.ends_with(".gz") && name.starts_with('ä'), "{name}");
     }
 }
 

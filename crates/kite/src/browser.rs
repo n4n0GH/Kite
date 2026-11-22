@@ -577,6 +577,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "frameSecret"]
         fn frame_secret(self: &Browser) -> QString;
+        #[qinvokable]
+        #[cxx_name = "pluginSecret"]
+        fn plugin_secret(self: &Browser, id: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "pluginOfSecret"]
+        fn plugin_of_secret(self: &Browser, message: &QString) -> QString;
 
         /// Printing: Qt's dialog, answered by printChosen (JSON with where to
         /// put the PDF and for what paper, "" if cancelled).
@@ -1332,6 +1338,16 @@ impl qobject::Browser {
             } else {
                 folder.children = parse_netscape(&text);
             }
+            // A keyword is what is typed in the address bar to get its bookmark, and goes
+            // before anything else the words could mean. One from a file that reads as
+            // an address ("bank.example") would take that address over.
+            fn tame(n: &mut Node) {
+                if n.keyword.contains(['.', ':', '/']) {
+                    n.keyword.clear();
+                }
+                n.children.iter_mut().for_each(tame);
+            }
+            tame(&mut folder);
             fn count(n: &Node) -> usize {
                 n.children.iter().map(|c| if c.kind == Kind::Url { 1 } else { count(c) }).sum()
             }
@@ -1400,10 +1416,15 @@ impl qobject::Browser {
         app().shared.session().crashed_last_time()
     }
     fn start_external_download(&self, url: &QString, file_name: &QString) -> QString {
-        let (program, arguments) = {
+        let (on, program, arguments) = {
             let s = app().shared.settings();
-            (s.get_str("downloads.externalProgram"), s.get_str("downloads.externalArguments"))
+            (s.get_bool("downloads.external"), s.get_str("downloads.externalProgram"), s.get_str("downloads.externalArguments"))
         };
+        // (Only with the setting on, and for an address on the web: this starts a program.)
+        let url_text = url.to_string();
+        if !on || !(url_text.starts_with("https://") || url_text.starts_with("http://")) {
+            return js(&json!({"error": "no external download manager is set up"}));
+        }
         js(&match kite_core::external::start_download_manager(&program, &arguments, &url.to_string(), &file_name.to_string()) {
             Ok(name) => json!({"name": name}),
             Err(e) => {
@@ -1516,8 +1537,8 @@ impl qobject::Browser {
     }
     fn unique_download_path(&self, dir: &QString, name: &QString) -> QString {
         let dir = std::path::PathBuf::from(dir.to_string());
-        let name = name.to_string();
-        let name = if name.is_empty() { "download".to_owned() } else { name.replace('/', "_") };
+        // (Named by the site, mostly: see util::download_file_name.)
+        let name = kite_core::util::download_file_name(&name.to_string());
         let mut p = dir.join(&name);
         let (stem, ext) = match name.rsplit_once('.') {
             Some((s, e)) if !s.is_empty() => (s.to_owned(), format!(".{e}")),
@@ -1837,6 +1858,14 @@ impl qobject::Browser {
 
     fn frame_secret(&self) -> QString {
         q(&*FRAME_SECRET)
+    }
+
+    fn plugin_secret(&self, id: &QString) -> QString {
+        q(plugin_secret(&id.to_string()))
+    }
+
+    fn plugin_of_secret(&self, message: &QString) -> QString {
+        q(plugin_of_secret(&message.to_string()).unwrap_or_default())
     }
 
     fn print_dialog(self: Pin<&mut Self>, title: &QString) {
@@ -2232,8 +2261,11 @@ impl qobject::Browser {
     }
     fn use_activation_token(&self, token: &QString) {
         // Qt's Wayland code takes it from there when a window asks to be activated.
-        if !token.is_empty() {
-            std::env::set_var("XDG_ACTIVATION_TOKEN", token.to_string());
+        // (As such tokens are. It comes from whatever started Kite with an address: a
+        // NUL in it would stop Kite, set_var takes none.)
+        let token = token.to_string();
+        if !token.is_empty() && token.len() <= 512 && token.chars().all(|c| c.is_ascii_graphic()) {
+            std::env::set_var("XDG_ACTIVATION_TOKEN", token);
         }
     }
     fn plasma_devices(&self) -> QString {
@@ -2857,6 +2889,22 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
 #[cfg(test)]
 mod tests {
     #[test]
+    fn a_plugin_is_known_by_its_own_secret() {
+        use super::{plugin_of_secret, plugin_secret, FRAME_SECRET, PLUGIN_SECRET_LENGTH, PLUGIN_SECRET_START};
+        let (a, b) = (plugin_secret("a-plugin"), plugin_secret("b-plugin"));
+        assert_ne!(a, b);
+        assert_eq!(a, plugin_secret("a-plugin"), "the same while Kite runs");
+        assert_eq!(a.len(), PLUGIN_SECRET_LENGTH);
+        assert_eq!(plugin_of_secret(&format!("{a}{{\"m\":1}}")).as_deref(), Some("a-plugin"));
+        assert_eq!(plugin_of_secret(&format!("{b}{{\"plugin\":\"a-plugin\",\"m\":1}}")).as_deref(), Some("b-plugin"), "whatever it says it is");
+        // Not Kite's own scripts' secret, nor a made-up one, nor a short one.
+        for other in [FRAME_SECRET.clone() + "plugin:{}", format!("{PLUGIN_SECRET_START}{}:{{}}", "0".repeat(48)), "kiteplugin".into(), String::new()] {
+            assert_eq!(plugin_of_secret(&other), None, "{other}");
+        }
+        assert!(!a.starts_with(FRAME_SECRET.as_str()) && !FRAME_SECRET.starts_with(PLUGIN_SECRET_START));
+    }
+
+    #[test]
     fn plugins_are_valid_and_complete() {
         let plugins = super::builtin_plugins();
         assert!(!plugins.is_empty());
@@ -2902,6 +2950,34 @@ mod tests {
 
 fn named_sessions() -> kite_core::session::NamedSessions {
     kite_core::session::NamedSessions::load(app().shared.profile.path("sessions.json"))
+}
+
+/// What a plugin's page scripts start their messages to the window with: a secret of
+/// the plugin's own, by which the message is known to be that plugin's. A plugin's
+/// script can read what it is given (the function that sends holds it), so given the
+/// secret Kite's own page scripts share, it could have spoken as any of them, or as
+/// another plugin.
+static PLUGIN_SECRETS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+const PLUGIN_SECRET_START: &str = "kiteplugin";
+/// (The start, 48 letters and digits, a colon.)
+const PLUGIN_SECRET_LENGTH: usize = PLUGIN_SECRET_START.len() + 48 + 1;
+
+fn plugin_secret(id: &str) -> String {
+    let mut secrets = PLUGIN_SECRETS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, secret)) = secrets.iter().find(|(plugin, _)| plugin == id) {
+        return secret.clone();
+    }
+    let mut bytes = [0u8; 24];
+    getrandom::getrandom(&mut bytes).expect("random bytes for a plugin's secret");
+    let secret = format!("{PLUGIN_SECRET_START}{}:", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    secrets.push((id.to_owned(), secret.clone()));
+    secret
+}
+
+/// The plugin whose secret a console message starts with, if it does with one.
+fn plugin_of_secret(message: &str) -> Option<String> {
+    let start = message.get(..PLUGIN_SECRET_LENGTH).filter(|s| s.starts_with(PLUGIN_SECRET_START))?;
+    PLUGIN_SECRETS.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(_, secret)| secret == start).map(|(plugin, _)| plugin.clone())
 }
 
 static FRAME_SECRET: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {

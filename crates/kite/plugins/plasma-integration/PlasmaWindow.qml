@@ -92,7 +92,11 @@ Item {
             return done("NotSupportedError")
         }
         // Purpose only knows addresses, and takes a title as well. Text goes as one.
-        const urls = (data.url ? [data.url] : []).concat(data.text ? [data.text] : [])
+        // (But not a text that is an address of another kind: what takes a share would
+        // read "file:///home/…" as that file, to send or attach. The page's own address
+        // was checked as one, page-share.js; its text is whatever the page wrote.)
+        const words = data.text && !(/^\s*[a-z][a-z0-9+.-]*:/i.test(data.text) && !/^\s*https?:\/\//i.test(data.text)) ? data.text : ""
+        const urls = (data.url ? [data.url] : []).concat(words ? [words] : [])
         const dialog = component.createObject(root, {
             transientParent: win,
             inputData: {title: data.title || data.url || data.text, urls: urls, mimeType: data.text ? "text/plain" : "*/*"},

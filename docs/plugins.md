@@ -166,7 +166,7 @@ to run; the user's own yt-dlp configuration is left out with it). So the most a 
 it do is save a YouTube video; it can't be turned into a way to run something else. Adding a tool means
 adding a runner like it in Rust (`crates/kite/src/ytdlp.rs`), not a general one.
 
-### Page scripts### Page scripts
+### Page scripts
 
 Each one gets two things that nothing else has:
 

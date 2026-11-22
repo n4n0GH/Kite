@@ -10,7 +10,8 @@ FileDialog {
     title: "Save File"
     function ask(d) {
         download = d
-        currentFile = "file://" + d.downloadDirectory + "/" + d.downloadFileName
+        // (Encoded: a name with # or ? in it would be cut there.)
+        currentFile = "file://" + encodeURI(d.downloadDirectory + "/" + d.downloadFileName).replace(/[?#]/g, encodeURIComponent)
         open()
     }
     onAccepted: {

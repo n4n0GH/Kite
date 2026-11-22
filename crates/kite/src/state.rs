@@ -352,7 +352,8 @@ impl ParentalSession {
         let restrictions = store.as_ref().and_then(|p| p.restrictions(profile));
         let filter = Arc::new(match store {
             Some(store) => kite_core::parental::SiteFilter::of(store),
-            None => kite_core::parental::SiteFilter::new(std::env::temp_dir().join("kite-sitefilter")),
+            // (A folder of Kite's own making, not a name in /tmp anybody could have put there first.)
+            None => kite_core::parental::SiteFilter::new(kite_core::util::private_temp_dir().map(|d| d.join("sitefilter")).unwrap_or_else(|_| std::env::temp_dir().join(format!("kite-sitefilter-{}", std::process::id())))),
         });
         filter.configure(restrictions.as_ref());
         if let Some(r) = &restrictions {

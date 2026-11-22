@@ -257,6 +257,11 @@ fn main() {
     }
     // (Without --profile it's the default one; `--profile default` says that too.)
     profile = named_profile(&profile);
+    // A profile is a folder by that name among the profiles: a name, not a path out of them.
+    if profile.is_empty() || profile.starts_with('.') || profile.contains(['/', '\\', '\0']) {
+        eprintln!("kite: “{profile}” isn't a profile's name");
+        std::process::exit(2);
+    }
     if pick {
         // (The picker goes by the parental controls too.)
         parental_check();

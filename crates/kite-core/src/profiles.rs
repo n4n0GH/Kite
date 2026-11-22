@@ -259,6 +259,11 @@ impl Profiles {
 
     pub fn set_choices(&self, c: &Choices) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.base)?;
+        // (The user's alone, as the profiles in it are: it has their names, and the plugins.)
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&self.base, std::fs::Permissions::from_mode(0o700));
+        }
         crate::util::write_atomic(&self.base.join("profiles.json"), serde_json::to_string_pretty(c)?.as_bytes())?;
         Ok(())
     }

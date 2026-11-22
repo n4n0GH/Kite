@@ -151,7 +151,9 @@ QtObject {
                 const files = s.files.map(f => Browser.pluginFile(f).replace(".pragma library", "")).join("\n")
                 // The page's own world gets neither: the page could read them there,
                 // and would then be able to imitate the plugin's messages.
-                const send = "const kitePluginSend = m => console.debug(" + JSON.stringify(frameSecret + "plugin:") + " + JSON.stringify({plugin: " + JSON.stringify(p.id) + ", m}));"
+                // (With the plugin's own secret, which says whose message it is: not the one
+                // Kite's own scripts share, which a plugin's script could read off this line.)
+                const send = "const kitePluginSend = m => console.debug(" + JSON.stringify(Browser.pluginSecret(p.id)) + " + JSON.stringify({m}));"
                 const given = s.worldId === 0 ? "" : "const KITE_PLUGIN_SETTINGS = " + JSON.stringify(settings) + ";\n" + send + "\n"
                 out.push({name: "kite:plugin:" + p.id + ":" + i, worldId: s.worldId, runsOnSubFrames: s.runsOnSubFrames, injectionPoint: s.injectionPoint,
                           sourceCode: "(() => {\n" + given + files + "\n})();"})
@@ -956,7 +958,7 @@ QtObject {
     // What frames tell WebTab (it may hold a password): never logged.
     readonly property string frameSecret: Browser.frameSecret()
     function logConsole(extension, prefix, level, message, source, line, inPrivate) {
-        if (message.startsWith(frameSecret)) return
+        if (message.startsWith(frameSecret) || Browser.pluginOfSecret(message) !== "") return
         const cat = inPrivate ? (extension ? privateExtensionConsole : privatePageConsole) : (extension ? extensionConsole : pageConsole)
         const text = (prefix ? "[" + prefix + "] " : "") + message + (source ? " (" + source + ":" + line + ")" : "")
         if (level === WebEngineView.ErrorMessageLevel) console.error(cat, text)

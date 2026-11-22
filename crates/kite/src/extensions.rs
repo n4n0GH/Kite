@@ -868,9 +868,7 @@ fn kept_from_child(url: &str) -> bool {
 /// A part of the path an extension names for a download: no hidden file or folder, and
 /// nothing that isn't a letter of a name.
 fn download_name_part(part: &str) -> String {
-    let clean: String = part.chars().filter(|c| !c.is_control()).collect();
-    let clean = clean.trim().trim_start_matches('.').to_owned();
-    if clean.is_empty() { "download".into() } else { clean }
+    kite_core::util::download_file_name(part)
 }
 
 /// downloads.download for http(s) and data: URLs, done natively.
@@ -1043,7 +1041,7 @@ mod tests {
         assert_eq!(download_name_part("report.pdf"), "report.pdf");
         assert_eq!(download_name_part(".bashrc"), "bashrc");
         assert_eq!(download_name_part("...config"), "config");
-        assert_eq!(download_name_part(" a\nb\u{202e}.txt "), "ab\u{202e}.txt");
+        assert_eq!(download_name_part(" a\nb\u{202e}.txt "), "ab.txt");
         assert_eq!(download_name_part("."), "download");
         assert_eq!(download_name_part(""), "download");
     }

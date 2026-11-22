@@ -101,8 +101,10 @@ impl Plugin {
             plain("action's group", &action.group, 40)?;
         }
         // A name from the icon theme. (An address would be fetched just by listing it.)
-        let good_icon = !p.icon.is_empty() && p.icon.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
-        anyhow::ensure!(good_icon, "plugin {}: its icon has to be an icon theme's name", p.id);
+        let icon_name = |icon: &str| !icon.is_empty() && icon.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+        anyhow::ensure!(icon_name(&p.icon), "plugin {}: its icon has to be an icon theme's name", p.id);
+        // (Its actions' icons too, shown in the command palette and on toolbar buttons.)
+        anyhow::ensure!(p.actions.iter().all(|a| icon_name(&a.icon)), "plugin {}: an action's icon has to be an icon theme's name", p.id);
         anyhow::ensure!(!p.settings.contains_key("enabled"), "plugin {}: \"enabled\" is not a setting, see defaultEnabled", p.id);
         let folder = format!("plugins/{}/", p.id);
         for file in p.files() {

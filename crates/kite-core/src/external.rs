@@ -168,9 +168,21 @@ pub fn download_arguments(line: &str, url: &str, file_name: &str) -> Result<Vec<
 
 /// Hand a download to the external download manager. It runs on its own
 /// (its own process group: it outlives Kite), with no input or output.
+/// A download's name as the program is given it (%f).
+fn manager_file_name(given: &str) -> String {
+    let name = crate::util::download_file_name(given);
+    match name.trim_start_matches('-') {
+        "" => "download".into(),
+        name => name.to_owned(),
+    }
+}
+
 pub fn start_download_manager(program: &str, arguments: &str, url: &str, file_name: &str) -> Result<String, String> {
     let path = find_program(program).ok_or_else(|| if program.trim().is_empty() { "no program is set".to_owned() } else { format!("“{}” wasn't found or can't be run", program.trim()) })?;
-    let args = download_arguments(arguments, url, file_name)?;
+    // The file's name is the site's to say: as a download's is (no path, nothing hidden
+    // or invisible), and never an option to the program, which a name starting with
+    // "-" would be where %f stands as an argument of its own.
+    let args = download_arguments(arguments, url, &manager_file_name(file_name))?;
     let mut c = command(&path);
     c.args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0);
     if let Some(home) = directories::BaseDirs::new().map(|d| d.home_dir().to_owned()) {
@@ -187,6 +199,15 @@ pub fn start_download_manager(program: &str, arguments: &str, url: &str, file_na
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_file_name_a_site_gives_is_never_an_option_or_a_path() {
+        for (given, handed) in [("video.mp4", "video.mp4"), ("--exec=rm -rf ~", "exec=rm -rf ~"), ("-o", "o"), ("../../.bashrc", "bashrc"), ("--", "download"), ("", "download"), ("a\nb", "ab")] {
+            assert_eq!(manager_file_name(given), handed, "{given:?}");
+        }
+        let args = download_arguments("-d /tmp -o %f %d", "https://kde.org/f", &manager_file_name("--config=/tmp/x")).unwrap();
+        assert_eq!(args, ["-d", "/tmp", "-o", "x", "https://kde.org/f"]);
+    }
 
     #[test]
     fn arguments_split_like_a_shell_without_one() {

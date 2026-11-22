@@ -15,7 +15,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -227,7 +227,7 @@ impl qobject::YtDownloader {
             let ffmpeg = on_path("ffmpeg").is_some();
             let version = yt
                 .as_ref()
-                .and_then(|p| Command::new(p).arg("--version").stdin(Stdio::null()).stderr(Stdio::null()).output().ok())
+                .and_then(|p| kite_core::external::command(p).arg("--version").stdin(Stdio::null()).stderr(Stdio::null()).output().ok())
                 .filter(|o| o.status.success())
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
                 .unwrap_or_default();
@@ -244,6 +244,12 @@ impl qobject::YtDownloader {
         if self.active.contains_key(&url) {
             return false;
         }
+        // (A folder, named in full: with none yt-dlp saves to where Kite was started,
+        // and looks there for more to read.)
+        if !Path::new(&folder.to_string()).is_absolute() {
+            log::warn!("YtDownloader.start: the folder to save to has to be a full path");
+            return false;
+        }
         let Some(yt_dlp) = on_path("yt-dlp") else {
             log::warn!("YtDownloader.start: yt-dlp isn't installed");
             return false;
@@ -258,7 +264,9 @@ impl qobject::YtDownloader {
         let js_runtime = if on_path("deno").is_none() && on_path("node").is_some() { "node" } else { "" };
         let args = build_args(&url, &folder.to_string(), &quality, ffmpeg, js_runtime);
 
-        let mut child = match Command::new(&yt_dlp)
+        // (Started as Kite's other outside programs are: without Kite's own environment
+        // and open files, external.rs. It runs ffmpeg and a JavaScript runtime in turn.)
+        let mut child = match kite_core::external::command(&yt_dlp)
             .args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

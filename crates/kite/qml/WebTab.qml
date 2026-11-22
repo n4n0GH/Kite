@@ -1098,13 +1098,22 @@ Item {
                         web.runJavaScript("__kiteWelcomeDone(" + answer + ")")
                         return
                     }
+                    // A plugin's page script, known by the secret it was given (Main.pluginScripts).
+                    if (message.startsWith("kiteplugin")) {
+                        const plugin = Browser.pluginOfSecret(message)
+                        if (plugin !== "") {
+                            let said = null
+                            try { said = JSON.parse(message.substring(message.indexOf(":") + 1)) } catch (e) {}
+                            if (said) wt.window.pluginMessage(wt, {plugin: plugin, m: said.m})
+                            return
+                        }
+                    }
                     if (message.startsWith(wt.app.frameSecret)) {
                         const text = message.substring(wt.app.frameSecret.length)
                         if (text.startsWith("ab:")) wt.adblockFound(text.substring(3))
                         else if (text.startsWith("pl:")) wt.pointerLockMessage(text.substring(3))
                         // (js/context_menu.js; only for the tab being looked at.)
                         else if (text === "cm:") { if (wt.visible) Browser.replayContextClick() }
-                        else if (text.startsWith("plugin:")) wt.window.pluginMessage(wt, JSON.parse(text.substring(7)))
                         else wt.frameMessage(text)
                         return
                     }

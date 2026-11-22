@@ -357,11 +357,11 @@ ManagerWindow {
                                     : modelData.state === "cancelled" ? "Cancelled" : "Failed"
                             }
                         }
-                        QQC2.ToolButton { icon.name: "document-open-symbolic"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally("file://" + modelData.path); QQC2.ToolTip.text: "Open"; QQC2.ToolTip.visible: hovered }
+                        QQC2.ToolButton { icon.name: "document-open-symbolic"; visible: modelData.state === "complete"; onClicked: Qt.openUrlExternally(w.app.fileUrl(modelData.path)); QQC2.ToolTip.text: "Open"; QQC2.ToolTip.visible: hovered }
                         QQC2.ToolButton { icon.name: "folder-open"; visible: modelData.state === "complete"; onClicked: w.app.showInFolder(modelData.path); QQC2.ToolTip.text: "Show in folder"; QQC2.ToolTip.visible: hovered }
                         QQC2.ToolButton { icon.name: "edit-delete-remove"; visible: modelData.state !== "in_progress"; onClicked: Browser.removeDownload(modelData.id); QQC2.ToolTip.text: "Remove from list"; QQC2.ToolTip.visible: hovered }
                     }
-                    onDoubleClicked: if (modelData.state === "complete") Qt.openUrlExternally("file://" + modelData.path)
+                    onDoubleClicked: if (modelData.state === "complete") Qt.openUrlExternally(w.app.fileUrl(modelData.path))
                 }
             }
         }

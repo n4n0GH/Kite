@@ -77,7 +77,7 @@ Item {
     function cancel(url) { const d = find(url); if (d && d.state === "running") { stopping[url] = true; engine.stop(url) } }
     function forget(url) { const d = find(url); if (!d || d.state !== "running") downloads = downloads.filter(x => x.url !== url) }
 
-    function showFile(path) { Qt.openUrlExternally("file://" + path) }
+    function showFile(path) { Qt.openUrlExternally(root.app.fileUrl(path)) }
     // (`token`: from a notification's button, see Main.showNotification.)
     function showFolder(path, token) { root.app.showInFolder(path, token) }
 }
