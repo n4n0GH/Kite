@@ -408,7 +408,12 @@ function __kiteMakeAPI(cfg, transport) {
     }
   }
 
-  // ---- chrome.* (callback style, also returns promises) ------------------
+  // ---- callbacks ---------------------------------------------------------
+  // What an extension sees of a namespace: a call may end in a callback, and
+  // answers with a promise when it doesn't. That goes for `browser` as for
+  // `chrome`: Firefox takes callbacks in both, and add-ons written for both
+  // browsers call `browser.storage.sync.get(keys, callback)`. (A failed call
+  // with a callback: `runtime.lastError`, while the callback runs.)
   function wrapChrome(obj, seen = new WeakMap()) {
     if (seen.has(obj)) return seen.get(obj);
     const out = {}; seen.set(obj, out);
@@ -432,7 +437,7 @@ function __kiteMakeAPI(cfg, transport) {
     }
     return out;
   }
-  const chrome = wrapChrome(all);
+  // (Two objects, as in Firefox; the events in them are the same ones.)
   // In Chrome, the MV2 `browserAction` and MV3 `action` are separate names.
-  return { browser: all, chrome, dispatch };
+  return { browser: wrapChrome(all), chrome: wrapChrome(all), dispatch };
 }

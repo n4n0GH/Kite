@@ -719,10 +719,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pluginFile"]
         fn plugin_file(self: &Browser, path: &QString) -> QString;
-        /// Where a page load should go instead, or "" (ffi::page_load_redirect).
+        /// Where a page load in a tab should go instead, or "" (ffi::page_load_redirect).
         #[qinvokable]
         #[cxx_name = "pageLoadRedirect"]
-        fn page_load_redirect(self: &Browser, url: &QString, in_private: bool) -> QString;
+        fn page_load_redirect(self: &Browser, url: &QString, in_private: bool, tab_id: i32, redirect_here: bool) -> QString;
         /// A message from kite:welcome (WebTab): its answer, as JSON, or "null".
         #[qinvokable]
         #[cxx_name = "welcomeCommand"]
@@ -2283,8 +2283,8 @@ impl qobject::Browser {
         }))
     }
 
-    fn page_load_redirect(&self, url: &QString, in_private: bool) -> QString {
-        q(crate::ffi::page_load_redirect(&url.to_string(), in_private))
+    fn page_load_redirect(&self, url: &QString, in_private: bool, tab_id: i32, redirect_here: bool) -> QString {
+        q(crate::ffi::page_load_redirect(&url.to_string(), in_private, tab_id as i64, redirect_here))
     }
 
     fn config_command(mut self: Pin<&mut Self>, message: &QString) -> QString {

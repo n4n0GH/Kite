@@ -43,6 +43,34 @@ test('calls, errors and chrome callbacks with lastError', async () => {
   assert.strictEqual(api.chrome.runtime.lastError, null);
 });
 
+test('browser.* takes callbacks too, as Firefox does', async () => {
+  const { api, calls, replies } = make('content');
+  // (As the Unhook add-on reads its settings: nothing came of it without the callback.)
+  replies['storage.sync.get'] = { hide_feed: true };
+  const got = await new Promise((r) => { assert.strictEqual(api.browser.storage.sync.get(null, r), undefined); });
+  assert.deepStrictEqual(got, { hide_feed: true });
+  assert.deepStrictEqual(calls.at(-1), ['storage.sync.get', [null]], 'the callback is not sent along as an argument');
+  await new Promise((r) => api.browser.storage.sync.set({ hide_feed: false }, r));
+  assert.deepStrictEqual(calls.at(-1), ['storage.sync.set', [{ hide_feed: false }]]);
+  // Without one, a promise as before.
+  assert.deepStrictEqual(await api.browser.storage.sync.get(null), { hide_feed: true });
+  // A call that fails: lastError while the callback runs, on either name.
+  replies['storage.sync.get'] = { __kiteError: 'boom' };
+  const err = await new Promise((r) => api.browser.storage.sync.get('k', (v) => r([v, api.browser.runtime.lastError, api.chrome.runtime.lastError])));
+  assert.strictEqual(err[0], undefined);
+  assert.strictEqual(err[1].message, 'boom');
+  assert.strictEqual(err[2].message, 'boom');
+  assert.strictEqual(api.browser.runtime.lastError, null);
+  // A reply to a message, the same way.
+  replies['runtime.sendMessage'] = 'pong';
+  assert.strictEqual(await new Promise((r) => api.browser.runtime.sendMessage({ ping: 1 }, r)), 'pong');
+  assert.deepStrictEqual(calls.at(-1), ['runtime.sendMessage', ['', { ping: 1 }]]);
+  // The two names are objects of their own with the same events.
+  assert.notStrictEqual(api.browser, api.chrome);
+  assert.strictEqual(api.browser.storage.onChanged, api.chrome.storage.onChanged);
+  assert.strictEqual(api.browser.runtime.onMessage, api.chrome.runtime.onMessage);
+});
+
 test('menus.create answers with the id and calls back, in both styles', async () => {
   const { api, calls, replies } = make();
   // (As Bitwarden does: the next entry is only made once this one has called back.)

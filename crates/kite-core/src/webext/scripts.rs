@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 pub const API_CORE: &str = include_str!("js/api_core.js");
 pub const PAGE_TRANSPORT: &str = include_str!("js/page_transport.js");
 pub const CONTENT_TRANSPORT: &str = include_str!("js/content_transport.js");
+pub const TRUSTED_TYPES: &str = include_str!("js/trusted_types.js");
 pub const BRIDGE: &str = include_str!("js/bridge.js");
 pub const FORMS: &str = include_str!("js/forms.js");
 pub const FRAME_TRANSPORT: &str = include_str!("js/frame_transport.js");
@@ -72,9 +73,13 @@ pub fn page_api_js(ext: &Extension, token: &str, qwebchannel_js: &str, blocking_
 
 /// Code that makes sure `browser`/`chrome` exist in the extension's
 /// content world (used as prelude for content scripts and executeScript).
+///
+/// Also lets the extension's own files be made a script's address on a page
+/// that requires Trusted Types (js/trusted_types.js).
 pub fn content_prelude(ext: &Extension, token: &str) -> String {
     format!(
-        "if (!globalThis.__kiteAPI) {{\n{API_CORE}\n;{}\n}}",
+        "if (!globalThis.__kiteAPI) {{\n{API_CORE}\n;{TRUSTED_TYPES}\n;try {{ __kiteTrustedScriptUrls(globalThis, {}); }} catch (e) {{}}\n{}\n}}",
+        serde_json::to_string(&ext.base_url()).unwrap(),
         with_cfg(CONTENT_TRANSPORT, &ext_cfg(ext, token, "content"))
     )
 }
@@ -341,6 +346,9 @@ mod tests {
         // At document_start the files wait for the page's root element, after the API is there.
         let (api, wait, file) = (s[0].source.find("__kiteMakeAPI").unwrap(), s[0].source.find(AT_ROOT_OPEN).unwrap(), s[0].source.find("const shared = 1;").unwrap());
         assert!(api < wait && wait < file && s[0].source.ends_with(AT_ROOT_CLOSE));
+        // Its own files may be a script's address where the page requires Trusted Types.
+        let trusted = s[0].source.find(&format!("__kiteTrustedScriptUrls(globalThis, \"{}\");", e.base_url())).unwrap();
+        assert!(e.base_url().ends_with('/') && trusted < file);
         assert_eq!((s[0].world, s[0].all_frames, s[0].injection_point), (11, true, 0));
         let bg = background_page(e).unwrap();
         assert!(bg.find("__kite__/api.js").unwrap() < bg.find("/a.js").unwrap());

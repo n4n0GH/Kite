@@ -719,6 +719,11 @@ impl Runtime {
             .unwrap_or(-1)
     }
 
+    /// Is `id` a tab of that kind (of a private window, or not)?
+    pub fn knows_tab(&self, id: i64, in_private: bool) -> bool {
+        if in_private { self.private_tabs.contains_key(&id) } else { self.tabs.contains_key(&id) }
+    }
+
     pub fn tab(&self, id: i64) -> Option<&Value> {
         self.tabs.get(&id)
     }
@@ -1516,8 +1521,12 @@ impl Runtime {
         }
     }
 
+    /// The tab a call is about: the one it names, or without one the caller's
+    /// own, or the active tab. (A negative id names no tab, `TAB_ID_NONE`: that
+    /// is refused as in Firefox, not taken for "the active one". An add-on that
+    /// sends a request's tab elsewhere would send whatever tab is in front.)
     fn resolve_tab(&self, origin: &Origin, ctx: &str, tab: Option<i64>) -> Result<i64, String> {
-        if let Some(t) = tab.filter(|t| *t >= 0) {
+        if let Some(t) = tab {
             return if self.tabs.contains_key(&t) { Ok(t) } else { Err(format!("Invalid tab ID: {t}")) };
         }
         if let Some(c) = self.ctxs.get(ctx) {
@@ -3304,6 +3313,36 @@ mod tests {
         assert!(rt.tick().is_empty());
         // unsupported API rejects instead of hanging
         assert!(reply(&rt.call(&bg, &tok, "bg", "foo.bar", json!([]), 8)).is_err());
+    }
+
+    #[test]
+    fn a_tab_that_is_none_is_not_the_active_one() {
+        let (_d, mut rt, tok) = setup();
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        rt.browser_event("windowCreated", &json!({"window": {"id": 1, "type": "normal", "state": "normal"}}));
+        rt.browser_event("windowFocused", &json!({"windowId": 1}));
+        for (id, active) in [(1, false), (2, true)] {
+            rt.browser_event("tabCreated", &json!({"tab": {"id": id, "windowId": 1, "index": id - 1, "url": format!("https://s{id}.test/"), "title": "t", "active": active}}));
+        }
+        let sent_to = |fx: &[Effect]| fx.iter().find_map(|e| match e {
+            Effect::Ui { method, args, .. } if method == "tabs.update" => args["tabId"].as_i64(),
+            _ => None,
+        });
+        // The tab it names; without one, the active tab.
+        assert_eq!(sent_to(&rt.call(&bg, &tok, "bg", "tabs.update", json!([1, {"url": "https://a.test/"}]), 2)), Some(1));
+        assert_eq!(sent_to(&rt.call(&bg, &tok, "bg", "tabs.update", json!([{"url": "https://a.test/"}]), 3)), Some(2));
+        assert_eq!(sent_to(&rt.call(&bg, &tok, "bg", "tabs.update", json!([null, {"url": "https://a.test/"}]), 4)), Some(2));
+        // The id of a request that is no tab's (-1), or of a tab that is gone: refused.
+        let fx = rt.call(&bg, &tok, "bg", "tabs.update", json!([-1, {"url": "https://a.test/"}]), 5);
+        assert_eq!(sent_to(&fx), None);
+        assert_eq!(reply(&fx), Err("Invalid tab ID: -1".into()));
+        assert_eq!(reply(&rt.call(&bg, &tok, "bg", "tabs.reload", json!([-1]), 6)), Err("Invalid tab ID: -1".into()));
+        assert_eq!(reply(&rt.call(&bg, &tok, "bg", "tabs.update", json!([7, {"url": "https://a.test/"}]), 7)), Err("Invalid tab ID: 7".into()));
+        // Which tabs there are, by kind.
+        assert!(rt.knows_tab(1, false));
+        assert!(!rt.knows_tab(1, true));
+        assert!(!rt.knows_tab(-1, false));
     }
 
     #[test]

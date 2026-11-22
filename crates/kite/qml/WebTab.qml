@@ -909,9 +909,11 @@ Item {
                         // Where it should go instead: a redirect has to happen here, as
                         // the interceptor's never finishes on a page a service worker
                         // answers for. (Going back to a page, or posting a form, it
-                        // stays the interceptor's: those can't simply be loaded again.)
-                        if (!request.isMainFrame || request.hasFormData || request.navigationType === WebEngineNavigationRequest.BackForwardNavigation || wt.redirectHops > 5) return
-                        const to = Browser.pageLoadRedirect(u, wt.window.privateMode)
+                        // stays the interceptor's: those can't simply be loaded again.
+                        // It is still told which tab the load is in, for extensions.)
+                        if (!request.isMainFrame) return
+                        const here = !(request.hasFormData || request.navigationType === WebEngineNavigationRequest.BackForwardNavigation || wt.redirectHops > 5)
+                        const to = Browser.pageLoadRedirect(u, wt.window.privateMode, wt.tabId, here)
                         if (to === "") return
                         request.reject()
                         wt.redirectHops++

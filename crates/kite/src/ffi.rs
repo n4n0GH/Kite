@@ -527,14 +527,16 @@ enum ListenersSay {
     Redirect(String),
 }
 
-/// What extensions' webRequest listeners want done with a request.
-fn ask_web_request_listeners(url: &str, first_party: &str, initiator: &str, rtype: &str, method: &str, in_private: bool) -> ListenersSay {
+/// What extensions' webRequest listeners want done with a request. `tab`: the
+/// tab it is from, where that is known (a page load's); anything else is
+/// matched to a tab by the page it is for.
+fn ask_web_request_listeners(url: &str, first_party: &str, initiator: &str, rtype: &str, method: &str, in_private: bool, tab: Option<i64>) -> ListenersSay {
     let a = app();
     let mut rt = a.runtime();
     if !rt.has_web_request_listeners() {
         return ListenersSay::Nothing;
     }
-    let tab = rt.tab_for_first_party(first_party, in_private);
+    let tab = tab.filter(|t| rt.knows_tab(*t, in_private)).unwrap_or_else(|| rt.tab_for_first_party(first_party, in_private));
     static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let frame = kite_core::webext::blocking::frame_context(url, rtype, first_party, initiator);
     let mut details = serde_json::json!({
@@ -589,21 +591,55 @@ fn take_decided_page_load(url: &str) -> bool {
     }
 }
 
+/// Page loads the interceptor is still to see, and the tab each is in: a
+/// request doesn't say whose it is, and extensions are told (`tabId`).
+static PAGE_LOAD_TABS: std::sync::Mutex<Vec<(String, i64)>> = std::sync::Mutex::new(Vec::new());
+
+fn note_page_load_tab(url: &str, tab: i64) {
+    if tab < 0 {
+        return;
+    }
+    let mut loads = PAGE_LOAD_TABS.lock().unwrap_or_else(|e| e.into_inner());
+    loads.retain(|(u, _)| u != url);
+    // (A load that never reached the interceptor stays here: this keeps them few.)
+    if loads.len() >= 64 {
+        loads.remove(0);
+    }
+    loads.push((url.to_owned(), tab));
+}
+
+fn take_page_load_tab(url: &str) -> Option<i64> {
+    let mut loads = PAGE_LOAD_TABS.lock().unwrap_or_else(|e| e.into_inner());
+    let i = loads.iter().position(|(u, _)| u == url)?;
+    Some(loads.remove(i).1)
+}
+
 /// Where a page load should go instead, or "". For WebTab's onNavigationRequested,
 /// as a redirect from the request interceptor never finishes on a page a service
 /// worker answers for: the page just stays blank. Before the load starts, there's
 /// nothing to get in the way.
-pub fn page_load_redirect(url: &str, in_private: bool) -> String {
+///
+/// `tab`: the tab it is in, which extensions' listeners are told. `redirect_here`
+/// false: a load that can't simply be started again (going back, a form being
+/// posted) is the interceptor's to decide; this only says which tab it is in.
+pub fn page_load_redirect(url: &str, in_private: bool, tab: i64, redirect_here: bool) -> String {
     if !(url.starts_with("http:") || url.starts_with("https:")) || kite_core::webext::amo::is_amo_download(url) {
+        return String::new();
+    }
+    if !redirect_here {
+        note_page_load_tab(url, tab);
         return String::new();
     }
     if let Some(to) = builtin_page_redirect(url) {
         return to;
     }
-    match ask_web_request_listeners(url, "", "", "mainFrame", "GET", in_private) {
+    match ask_web_request_listeners(url, "", "", "mainFrame", "GET", in_private, Some(tab)) {
         ListenersSay::Redirect(to) if to != url => to,
         // (Blocking is the interceptor's: it asks again.)
-        ListenersSay::Block | ListenersSay::Redirect(_) => String::new(),
+        ListenersSay::Block | ListenersSay::Redirect(_) => {
+            note_page_load_tab(url, tab);
+            String::new()
+        }
         ListenersSay::Nothing => {
             let mut decided = DECIDED_PAGE_LOADS.lock().unwrap_or_else(|e| e.into_inner());
             // (A load that never reached the interceptor stays here: this keeps them few.)
@@ -654,6 +690,7 @@ pub unsafe extern "C" fn kite_intercept(
         }
         // Page loads: what onNavigationRequested already went through isn't asked again.
         let decided = rtype == "mainFrame" && take_decided_page_load(url);
+        let tab = if rtype == "mainFrame" { take_page_load_tab(url) } else { None };
         if rtype == "mainFrame" && !decided {
             if let Some(to) = builtin_page_redirect(url) {
                 return format!("redirect:{to}");
@@ -663,7 +700,7 @@ pub unsafe extern "C" fn kite_intercept(
         let in_private = in_private != 0;
         // webRequest listeners
         if !decided {
-            match ask_web_request_listeners(url, first_party, initiator, rtype, method, in_private) {
+            match ask_web_request_listeners(url, first_party, initiator, rtype, method, in_private, tab) {
                 ListenersSay::Block => return "block".into(),
                 ListenersSay::Redirect(to) => return stand_in(&to, rtype),
                 ListenersSay::Nothing => {}

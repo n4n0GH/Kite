@@ -262,7 +262,7 @@ platform itself, with Firefox semantics:
   extension talks to it over DOM events named with a secret per-session token, so
   neither the page nor other extensions can see or forge its traffic. The token also
   authenticates every call in the Rust runtime.
-* `browser.*` is promise-based; `chrome.*` additionally supports callbacks and `lastError`.
+* `browser.*` and `chrome.*` both return promises, and both take a callback instead (with `lastError`), as in Firefox.
 * Cross-origin `fetch`/XHR from extension pages to permitted hosts bypass CORS
   (performed natively), like Firefox.
 * `declarativeNetRequest` rules are evaluated in the request interceptor; blocking
