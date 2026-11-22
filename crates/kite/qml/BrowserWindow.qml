@@ -8,6 +8,7 @@ import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "tabtree.js" as TabTree
+import "mediafile.js" as MediaFile
 
 // A browser window (Falkon's BrowserWindow): tab strip, navigation toolbar
 // with location bar and extension buttons, bookmarks toolbar, sidebar,
@@ -942,7 +943,32 @@ QQC2.ApplicationWindow {
     }
 
     function openFile() { openDialog.open() }
-    function savePage() { saveDialog.open() }
+    // Save Page As (Ctrl+S). A page is saved as one, in a format to choose. What
+    // else a tab can show (a PDF document, a picture, a video, text) is saved as
+    // the file it is, under its own name: an .html file of it would be the same
+    // file, misnamed. The tab says which it has: the PDF viewer and the pages the
+    // engine makes around a picture or a video answer with what they show. One
+    // that doesn't answer in time (a page that hangs) is taken for a page.
+    property int _saveAsked: 0
+    function savePage() {
+        const t = currentTab
+        if (!t) return
+        const n = ++_saveAsked
+        saveAnswerTimer.restart()
+        // (In a world of Kite's own: also where the page's scripts are off.)
+        t.view.runJavaScript("document.contentType", 1, type => bw.savePageOfType(n, t, type))
+    }
+    function savePageOfType(n, t, type) {
+        // (Answered already, or asked again since.)
+        if (n !== _saveAsked) return
+        _saveAsked++
+        saveAnswerTimer.stop()
+        if (!t || t !== currentTab) return
+        type = String(type || "")
+        if (MediaFile.isPage(type)) saveDialog.open()
+        else app.saveShownFile(t, type)
+    }
+    Timer { id: saveAnswerTimer; interval: 1000; onTriggered: bw.savePageOfType(bw._saveAsked, bw.currentTab, "") }
     function openFindBar() { findBar.open() }
     function toggleBookmarkFromMenu() { if (locationBar) locationBar.toggleBookmark() }
     // used by bookmark menus in the main menu
@@ -1007,7 +1033,7 @@ QQC2.ApplicationWindow {
         case "viewSource": if (t && !t.showsSource) openTab("view-source:" + t.url, {background: false, afterCurrent: true}); break
         case "pageInfo": if (t) app.showPageInfo(t); break
         case "print": printTab(); break
-        case "savePage": saveDialog.open(); break
+        case "savePage": savePage(); break
         case "openFile": openDialog.open(); break
         case "devTools": if (t) t.toggleDevTools(); break
         case "bookmarkPage": if (locationBar) locationBar.toggleBookmark(); break

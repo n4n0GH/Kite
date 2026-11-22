@@ -8,6 +8,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.notification
 import org.kde.kite
 import "extcall.js" as ExtCall
+import "mediafile.js" as MediaFile
 
 // Application controller (Falkon's MainApplication): owns the web profiles,
 // browser windows, session management, downloads, notifications, extension
@@ -1277,6 +1278,14 @@ QtObject {
             startDownload(download)
             return
         }
+        // A page saved where its dialog said (BrowserWindow's Save Page As): the
+        // engine has the path and has begun, there is nothing left to decide.
+        if (download.isSavePageDownload && download.state !== WebEngineDownloadRequest.DownloadRequested) {
+            startDownload(download)
+            return
+        }
+        // The file a tab shows, being saved (saveShownFile)?
+        const shown = download.isSavePageDownload ? takeShownFileSave(download.view) : null
         if (setting("downloads.external") && /^https?:/i.test(url) && !download.isSavePageDownload && !_privateDownloads.includes(download)) {
             const handed = JSON.parse(Browser.startExternalDownload(url, download.suggestedFileName || download.downloadFileName))
             if (handed.name) {
@@ -1287,11 +1296,12 @@ QtObject {
             // (It couldn't start: Kite downloads the file itself.)
             if (activeWindow) activeWindow.toast("The external download manager couldn't take it: " + handed.error + ". Downloading in Kite instead.", "dialog-warning", 10000)
         }
-        const asked = Date.now() < askUntil
-        askUntil = 0
+        const asked = !!shown || Date.now() < askUntil
+        if (!shown) askUntil = 0
         const dir = setting("downloads.directory")
-        const name = pendingDownloadNames[url] || download.suggestedFileName || download.downloadFileName
-        delete pendingDownloadNames[url]
+        const name = shown ? MediaFile.documentName(url, shown.type, download.suggestedFileName, download.savePageFormat !== WebEngineDownloadRequest.UnknownSaveFormat)
+                           : pendingDownloadNames[url] || download.suggestedFileName || download.downloadFileName
+        if (!shown) delete pendingDownloadNames[url]
         const path = Browser.uniqueDownloadPath(dir, name)
         download.downloadDirectory = path.substring(0, path.lastIndexOf("/"))
         download.downloadFileName = path.substring(path.lastIndexOf("/") + 1)
@@ -1300,6 +1310,23 @@ QtObject {
             return
         }
         startDownload(download)
+    }
+
+    // Save Page As on a tab that shows a file in place of a page (a PDF document,
+    // a picture, text; BrowserWindow.savePage). Of those the engine saves the
+    // file itself, whichever format is asked for. Asked without a path it comes
+    // to onDownloadRequested with the name it would give the file, which is then
+    // put to the user as for "Save Link As". `type`: the document's.
+    property var _shownFileSaves: []
+    function saveShownFile(tab, type) {
+        _shownFileSaves = _shownFileSaves.filter(s => s.view !== tab.view).concat([{view: tab.view, type: type, until: Date.now() + 60000}])
+        tab.view.save("", WebEngineDownloadRequest.SingleHtmlSaveFormat)
+    }
+    function takeShownFileSave(view) {
+        const now = Date.now()
+        const found = _shownFileSaves.find(s => s.view === view && now < s.until) || null
+        _shownFileSaves = _shownFileSaves.filter(s => s.view !== view && now < s.until)
+        return found
     }
 
     function startDownload(download) {
