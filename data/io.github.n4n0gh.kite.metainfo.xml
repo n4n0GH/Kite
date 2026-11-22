@@ -35,6 +35,14 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.11" date="2026-11-22">
+      <description>
+        <p>A security update, from a review of Kite's own code. Updating is recommended.</p>
+        <p>A web page could reach Kite's own pages, and through them its settings. A saved login or address could be filled into another page than the one it was for. An extension allowed on one site could act on others, and read what was meant for another extension. Text from pages and add-ons was drawn as markup in tooltips, menus and lists. All of this is put right.</p>
+        <p>A proxy set in Settings is now used for everything Kite fetches itself (filter lists, search suggestions, add-ons), not only for pages. A private window started with --private leaves nothing behind when Kite crashes.</p>
+        <p>Some extensions have to say what they use: listening to requests, notifications, menus and a few more now take the permission for it in the manifest, as in Firefox.</p>
+      </description>
+    </release>
     <release version="0.10.10" date="2026-11-22">
       <description>
         <p>Save Page As (Ctrl+S) on a PDF document, a picture, a video or text saves the file itself under its own name. It used to offer an .html file.</p>
