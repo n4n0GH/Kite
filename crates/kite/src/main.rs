@@ -278,7 +278,14 @@ fn main() {
     let mut joins = false;
     let mut integrity = None;
     if private {
-        profile = format!("private-{}", std::process::id());
+        // A folder of its own, gone when this Kite ends. With something random in its
+        // name: by the process id alone, a folder left by a Kite that crashed was the
+        // next one's that got the same id (in a Flatpak, ids start over each time),
+        // with what was allowed and stored in it. And what such Kites left is cleared.
+        if let Ok(base) = kite_core::paths::base_dir() {
+            kite_core::profiles::sweep_private(&base, std::time::Duration::from_secs(60));
+        }
+        profile = format!("private-{}-{}", std::process::id(), &kite_core::config::secret()[..8]);
     } else if !chosen {
         let profiles = kite_core::profiles::Profiles::open().ok();
         // A link clicked in another application goes to the Kite that's open,
@@ -314,6 +321,11 @@ fn main() {
         eprintln!("kite: cannot open profile {profile}: {e}");
         std::process::exit(1);
     }
+    // (A private run's folder is marked as in use while this Kite lives, so the next
+    // one's clearing up leaves it: kept for good, the lock ends with the process.)
+    if private {
+        std::mem::forget(kite_core::profiles::lock(state::app().shared.profile.root()));
+    }
 
     // Chromium flags: GPU rasterization, overlay scrollbars
     // ("appearance.overlayScrollbars"; js/scrollbars.js extends them to pages
@@ -330,7 +342,17 @@ fn main() {
         if s.get_bool("appearance.overlayScrollbars") {
             flags.push("--enable-features=FluentOverlayScrollbar".into());
         }
-        flags.extend(proxy_flags(&s.get_str("privacy.proxy"), &s.get_str("privacy.proxyType"), &s.get_str("privacy.proxyHost"), s.get_i64("privacy.proxyPort")));
+        // One route for the pages and for Kite's own requests (kite_core::net).
+        let route = kite_core::net::Route::from_settings(&s.get_str("privacy.proxy"), &s.get_str("privacy.proxyType"), &s.get_str("privacy.proxyHost"), s.get_i64("privacy.proxyPort"));
+        if route == kite_core::net::Route::Broken {
+            eprintln!("kite: the proxy that is set can't be used: nothing is loaded until it is put right");
+            let mut notice = state::STARTUP_NOTICE.lock().unwrap_or_else(|e| e.into_inner());
+            if notice.is_empty() {
+                *notice = "A proxy is switched on in Settings → Privacy, but its address or port can't be used. Nothing is loaded until that is put right, or the proxy switched off: Kite then needs a restart.".into();
+            }
+        }
+        flags.extend(route.chromium_flags());
+        kite_core::net::set_route(route);
         // A child's profile with safe search: the search engines' names lead to the
         // addresses they keep for safe search that can't be switched off.
         if state::app().parental.restrictions().is_some_and(|r| r.safe_search) {
@@ -436,45 +458,15 @@ fn factory_reset(profile: &str, private: bool) {
     *state::STARTUP_NOTICE.lock().unwrap_or_else(|e| e.into_inner()) = notice;
 }
 
-/// Chromium's proxy switches for "privacy.proxy": "none" connects directly,
-/// "manual" uses the given HTTP or SOCKS5 proxy (SOCKS5 also resolves host
-/// names through the proxy), "system" leaves it to the desktop settings.
-/// A host name, an IPv4 address or a bracketed IPv6 one, and nothing else:
-/// the flags are joined with spaces into QTWEBENGINE_CHROMIUM_FLAGS, so a
-/// space here (say, from an imported settings file) would add flags of its
-/// own, such as --no-sandbox.
-fn valid_proxy_host(host: &str) -> bool {
-    !host.is_empty()
-        && host.len() <= 253
-        && !host.starts_with('-')
-        && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c))
-}
-
-fn proxy_flags(mode: &str, kind: &str, host: &str, port: i64) -> Vec<String> {
-    match mode {
-        "none" => vec!["--no-proxy-server".into()],
-        "manual" if valid_proxy_host(host.trim()) && (1..=65535).contains(&port) => {
-            let scheme = if kind == "http" { "http" } else { "socks5" };
-            vec![format!("--proxy-server={scheme}://{}:{port}", host.trim())]
-        }
-        "manual" if !valid_proxy_host(host.trim()) && !host.trim().is_empty() => {
-            eprintln!("kite: ignoring the proxy setting: {host:?} isn't a host name or address");
-            vec![]
-        }
-        _ => vec![],
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn proxy_host_cannot_add_flags() {
-        assert_eq!(proxy_flags("manual", "http", " proxy.lan ", 3128), vec!["--proxy-server=http://proxy.lan:3128"]);
-        assert_eq!(proxy_flags("manual", "socks", "[::1]", 1080), vec!["--proxy-server=socks5://[::1]:1080"]);
+    fn a_proxy_from_the_settings_adds_no_switch_of_its_own() {
+        use kite_core::net::Route;
+        assert_eq!(Route::from_settings("manual", "http", " proxy.lan ", 3128).chromium_flags(), vec!["--proxy-server=http://proxy.lan:3128"]);
         for bad in ["1.2.3.4 --no-sandbox", "a\t--remote-debugging-port=9222", "--no-sandbox", "a;b", "a/b"] {
-            assert!(proxy_flags("manual", "http", bad, 8080).is_empty(), "{bad}");
+            let flags = Route::from_settings("manual", "http", bad, 8080).chromium_flags();
+            assert!(flags.len() == 1 && !flags[0].contains(' ') && !flags[0].contains("sandbox") && !flags[0].contains("debugging"), "{bad}: {flags:?}");
         }
     }
 }

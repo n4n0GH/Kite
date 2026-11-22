@@ -1318,7 +1318,7 @@ Item {
     function setWakeLock(on) {
         if (on === wakeLockHeld) return
         wakeLockHeld = on
-        Browser.setWakeLock(tabId, on, Browser.hostOf(shownUrl()))
+        Browser.setWakeLock(tabId, on, window.privateMode ? "" : Browser.hostOf(shownUrl()))
     }
     function answerWakeLock(ids, granted) {
         if (granted) setWakeLock(true)

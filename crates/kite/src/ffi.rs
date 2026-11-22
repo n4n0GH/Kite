@@ -195,6 +195,13 @@ pub fn qwebchannel_js() -> &'static str {
     app().qwebchannel_js.get_or_init(|| unsafe { s(kite_cpp_qwebchannel_js()).to_owned() })
 }
 
+/// The route Kite's own requests take (kite_core::net), for the certificate lookup:
+/// "system", "none" or "<socks5|http> <host> <port>".
+#[no_mangle]
+pub extern "C" fn kite_own_proxy() -> KiteBuf {
+    KiteBuf::from_vec(kite_core::net::route().spelled_out().into_bytes())
+}
+
 /// The `kite:certificate` page, from what the lookup in glue.cpp found.
 #[no_mangle]
 pub unsafe extern "C" fn kite_certificate_page(host: *const c_char, chain_json: *const c_char, error: *const c_char) -> KiteBuf {

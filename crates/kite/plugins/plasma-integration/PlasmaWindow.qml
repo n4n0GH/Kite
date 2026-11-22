@@ -36,7 +36,9 @@ Item {
             const state = message.m.state
             if (state) {
                 state.title = state.title || tab.title
-                state.url = tab.url
+                // (Without a name and password in front of the host: anything on the
+                // session bus reads this.)
+                state.url = String(tab.url).replace(/^([a-z][a-z0-9+.-]*:\/\/)[^\/?#@]*@/i, "$1")
                 root.told[tab.tabId] = true
             }
             Browser.plasmaMedia(tab.tabId, String(message.m.frame), JSON.stringify(state))

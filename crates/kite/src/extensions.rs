@@ -914,7 +914,9 @@ fn native_download(d: &Value) -> Result<Value, String> {
             }
             // Redirects one at a time, each address held to what the first was; and
             // written as it arrives, not held in memory first.
-            let agent: ureq::Agent = kite_core::net::config().max_redirects(0).http_status_as_error(false).build().into();
+            // (However long it takes: a large file is no stalled one. Connecting and the
+            // start of an answer keep their limits.)
+            let agent: ureq::Agent = kite_core::net::config().max_redirects(0).http_status_as_error(false).timeout_global(None).build().into();
             let mut at = url.clone();
             let mut hops = 0;
             let mut r = loop {

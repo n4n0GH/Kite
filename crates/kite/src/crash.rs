@@ -152,6 +152,9 @@ fn add_system_view(dir: &std::path::Path) {
             Ok(_) => "No core dump of it was found.".to_owned(),
             Err(_) => "coredumpctl isn't available on this system.".to_owned(),
         };
+        // (It has the command line: an address a private Kite was started with is
+        // scrambled here as it is in that Kite's log.)
+        let text = if PRIVATE.load(Relaxed) { crashlog::scramble_urls(&text) } else { text };
         let _ = crashlog::append_to_report(&dir, &format!("coredumpctl info {pid}"), &text);
     });
 }

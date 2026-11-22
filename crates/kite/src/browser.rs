@@ -1782,7 +1782,10 @@ impl qobject::Browser {
     }
     fn set_wake_lock(&self, tab_id: i32, on: bool, site: &QString) -> bool {
         let mut screen = app().screen.lock().unwrap_or_else(|e| e.into_inner());
-        match screen.set(tab_id as i64, on, &format!("{site} is keeping the screen on")) {
+        // (Without a site's name for a private window's tab: the reason goes to the
+        // desktop, which shows and may keep it.)
+        let reason = if site.is_empty() { "A page is keeping the screen on".to_owned() } else { format!("{site} is keeping the screen on") };
+        match screen.set(tab_id as i64, on, &reason) {
             Ok(()) => true,
             Err(e) => {
                 log::warn!("screen wake lock for tab {tab_id}: {e}");

@@ -12,6 +12,7 @@ Item {
     // ---- downloads, as the desktop's jobs (kite_core::plasma::jobs) -----------------
     // The ones it's showing: id → where to.
     property var jobs: ({})
+    property var fromPrivate: ({})
     Connections {
         target: root.app
         function onDownloadBegan(id, download, inPrivate) {
@@ -20,6 +21,7 @@ Item {
             if (!root.setting("downloads") || !root.app.setting("downloads.notifications") || (inPrivate && !(root.setting("privateWindows") && root.app.setting("privacy.privateNotifications")))) return
             const path = download.downloadDirectory + "/" + download.downloadFileName
             root.jobs[id] = path
+            root.fromPrivate[id] = inPrivate
             root.app.claimedDownloads[id] = true
             Browser.plasmaJobStarted(id, path, download.url.toString())
         }
@@ -43,8 +45,10 @@ Item {
             const e = JSON.parse(json)
             if (e.event === "notShown") {
                 // Nothing here to show jobs in: it's for Kite to say.
-                if (root.jobs[e.id]) root.app.notifyDownloadComplete(root.jobs[e.id])
+                // (Without the file's name for a private window's, as Kite's own says it.)
+                if (root.jobs[e.id]) root.app.notifyDownloadComplete(root.jobs[e.id], !!root.fromPrivate[e.id])
                 delete root.jobs[e.id]
+                delete root.fromPrivate[e.id]
                 return
             }
             const download = root.app.activeDownloads[e.id]

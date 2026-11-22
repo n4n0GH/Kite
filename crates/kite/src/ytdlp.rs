@@ -139,7 +139,7 @@ const SAVED: &str = "kite-saved";
 /// Without ffmpeg, video and audio can't be joined (or audio converted), so it
 /// takes the best single file. `js_runtime` is a runtime other than deno for it
 /// to use on YouTube ("node"), or "". Every argument is built here.
-fn build_args(url: &str, folder: &str, quality: &str, ffmpeg: bool, js_runtime: &str) -> Vec<String> {
+fn build_args(url: &str, folder: &str, quality: &str, ffmpeg: bool, js_runtime: &str, route: &kite_core::net::Route) -> Vec<String> {
     let s = |x: &str| x.to_owned();
     let mut a = vec![
         // No configuration file: yt-dlp reads `yt-dlp.conf` from the folder it saves to
@@ -161,6 +161,13 @@ fn build_args(url: &str, folder: &str, quality: &str, ffmpeg: bool, js_runtime: 
     if !js_runtime.is_empty() {
         a.push(s("--js-runtimes"));
         a.push(s(js_runtime));
+    }
+    // The way out that is set for pages: through that proxy, or with none ("" tells
+    // yt-dlp so, whatever the environment says). Otherwise as it finds it.
+    match (route, route.proxy_address()) {
+        (_, Some(proxy)) => a.extend([s("--proxy"), proxy]),
+        (kite_core::net::Route::Direct, _) => a.extend([s("--proxy"), s("")]),
+        _ => {}
     }
     let height = matches!(quality, "1080" | "720" | "480").then_some(quality);
     if quality == "audio" {
@@ -262,7 +269,7 @@ impl qobject::YtDownloader {
         let ffmpeg = on_path("ffmpeg").is_some();
         // yt-dlp finds deno itself; node it has to be told of.
         let js_runtime = if on_path("deno").is_none() && on_path("node").is_some() { "node" } else { "" };
-        let args = build_args(&url, &folder.to_string(), &quality, ffmpeg, js_runtime);
+        let args = build_args(&url, &folder.to_string(), &quality, ffmpeg, js_runtime, &kite_core::net::route());
 
         // (Started as Kite's other outside programs are: without Kite's own environment
         // and open files, external.rs. It runs ffmpeg and a JavaScript runtime in turn.)
@@ -367,23 +374,30 @@ mod tests {
 
     #[test]
     fn built_args_put_the_url_last_and_pick_formats() {
-        let a = build_args("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/home/u/Downloads", "best", true, "");
+        let a = build_args("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/home/u/Downloads", "best", true, "", &kite_core::net::Route::System);
         assert_eq!(&a[a.len() - 2..], &["--".to_owned(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_owned()]);
         assert!(a.iter().any(|x| x == "--no-playlist"));
         // Before anything else: no configuration file is read, the save folder's least of all.
         assert_eq!(a[0], "--ignore-config");
+        // The proxy pages go through, or none, is yt-dlp's way out too.
+        assert!(!a.iter().any(|x| x == "--proxy"), "the system's: as yt-dlp finds it");
+        let proxied = build_args("u", "d", "best", true, "", &kite_core::net::Route::from_settings("manual", "socks5", "127.0.0.1", 9050));
+        assert_eq!(proxied[proxied.iter().position(|x| x == "--proxy").unwrap() + 1], "socks5h://127.0.0.1:9050");
+        let direct = build_args("u", "d", "best", true, "", &kite_core::net::Route::Direct);
+        assert_eq!(direct[direct.iter().position(|x| x == "--proxy").unwrap() + 1], "");
+        assert_eq!(&direct[direct.len() - 2..], &["--".to_owned(), "u".to_owned()]);
         assert_eq!(a[a.iter().position(|x| x == "-P").unwrap() + 1], "/home/u/Downloads");
         assert!(!a.iter().any(|x| x == "-f"));
         let fmt = |q, ff| {
-            let a = build_args("u", "d", q, ff, "");
+            let a = build_args("u", "d", q, ff, "", &kite_core::net::Route::System);
             a.iter().position(|x| x == "-f").map(|i| a[i + 1].clone())
         };
         assert_eq!(fmt("best", false).as_deref(), Some("b"));
         assert_eq!(fmt("720", true).as_deref(), Some("bv*[height<=720]+ba/b[height<=720]/b"));
         assert_eq!(fmt("720", false).as_deref(), Some("b[height<=720]/b"));
-        assert!(build_args("u", "d", "audio", true, "").iter().any(|x| x == "-x"));
-        assert!(!build_args("u", "d", "audio", false, "").iter().any(|x| x == "-x"));
-        assert_eq!(build_args("u", "d", "best", true, "node")[build_args("u", "d", "best", true, "node").iter().position(|x| x == "--js-runtimes").unwrap() + 1], "node");
+        assert!(build_args("u", "d", "audio", true, "", &kite_core::net::Route::System).iter().any(|x| x == "-x"));
+        assert!(!build_args("u", "d", "audio", false, "", &kite_core::net::Route::System).iter().any(|x| x == "-x"));
+        assert_eq!(build_args("u", "d", "best", true, "node", &kite_core::net::Route::System)[build_args("u", "d", "best", true, "node", &kite_core::net::Route::System).iter().position(|x| x == "--js-runtimes").unwrap() + 1], "node");
     }
 
     #[test]

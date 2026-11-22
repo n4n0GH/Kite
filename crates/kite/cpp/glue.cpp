@@ -70,6 +70,7 @@ bool kite_send_referer();
 int kite_cookie_policy();
 int kite_cookie_rule(const char *host);
 KiteBuf kite_session_cookie_hosts();
+KiteBuf kite_own_proxy();
 }
 
 static QByteArray takeBuf(KiteBuf b)
@@ -194,9 +195,18 @@ static void serveCertificatePage(QWebEngineUrlRequestJob *job)
     }
     auto *socket = new QSslSocket(job);
     socket->setPeerVerifyMode(QSslSocket::VerifyNone);   // to see it even when it's a bad one
-    // As the page's own connection goes.
-    const auto proxies = QNetworkProxyFactory::systemProxyForQuery(QNetworkProxyQuery(host, int(port), QStringLiteral("https")));
-    if (!proxies.isEmpty()) socket->setProxy(proxies.first());
+    // As the page's own connection goes: through the proxy set in Kite, directly if it
+    // says none, else as the system has it. (Looked up past a proxy that is set, this
+    // connection told the site the address the proxy is there to keep.)
+    const QList<QByteArray> route = takeBuf(kite_own_proxy()).split(' ');
+    if (route.size() == 3) {
+        socket->setProxy(QNetworkProxy(route.at(0) == "http" ? QNetworkProxy::HttpProxy : QNetworkProxy::Socks5Proxy, QString::fromUtf8(route.at(1)), route.at(2).toUShort()));
+    } else if (route.value(0) == "none") {
+        socket->setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+    } else {
+        const auto proxies = QNetworkProxyFactory::systemProxyForQuery(QNetworkProxyQuery(host, int(port), QStringLiteral("https")));
+        if (!proxies.isEmpty()) socket->setProxy(proxies.first());
+    }
     const auto finish = [job, socket, host](const QString &error) {
         socket->disconnect();
         QJsonArray chain;

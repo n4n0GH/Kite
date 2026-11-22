@@ -274,6 +274,35 @@ impl Profiles {
     }
 }
 
+/// Removes what `kite --private` runs left behind: their throwaway profiles, which
+/// are deleted as such a Kite ends, but not when it crashes or is killed. One that is
+/// still running holds its folder's lock and is left alone, as is one that has only
+/// just been made (`at_least_old`: it may not hold its lock yet). How many went.
+///
+/// What stays in such a folder is what Kite itself keeps: settings, site permissions,
+/// certificate exceptions, bookmarks added in that session.
+pub fn sweep_private(base: &Path, at_least_old: std::time::Duration) -> usize {
+    let Ok(entries) = std::fs::read_dir(base.join("profiles")) else { return 0 };
+    let mut gone = 0;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let (name, path) = (entry.file_name().to_string_lossy().into_owned(), entry.path());
+        if !name.starts_with(PRIVATE_PREFIX) || !entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let age = entry.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+        if age.is_none_or(|a| a < at_least_old) {
+            continue;
+        }
+        if let Some(held) = lock(&path) {
+            if std::fs::remove_dir_all(&path).is_ok() {
+                gone += 1;
+            }
+            drop(held);
+        }
+    }
+    gone
+}
+
 /// Marks the profile at `root` as in use for as long as the file is kept.
 /// None if another process has it, or there is no telling.
 pub fn lock(root: &Path) -> Option<File> {
@@ -299,6 +328,26 @@ pub fn validate(name: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_private_run_that_didnt_end_well_is_cleared_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let profiles = dir.path().join("profiles");
+        for name in ["private-100-aaaa", "private-200-bbbb", "private-300", "default", "Work"] {
+            std::fs::create_dir_all(profiles.join(name)).unwrap();
+            std::fs::write(profiles.join(name).join("settings.json"), "{}").unwrap();
+        }
+        // One of them is a Kite that is still running.
+        let running = lock(&profiles.join("private-200-bbbb")).unwrap();
+        // Just made ones are left: their Kite may not hold its lock yet.
+        assert_eq!(sweep_private(dir.path(), std::time::Duration::from_secs(3600)), 0);
+        assert_eq!(sweep_private(dir.path(), std::time::Duration::ZERO), 2);
+        let mut left: Vec<String> = std::fs::read_dir(&profiles).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        left.sort();
+        assert_eq!(left, ["Work", "default", "private-200-bbbb"]);
+        drop(running);
+        assert_eq!(sweep_private(dir.path(), std::time::Duration::ZERO), 1);
+    }
 
     fn names(p: &Profiles) -> Vec<String> {
         p.list().into_iter().map(|i| i.name).collect()
