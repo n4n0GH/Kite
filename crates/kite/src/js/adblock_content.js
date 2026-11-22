@@ -282,13 +282,22 @@
     holdShown(els);
   }
 
+  // A style a filter list gives an element may hide it, move it, colour it: not have
+  // the page fetch something. With a selector on an attribute's value in front, a
+  // `background: url(…)` tells whoever serves that address what the value is (what is
+  // typed in a field, a token in a link), for every site the list is used on. So no
+  // function that takes an address, and nothing that could hide one: an escape, a
+  // comment. (uBlock Origin refuses the same in :style().)
+  const STYLE_REACHES_OUT = /url\s*\(|image-set\s*\(|image\s*\(|cross-fade\s*\(|element\s*\(|src\s*\(|\\|\/\*|@import/i;
+  const styleAllowed = (style) => typeof style === 'string' && !STYLE_REACHES_OUT.test(style);
+
   const styled = new WeakSet();
   function apply(parsed, el) {
     const action = parsed.action;
     if (!action) { hold(el, 'procedural'); return; }
     switch (action.type) {
       case 'remove': el.remove(); break;
-      case 'style': if (!styled.has(el)) { styled.add(el); el.style.cssText += ';' + (action.arg || ''); } break;
+      case 'style': if (!styled.has(el) && styleAllowed(action.arg || '')) { styled.add(el); el.style.cssText += ';' + (action.arg || ''); } break;
       case 'remove-attr': el.removeAttribute(action.arg); break;
       case 'remove-class': el.classList.remove(action.arg); break;
     }

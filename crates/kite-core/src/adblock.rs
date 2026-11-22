@@ -451,6 +451,20 @@ fn fetch(url: &str) -> anyhow::Result<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_trusted_scriptlet_is_marked_as_one() {
+        // What only uBlock Origin's own lists and the user's rules may use (they decide
+        // what a page's requests are answered with, or set cookies and storage): each
+        // has to carry the permission, or any list has it.
+        let bundle: serde_json::Value = serde_json::from_str(RESOURCES).unwrap();
+        let resources = bundle["resources"].as_array().unwrap();
+        let trusted: Vec<&serde_json::Value> = resources.iter().filter(|r| r["name"].as_str().is_some_and(|n| n.starts_with("trusted-"))).collect();
+        assert!(trusted.len() >= 30, "the bundle has its trusted scriptlets");
+        for r in trusted {
+            assert_eq!(r["permission"], serde_json::json!(TRUSTED), "{}", r["name"]);
+        }
+    }
+
     fn engine_with(rules: &str, trusted: bool) -> AdBlock {
         let ab = AdBlock::new(std::path::PathBuf::from("/nonexistent"));
         let mut set = FilterSet::new(false);
@@ -496,6 +510,11 @@ mod tests {
     #[test]
     fn trusted_scriptlets_need_a_trusted_list() {
         let rule = "example.org##+js(trusted-replace-xhr-response, a, b, c)\n";
+        assert!(!engine_with(rule, true).page_plan("https://example.org/").unwrap().script.is_empty());
+        assert!(engine_with(rule, false).page_plan("https://example.org/").unwrap().script.is_empty());
+        // (The one that was any list's until the bundle marked it: it chooses what a
+        // page's requests are answered with.)
+        let rule = "example.org##+js(trusted-prevent-xhr, /api, a:b)\n";
         assert!(!engine_with(rule, true).page_plan("https://example.org/").unwrap().script.is_empty());
         assert!(engine_with(rule, false).page_plan("https://example.org/").unwrap().script.is_empty());
         assert!(trusted_list("https://ublockorigin.github.io/uAssets/filters/filters.min.txt"));

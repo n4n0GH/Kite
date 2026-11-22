@@ -93,8 +93,14 @@ def scriptlets(resources):
             "content": base64.b64encode(code[fn].encode()).decode(),
             "dependencies": deps,
         }
-        if re.search(r"^\s*requiresTrust:\s*true", block, re.M):
+        # By its name as well as by what its registration says: "trusted-prevent-xhr.js"
+        # once came out without the mark (its registration wasn't laid out as the others
+        # are), and was then any list's to use.
+        marked = re.search(r"requiresTrust:\s*true", block) is not None
+        if marked or name.startswith("trusted-"):
             entry["permission"] = TRUSTED
+        if name.startswith("trusted-") and not marked:
+            problems.append(f"{name}: named trusted, but its registration doesn't say requiresTrust (marked all the same; look at how it is registered)")
         out.append(entry)
     return out, problems
 
