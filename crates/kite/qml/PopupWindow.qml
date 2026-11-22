@@ -17,8 +17,9 @@ Window {
     // An address for another app the page asked to open (as in a tab: only after
     // a click, and only once the user says so).
     property string externalPrompt: ""
-    width: request && request.requestedGeometry.width > 0 ? request.requestedGeometry.width : 640
-    height: request && request.requestedGeometry.height > 0 ? request.requestedGeometry.height + bar.height : 480
+    // (As the page asks, but a window: not one too small to see, or to find its address in.)
+    width: Math.max(320, request && request.requestedGeometry.width > 0 ? request.requestedGeometry.width : 640)
+    height: Math.max(240, request && request.requestedGeometry.height > 0 ? request.requestedGeometry.height + bar.height : 480)
     x: request && request.requestedGeometry.x > 0 ? request.requestedGeometry.x : 100
     y: request && request.requestedGeometry.y > 0 ? request.requestedGeometry.y : 100
     title: view.title
@@ -51,6 +52,15 @@ Window {
         WebEngineView {
             // A local file may not read other local files (Chrome's default; Qt's is on).
             settings.localContentCanAccessFileUrls: false
+            // What is set for pages holds for a page in a window of its own as in a tab
+            // (WebTab.qml): a page could else open one to be rid of it.
+            settings.javascriptEnabled: w.app.liveSettings["web.javascript"]
+            settings.autoLoadImages: w.app.liveSettings["web.autoloadImages"]
+            settings.localStorageEnabled: w.app.liveSettings["web.localStorage"]
+            settings.dnsPrefetchEnabled: w.app.liveSettings["web.dnsPrefetch"]
+            settings.webRTCPublicInterfacesOnly: !!w.app.liveSettings["privacy.webrtcPublicOnly"]
+            settings.pdfViewerEnabled: !!w.app.liveSettings["web.pdfViewer"]
+            settings.pluginsEnabled: !!w.app.liveSettings["web.pdfViewer"]
             id: view
             // (A name to find it by from C++, Browser.adoptedView.)
             objectName: "kite-popup-web-" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)
@@ -74,7 +84,7 @@ Window {
             profile: w.profile
             onWindowCloseRequested: w.close()
             onNewWindowRequested: request => w.opener.window.openTab("", {request: request, background: false, container: w.opener.container})
-            onGeometryChangeRequested: geometry => { w.x = geometry.x; w.y = geometry.y; w.width = geometry.width; w.height = geometry.height + bar.height }
+            onGeometryChangeRequested: geometry => { w.x = geometry.x; w.y = geometry.y; w.width = Math.max(320, geometry.width); w.height = Math.max(240, geometry.height + bar.height) }
             // (adoptedView: as for a tab a page opened, BrowserWindow.qml.)
             Component.onCompleted: { w.request.openIn(view); Browser.adoptedView(view.objectName) }
         }

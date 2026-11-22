@@ -7,6 +7,7 @@ import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "extcall.js" as ExtCall
+import "plaintext.js" as PlainText
 
 // A browser wt (Falkon's WebTab + WebView + WebPage).
 Item {
@@ -61,6 +62,7 @@ Item {
     onShownInPaneChanged: {
         // (Next to the active pane's tab, it's on view without being activated.)
         if (shownInPane) wake()
+        if (shownInPane && heldAuth) { const r = heldAuth; heldAuth = null; askAuthentication(r) }
         if (!shownInPane && certError) {
             certRetryUrl = certError.url.toString()
             certError.rejectCertificate()
@@ -348,7 +350,9 @@ Item {
     function outIcon(address) {
         if (fetchedIcon.page === url && fetchedIcon.png !== "") return fetchedIcon.png
         const saved = /^https?:/.test(url) ? Browser.cachedFavicon(url) : ""
-        return saved !== "" ? saved : address
+        // (The engine's icon address, or none: never the site's own address for it, which
+        // the tab strip would fetch itself, past the page's network settings.)
+        return saved !== "" ? saved : /^image:/.test(String(address)) ? address : ""
     }
     // After each load, the page itself fetches its icon (through Chromium: the
     // proxy, secure DNS and cache settings hold) in Kite's script world, and
@@ -842,6 +846,7 @@ Item {
                         wt.releasePointerLock()
                         if (wt._elementPicker && wt._elementPicker.visible) wt._elementPicker.visible = false
                         wt.loginForm = false
+                        wt.heldAuth = null
                         wt.frameLoginForm = false
                         wt.loginFrames = ({})
                         wt._knownFrames = ({})
@@ -955,17 +960,24 @@ Item {
                     }
                     const dest = request.destination
                     const popup = dest === WebEngineNewWindowRequest.InNewDialog || dest === WebEngineNewWindowRequest.InNewWindow
-                    if (popup && !wt.app.setting("tabs.openPopupsInTabs")) {
+                    // A page nobody is looking at doesn't put itself in front: what a tab in the
+                    // background opens is a tab in the background too, not the one shown next
+                    // and not a window over the others.
+                    const unseen = !wt.shownInPane
+                    if (popup && !unseen && !wt.app.setting("tabs.openPopupsInTabs")) {
                         const w = popupComponent.createObject(null, {app: wt.app, profile: web.profile, request: request, opener: wt})
                         return
                     }
                     const bg = dest === WebEngineNewWindowRequest.InNewBackgroundTab
-                    wt.window.openTab("", {request: request, background: bg && !wt.app.setting("tabs.switchToNewTabFromLink"), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, fromLink: true, container: wt.container})
+                    wt.window.openTab("", {request: request, background: unseen || (bg && !wt.app.setting("tabs.switchToNewTabFromLink")), index: wt.window.linkTabIndex(wt), openerTabId: wt.tabId, fromLink: true, container: wt.container})
                 }
 
                 onWindowCloseRequested: wt.close()
 
                 onFullScreenRequested: request => {
+                    // (Only the page that is shown fills the screen: one in the background
+                    // would take the window's bars away from around another page.)
+                    if (request.toggleOn && !wt.shownInPane) { request.reject(); return }
                     request.accept()
                     if (request.toggleOn) wt.window.enterContentFullScreen(wt)
                     else wt.window.exitContentFullScreen(true)
@@ -981,6 +993,12 @@ Item {
                         permission.deny()
                         return
                     }
+                    // One bar for one question, and not a pile of them: asked again while it
+                    // is still up, or after four others, it waits (unanswered, it can be asked
+                    // again later). Each bar pushes the page down, which a page could use to
+                    // put "Allow" under a click it is expecting.
+                    const asked = wt.pendingPermissions.some(p => p.permission && p.originUrl === permission.origin.toString() && p.permission.permissionType === permission.permissionType)
+                    if (asked || wt.pendingPermissions.length >= 4) return
                     wt.pendingPermissions = wt.pendingPermissions.concat([{permission: permission, origin: wt.promptOrigin(permission.origin.toString()), originUrl: permission.origin.toString()}])
                 }
 
@@ -1109,7 +1127,7 @@ Item {
                         Kirigami.Heading { text: "Warning: Potential Security Risk Ahead"; Layout.fillWidth: true; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter }
                         QQC2.Label {
                             Layout.fillWidth: true; wrapMode: Text.Wrap
-                            text: wt.certError ? ("Kite detected a potential security threat and did not continue to <b>" + Browser.hostOf(wt.certError.url.toString()) + "</b>.<br><br>" + wt.certError.description) : ""
+                            text: wt.certError ? ("Kite detected a potential security threat and did not continue to <b>" + Browser.hostOf(wt.certError.url.toString()) + "</b>.<br><br>" + PlainText.escaped(wt.certError.description)) : ""
                         }
                         QQC2.Label {
                             visible: wt.certFingerprint !== ""
@@ -1565,7 +1583,16 @@ Item {
     }
     function closeAutofill() { if (_autofillPopup) _autofillPopup.close() }
     function autofillKey(key) { if (_autofillPopup) _autofillPopup.key(key) }
+    // A site (or proxy) asking for a name and password. Over the tab it is for: asked
+    // from a tab in the background, the dialog would come up over whatever page is
+    // looked at, as if that one had asked. It waits until its tab is shown.
+    property var heldAuth: null
     function askAuthentication(request) {
+        if (!shownInPane) {
+            if (heldAuth && heldAuth !== request) heldAuth.dialogReject()
+            heldAuth = request
+            return
+        }
         if (!_authDialog) _authDialog = authDialogComponent.createObject(wt, {tab: wt})
         _authDialog.ask(request)
     }

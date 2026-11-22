@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Falkon's BrowsingLibrary: History, Bookmarks and Downloads.
 ManagerWindow {
@@ -98,7 +99,7 @@ ManagerWindow {
                         ColumnLayout {
                             spacing: 0
                             Layout.fillWidth: true
-                            QQC2.Label { text: Browser.displayUrl(modelData.url); color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                            QQC2.Label { textFormat: Text.PlainText; text: Browser.displayUrl(modelData.url); color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; Layout.fillWidth: true }
                             QQC2.Label { visible: !!modelData.title; text: modelData.title; textFormat: Text.PlainText; opacity: 0.7; elide: Text.ElideRight; font: Kirigami.Theme.smallFont; Layout.fillWidth: true }
                         }
                         QQC2.Label { text: new Date(modelData.date).toLocaleString(Qt.locale(), Locale.ShortFormat) + "  ·  " + modelData.count + "×"; opacity: 0.7 }
@@ -286,8 +287,8 @@ ManagerWindow {
                             visible: row.modelData.type !== "separator"
                             spacing: 0
                             Layout.fillWidth: true
-                            QQC2.Label { text: row.modelData.title + (row.modelData.type === "folder" ? "  (" + row.modelData.children + ")" : ""); elide: Text.ElideRight; Layout.fillWidth: true }
-                            QQC2.Label { visible: !!row.modelData.url; text: row.modelData.url + (row.modelData.keyword ? "   ⌨ " + row.modelData.keyword : ""); color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; font: Kirigami.Theme.smallFont; Layout.fillWidth: true }
+                            QQC2.Label { textFormat: Text.PlainText; text: row.modelData.title + (row.modelData.type === "folder" ? "  (" + row.modelData.children + ")" : ""); elide: Text.ElideRight; Layout.fillWidth: true }
+                            QQC2.Label { textFormat: Text.PlainText; visible: !!row.modelData.url; text: row.modelData.url + (row.modelData.keyword ? "   ⌨ " + row.modelData.keyword : ""); color: Kirigami.Theme.linkColor; elide: Text.ElideMiddle; font: Kirigami.Theme.smallFont; Layout.fillWidth: true }
                         }
                         QQC2.ToolButton { icon.name: "go-up"; visible: row.index > 0 && search.text === ""; onClicked: Browser.moveBookmark(row.modelData.id, bp.folder, row.index - 1) }
                         QQC2.ToolButton { icon.name: "go-down"; visible: row.index < bp.rows.length - 1 && search.text === ""; onClicked: Browser.moveBookmark(row.modelData.id, bp.folder, row.index + 2) }
@@ -304,7 +305,7 @@ ManagerWindow {
                                 title: "Move to"
                                 Instantiator {
                                     model: moveMenu.folders
-                                    delegate: QQC2.MenuItem { required property var modelData; text: "   ".repeat(modelData.depth) + modelData.title; onTriggered: Browser.moveBookmark(row.modelData.id, modelData.id, -1) }
+                                    delegate: QQC2.MenuItem { required property var modelData; text: PlainText.menuText("   ".repeat(modelData.depth) + modelData.title); onTriggered: Browser.moveBookmark(row.modelData.id, modelData.id, -1) }
                                     onObjectAdded: (i, o) => moveMenu.insertItem(i, o)
                                     onObjectRemoved: (i, o) => moveMenu.removeItem(o)
                                 }

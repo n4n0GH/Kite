@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "tabtree.js" as TabTree
 import "mediafile.js" as MediaFile
+import "plaintext.js" as PlainText
 
 // A browser window (Falkon's BrowserWindow): tab strip, navigation toolbar
 // with location bar and extension buttons, bookmarks toolbar, sidebar,
@@ -1272,6 +1273,7 @@ QQC2.ApplicationWindow {
                     id: statusText
                     anchors.centerIn: parent
                     width: parent.width - Kirigami.Units.largeSpacing
+                    textFormat: Text.PlainText
                     text: statusBubble.text
                     elide: Text.ElideMiddle
                     font: Kirigami.Theme.smallFont
@@ -1334,7 +1336,7 @@ QQC2.ApplicationWindow {
                 required property string title
                 required property url url
                 required property int offset
-                text: title || url
+                text: PlainText.menuText(title || url)
                 onTriggered: bw.currentTab.view.goBackOrForward(offset)
             }
             onObjectAdded: (i, o) => historyMenu.insertItem(i, o)

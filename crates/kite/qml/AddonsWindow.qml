@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Managing extensions (Firefox's about:addons): installed extensions and a
 // browser for addons.mozilla.org.
@@ -77,7 +78,7 @@ ManagerWindow {
                     Layout.fillWidth: true
                     visible: w.updates.length > 0
                     type: Kirigami.MessageType.Positive
-                    text: w.updates.map(u => u.name + " " + u.available).join(", ") + (w.updates.length === 1 ? " is available." : " are available.")
+                    text: w.updates.map(u => PlainText.escaped(u.name + " " + u.available)).join(", ") + (w.updates.length === 1 ? " is available." : " are available.")
                     actions: [Kirigami.Action { text: "Update All"; icon.name: "update-none"; onTriggered: { for (const u of w.updates) Extensions.installFromAmo(u.slug); w.updates = [] } }]
                 }
                 Kirigami.PlaceholderMessage {
@@ -111,8 +112,8 @@ ManagerWindow {
                                     Layout.fillWidth: true
                                     spacing: 2
                                     RowLayout {
-                                        Kirigami.Heading { level: 4; text: card.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth }
-                                        QQC2.Label { text: card.modelData.version; opacity: 0.6 }
+                                        Kirigami.Heading { textFormat: Text.PlainText; level: 4; text: card.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth }
+                                        QQC2.Label { textFormat: Text.PlainText; text: card.modelData.version; opacity: 0.6 }
                                         QQC2.Label { visible: card.modelData.temporary; text: "Temporary"; color: Kirigami.Theme.neutralTextColor }
                                         Kirigami.Icon {
                                             visible: !!card.modelData.allowPrivate
@@ -126,7 +127,7 @@ ManagerWindow {
                                         QQC2.Label { visible: !!card.modelData.broken; text: "Failed to load"; color: Kirigami.Theme.negativeTextColor }
                                         Item { Layout.fillWidth: true }
                                     }
-                                    QQC2.Label { text: card.modelData.broken ? card.modelData.error : (card.modelData.description || ""); wrapMode: Text.Wrap; Layout.fillWidth: true; maximumLineCount: card.expanded ? 20 : 2; elide: Text.ElideRight }
+                                    QQC2.Label { textFormat: Text.PlainText; text: card.modelData.broken ? card.modelData.error : (card.modelData.description || ""); wrapMode: Text.Wrap; Layout.fillWidth: true; maximumLineCount: card.expanded ? 20 : 2; elide: Text.ElideRight }
                                 }
                                 QQC2.Switch {
                                     enabled: !card.modelData.broken && w.app.parentalSession.allows.extensions
@@ -165,23 +166,24 @@ ManagerWindow {
                                         Layout.fillWidth: true
                                     }
                                 }
-                                QQC2.Label { Kirigami.FormData.label: "Author:"; text: card.modelData.author || "—"; visible: !card.modelData.broken }
+                                QQC2.Label { textFormat: Text.PlainText; Kirigami.FormData.label: "Author:"; text: card.modelData.author || "—"; visible: !card.modelData.broken }
                                 QQC2.Label { Kirigami.FormData.label: "ID:"; text: card.modelData.id; textFormat: Text.PlainText }
                                 QQC2.Label { Kirigami.FormData.label: "Manifest:"; text: "Version " + card.modelData.manifestVersion; visible: !card.modelData.broken }
-                                QQC2.Label { Kirigami.FormData.label: "Source:"; text: card.modelData.source === "amo" ? "addons.mozilla.org" : card.modelData.source === "temporary" ? "Temporary (" + card.modelData.path + ")" : "File" }
-                                QQC2.Label { Kirigami.FormData.label: "Homepage:"; visible: !!card.modelData.homepage; text: "<a href=\"" + card.modelData.homepage + "\">" + card.modelData.homepage + "</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
+                                QQC2.Label { textFormat: Text.PlainText; Kirigami.FormData.label: "Source:"; text: card.modelData.source === "amo" ? "addons.mozilla.org" : card.modelData.source === "temporary" ? "Temporary (" + card.modelData.path + ")" : "File" }
+                                QQC2.Label { Kirigami.FormData.label: "Homepage:"; visible: /^https?:\/\//i.test(card.modelData.homepage || ""); text: "<a href=\"" + PlainText.escaped(card.modelData.homepage).replace(/"/g, "&quot;") + "\">" + PlainText.escaped(card.modelData.homepage) + "</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
                                 QQC2.Label { Kirigami.FormData.label: "Extension page:"; visible: !!card.modelData.amoSlug; text: "<a href=\"https://addons.mozilla.org/firefox/addon/" + card.modelData.amoSlug + "/\">addons.mozilla.org</a>"; onLinkActivated: l => w.app.openUrl(l, "tab") }
                                 ColumnLayout {
                                     Kirigami.FormData.label: "Permissions:"
                                     visible: !card.modelData.broken
                                     Repeater {
                                         model: (card.modelData.warnings || []).length ? card.modelData.warnings : ["No special permissions"]
-                                        delegate: QQC2.Label { required property string modelData; text: "• " + modelData }
+                                        delegate: QQC2.Label { textFormat: Text.PlainText; required property string modelData; text: "• " + modelData }
                                     }
                                 }
                                 QQC2.Label {
                                     Kirigami.FormData.label: "Not supported:"
                                     visible: (card.modelData.unsupported || []).length > 0
+                                    textFormat: Text.PlainText
                                     text: (card.modelData.unsupported || []).join(", ")
                                     color: Kirigami.Theme.neutralTextColor
                                     wrapMode: Text.Wrap
@@ -325,7 +327,8 @@ ManagerWindow {
                             : ("<p><b>" + bp.detail.summary + "</b></p>" + (bp.detail.description || "").replace(/\n/g, "<br>")
                                + "<p><b>Permissions:</b> " + (bp.detail.permissions.concat(bp.detail.host_permissions).join(", ") || "none") + "</p>"
                                + "<p>Version " + bp.detail.version + " · " + w.formatUsers(bp.detail.users) + " users · ★ " + bp.detail.rating.toFixed(1) + "</p>")
-                        onLinkActivated: l => w.app.openUrl(l, "tab")
+                        // (A link in text from the listing: to the web, wherever it says it leads.)
+                        onLinkActivated: l => { if (/^https?:\/\//i.test(l)) w.app.openUrl(l, "tab") }
                     }
                 }
             }

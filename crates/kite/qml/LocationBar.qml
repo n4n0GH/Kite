@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtWebEngine
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Falkon's LocationBar: URL entry with history/bookmark completion and search
 // suggestions, security indicator, bookmark star, content-blocker shield and
@@ -23,8 +24,13 @@ QQC2.TextField {
 
     function displayUrl(u) {
         if (!u || u === "about:blank" || u === win.app.newTabUrl() || u === "kite:start" || win.app.isStartPage(u)) return ""
-        return u
+        // (Without a name and password before the host: "https://bank.example@evil.example/"
+        // reads as the bank's, and is the other's.)
+        return String(u).replace(/^([a-z][a-z0-9+.-]*:\/\/)[^\/?#@]*@/i, "$1")
     }
+    // An address longer than the field shows its beginning, where the site's name is: a
+    // field set from code scrolls to its end, where a page can write anything.
+    onTextChanged: if (!activeFocus) cursorPosition = 0
 
     text: editing ? text : (tab ? displayUrl(tab.url) : "")
     placeholderText: "Search with " + win.app.setting("general.searchEngine") + " or enter address"
@@ -58,7 +64,7 @@ QQC2.TextField {
     }
 
     onActiveFocusChanged: {
-        if (!activeFocus) { editing = false; popup.close() }
+        if (!activeFocus) { editing = false; popup.close(); cursorPosition = 0 }
     }
     // Qt shows the caret for an input method's event (a preedit) as well as for
     // the focus, but hides it only for the focus; it blinks only with the focus.
@@ -139,7 +145,7 @@ QQC2.TextField {
         flat: true
         icon.name: !field.tab ? "globe" : field.extName !== "" ? "kite-extension" : field.tab.isSecure ? "security-high" : field.tab.url.startsWith("http:") ? "security-low" : "globe"
         onClicked: siteInfo.open()
-        QQC2.ToolTip.text: field.extName !== "" ? "Extension (" + field.extName + ")" : field.tab && field.tab.isSecure ? "Connection is secure" : "Connection is not secure"
+        QQC2.ToolTip.text: field.extName !== "" ? PlainText.plain("Extension (" + field.extName + ")") : field.tab && field.tab.isSecure ? "Connection is secure" : "Connection is not secure"
         QQC2.ToolTip.visible: hovered
         QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
     }
@@ -234,7 +240,7 @@ QQC2.TextField {
                     delegate: QQC2.MenuItem {
                         required property var modelData
                         // (From a frame of another site: which one it is for.)
-                        text: (modelData.username || "(no username)") + (modelData.frameHost ? " — " + modelData.frameHost : "")
+                        text: PlainText.menuText((modelData.username || "(no username)") + (modelData.frameHost ? " — " + modelData.frameHost : ""))
                         icon.name: "user-identity"
                         onTriggered: field.tab.fillLogin(modelData.id, modelData.frameId)
                     }
@@ -445,7 +451,7 @@ QQC2.TextField {
             permissions = all.filter(p => t.permissionState(p) === 1 || t.permissionInUse(p))
         }
         contentItem: ColumnLayout {
-            Kirigami.Heading { level: 4; text: field.extName !== "" ? field.extName : Browser.hostOf(field.tab ? field.tab.url : ""); elide: Text.ElideRight; Layout.fillWidth: true }
+            Kirigami.Heading { level: 4; textFormat: Text.PlainText; text: field.extName !== "" ? field.extName : Browser.hostOf(field.tab ? field.tab.url : ""); elide: Text.ElideRight; Layout.fillWidth: true }
             QQC2.Label {
                 Layout.fillWidth: true; wrapMode: Text.Wrap
                 text: field.extName !== "" ? "This page is provided by an extension." : field.tab && field.tab.isSecure ? "Your connection to this site is encrypted." : "Your connection to this site is not encrypted. Information you submit could be viewed by others."

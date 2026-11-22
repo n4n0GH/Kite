@@ -4,6 +4,7 @@ import QtWebEngine
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "contextmenu.js" as ContextMenu
+import "plaintext.js" as PlainText
 
 // Web page context menu, including extension `menus` entries.
 QQC2.Menu {
@@ -16,6 +17,7 @@ QQC2.Menu {
     readonly property bool linkIsImage: ContextMenu.linkLeadsToImage(linkUrl, mediaUrl, mediaType === ContextMenuRequest.MediaTypeImage)
     readonly property string linkNoun: linkIsImage ? "Image" : "Link"
     readonly property bool linkOpenable: !!linkUrl && !!tab && ContextMenu.linkOpenable(linkUrl, tab.url)
+    readonly property bool imageOpenable: !!mediaUrl && !!tab && ContextMenu.imageOpenable(mediaUrl, tab.url)
     property int mediaType: 0
     property string selection: ""
     // The selected text, if it is an address without being a link on the page.
@@ -88,8 +90,8 @@ QQC2.Menu {
         // The video under the pointer (request position is in view pixels).
         onTriggered: { const z = menu.tab.view.zoomFactor || 1; menu.tab.app.startPip(menu.tab, menu.req.position.x / z, menu.req.position.y / z) }
     }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
-    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage && menu.imageOpenable; height: visible ? implicitHeight : 0; text: "Open Image in New Tab"; icon.name: "tab-new"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container}) }
+    QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage && menu.imageOpenable; height: visible ? implicitHeight : 0; text: "Open Image in New Split Tab"; icon.name: "view-split-left-right"; onTriggered: menu.tab.window.openTab(menu.mediaUrl, {background: true, showInPane: true, pane: 1 - menu.tab.pane, container: menu.tab.container}) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage; height: visible ? implicitHeight : 0; text: "Copy Image"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Copy Image Address"; icon.name: "edit-copy"; onTriggered: menu.act(WebEngineView.CopyImageUrlToClipboard) }
     QQC2.MenuItem { visible: menu.mediaType === ContextMenuRequest.MediaTypeImage && !menu.linkIsImage; height: visible ? implicitHeight : 0; text: "Save Image As…"; icon.name: "document-save"; onTriggered: menu.saveAs(WebEngineView.DownloadImageToDisk) }
@@ -113,7 +115,7 @@ QQC2.Menu {
     QQC2.MenuItem { visible: menu.editable || !!menu.selection; height: visible ? implicitHeight : 0; text: "Select All"; icon.name: "edit-select-all"; onTriggered: menu.act(WebEngineView.SelectAll) }
     QQC2.MenuItem {
         visible: !!menu.selection; height: visible ? implicitHeight : 0
-        text: "Search " + menu.tab.app.setting("general.searchEngine") + " for “" + (menu.selection.length > 24 ? menu.selection.substring(0, 24) + "…" : menu.selection) + "”"
+        text: PlainText.menuText("Search " + menu.tab.app.setting("general.searchEngine") + " for “" + (menu.selection.length > 24 ? menu.selection.substring(0, 24) + "…" : menu.selection) + "”")
         icon.name: "search"
         onTriggered: menu.tab.window.openTab(Browser.searchUrl(menu.tab.app.setting("general.searchEngine"), menu.selection), {background: false, index: menu.tab.window.linkTabIndex(menu.tab), container: menu.tab.container})
     }
@@ -158,7 +160,7 @@ QQC2.Menu {
         QQC2.MenuItem {
             property var node
             property var ctxMenu
-            text: node.title
+            text: PlainText.menuText(node.title)
             enabled: node.enabled !== false
             checkable: node.type === "checkbox" || node.type === "radio"
             checked: !!node.checked
@@ -171,7 +173,7 @@ QQC2.Menu {
     property Component extSubComp: Component {
         QQC2.Menu {
             property var node
-            title: node.title
+            title: PlainText.menuText(node.title)
             icon.source: node.icon || ""
             icon.name: node.iconName || ""
             icon.color: node.iconName ? palette.text : "transparent"

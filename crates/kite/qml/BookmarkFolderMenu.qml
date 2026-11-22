@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls as QQC2
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Lazily populated bookmark folder menu (recursive).
 QQC2.Menu {
@@ -14,7 +15,7 @@ QQC2.Menu {
         delegate: QtObject {
             required property var modelData
             property QtObject item: modelData.type === "folder"
-                ? subComp.createObject(null, {title: modelData.title, folderId: modelData.id, bar: menu.bar})
+                ? subComp.createObject(null, {title: PlainText.menuText(modelData.title), folderId: modelData.id, bar: menu.bar})
                 : modelData.type === "separator" ? sepComp.createObject(null) : itemComp.createObject(null, {node: modelData})
         }
         onObjectAdded: (i, o) => { if (o.item instanceof QQC2.Menu) menu.insertMenu(i, o.item); else menu.insertItem(i, o.item) }
@@ -30,7 +31,7 @@ QQC2.Menu {
     property Component itemComp: Component {
         QQC2.MenuItem {
             property var node
-            text: node.title || node.url
+            text: PlainText.menuText(node.title || node.url)
             icon.name: "text-html"
             onTriggered: menu.bar.open(node.url, 0)
         }

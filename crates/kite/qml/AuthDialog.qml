@@ -18,10 +18,15 @@ Kirigami.Dialog {
     padding: Kirigami.Units.largeSpacing
     preferredWidth: Kirigami.Units.gridUnit * 24
 
+    // A proxy asking: what is typed goes to the proxy, whatever site the page is. No
+    // saved login is offered for that, and none is kept under the site's name.
+    readonly property bool forProxy: !!request && request.type === AuthenticationDialogRequest.AuthenticationTypeProxy
     function ask(r) {
+        // (One at a time: the one before is answered no, not left waiting for good.)
+        if (request && request !== r) request.dialogReject()
         request = r
         site = r.url.toString()
-        const saved = JSON.parse(Passwords.httpAuth(site))
+        const saved = forProxy ? null : JSON.parse(Passwords.httpAuth(site))
         user.text = saved ? saved.username : ""
         pass.text = saved ? saved.password : ""
         remember.checked = !!saved
@@ -30,7 +35,7 @@ Kirigami.Dialog {
     }
     onAccepted: {
         if (!request) return
-        if (remember.checked) Passwords.saveHttpAuth(site, tab.window.privateMode, user.text, pass.text)
+        if (remember.checked && !forProxy) Passwords.saveHttpAuth(site, tab.window.privateMode, user.text, pass.text)
         request.dialogAccept(user.text, pass.text)
         request = null
     }

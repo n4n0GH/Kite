@@ -84,7 +84,7 @@ Rectangle {
                 url = drop.urls[0].toString()
                 // Not scripts (a dragged "javascript:" bookmarklet link), nor
                 // Kite's pages or data: documents a website's link could lead to.
-                if (/^(javascript|kite|data|view-source):/i.test(url)) return
+                if (/^(javascript|kite|data|view-source|moz-extension|chrome|devtools|qrc|blob|filesystem):/i.test(url)) return
             } else if (drop.hasText && drop.text.trim() !== "") {
                 url = Browser.searchUrl(stripRoot.browser.app.setting("general.searchEngine"), drop.text.trim())
             } else return

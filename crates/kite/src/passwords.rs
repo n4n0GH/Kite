@@ -376,7 +376,12 @@ impl qobject::Passwords {
 
     fn http_auth(&self, url: &QString) -> QString {
         let url = url.to_string();
-        let e = with_store(|s, db| if s.is_locked(db) { None } else { s.entries_for(db, &url).ok().and_then(|v| v.into_iter().next()) });
+        // Over http, what is typed into this dialog crosses the network as it is, to
+        // whoever answers for that name there. So only a login that was saved from this
+        // dialog (one without a form's fields) is offered then, never the one for the
+        // site's form, which was typed over https.
+        let plain_http = !url.starts_with("https://");
+        let e = with_store(|s, db| if s.is_locked(db) { None } else { s.entries_for(db, &url).ok().and_then(|v| v.into_iter().find(|e| !plain_http || e.data.is_empty())) });
         match e {
             Some(e) => js(&json!({"username": e.username, "password": e.password})),
             None => q("null"),

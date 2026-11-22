@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Extensions on the toolbar (like Firefox's unified extensions button):
 // buttons of the extensions pinned to the toolbar (browser actions, with
@@ -70,7 +71,7 @@ RowLayout {
             icon.color: "transparent"
             display: QQC2.AbstractButton.IconOnly
             text: ext.title || ""
-            QQC2.ToolTip.text: ext.title || ""
+            QQC2.ToolTip.text: PlainText.plain(ext.title || "")
             QQC2.ToolTip.visible: hovered && !popupOpen
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
             onClicked: root.trigger(ext, btn)
@@ -218,9 +219,10 @@ RowLayout {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            QQC2.Label { text: row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                            QQC2.Label { textFormat: Text.PlainText; text: row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
                             QQC2.Label {
                                 visible: text !== ""
+                                textFormat: Text.PlainText
                                 text: row.act && row.act.title && row.act.title !== row.modelData.name ? row.act.title : ""
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.7
@@ -333,6 +335,7 @@ RowLayout {
         QQC2.Label {
             id: badgeLabel
             anchors.centerIn: parent
+            textFormat: Text.PlainText
             text: parent.action && parent.action.badgeText || ""
             color: parent.action && parent.action.badgeFg || "white"
             font.pixelSize: Kirigami.Units.gridUnit * 0.55

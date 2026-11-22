@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // Falkon's "super menu".
 QQC2.Menu {
@@ -60,7 +61,7 @@ QQC2.Menu {
             enabled: menu.closedTabs.length > 0
             Instantiator {
                 model: menu.closedTabs
-                delegate: QQC2.MenuItem { required property var modelData; required property int index; text: modelData.title || modelData.url; onTriggered: win.reopenClosedTab(index) }
+                delegate: QQC2.MenuItem { required property var modelData; required property int index; text: PlainText.menuText(modelData.title || modelData.url); onTriggered: win.reopenClosedTab(index) }
                 onObjectAdded: (i, o) => closedTabsMenu.insertItem(i, o)
                 onObjectRemoved: (i, o) => closedTabsMenu.removeItem(o)
             }
@@ -73,7 +74,7 @@ QQC2.Menu {
                 model: menu.closedWindows
                 delegate: QQC2.MenuItem {
                     required property var modelData; required property int index
-                    text: (modelData.tabs[modelData.current] || modelData.tabs[0] || {title: "Window"}).title + " (" + modelData.tabs.length + " tabs)"
+                    text: PlainText.menuText((modelData.tabs[modelData.current] || modelData.tabs[0] || {title: "Window"}).title + " (" + modelData.tabs.length + " tabs)")
                     onTriggered: { const w = JSON.parse(Browser.popClosedWindow(index)); if (w) app.restoreWindow(w) }
                 }
                 onObjectAdded: (i, o) => closedWindowsMenu.insertItem(i, o)

@@ -70,6 +70,7 @@ Item {
                 wrapMode: Text.Wrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
+                textFormat: Text.PlainText
                 text: root.job ? root.job.title : root.tab ? Ytdl.titleOf(root.tab.title) : ""
             }
 

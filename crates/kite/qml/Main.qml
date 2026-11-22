@@ -8,6 +8,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.notification
 import org.kde.kite
 import "extcall.js" as ExtCall
+import "plaintext.js" as PlainText
 import "mediafile.js" as MediaFile
 
 // Application controller (Falkon's MainApplication): owns the web profiles,
@@ -1114,7 +1115,8 @@ QtObject {
             return null
         }
         case "notifications.create": {
-            showNotification(a.options.title || a.name, a.options.message || "", a.options.iconUrl, () => {
+            // (With whose it is: it looks like Kite's own otherwise.)
+            showNotification(a.options.title || a.name, (a.options.title ? a.name + "\n" : "") + (a.options.message || ""), a.options.iconUrl, () => {
                 Extensions.browserEvent("notificationClicked", JSON.stringify({ext: ext, id: a.id}))
             }, () => Extensions.browserEvent("notificationClosed", JSON.stringify({ext: ext, id: a.id, byUser: true})))
             return a.id
@@ -1269,8 +1271,11 @@ QtObject {
         // Firefox add-ons: install instead of saving.
         // (From a site other than addons.mozilla.org only if the setting lets
         // sites offer add-ons; otherwise the file downloads like any other.)
+        // (And from another site only in the tab that is being looked at: the question
+        // that follows is over the window, whatever page is in front.)
+        const shownTab = !!download.view && !!activeWindow && !!activeWindow.currentTab && activeWindow.currentTab.view === download.view
         if (!media && (url.endsWith(".xpi") || download.mimeType === "application/x-xpinstall") &&
-            (/^https:\/\/addons\.mozilla\.org\//.test(url) || setting("extensions.siteInstalls"))) {
+            (/^https:\/\/addons\.mozilla\.org\//.test(url) || (setting("extensions.siteInstalls") && shownTab))) {
             download.cancel()
             Extensions.installFromUrl(url)
             return
@@ -1402,7 +1407,9 @@ QtObject {
         // (Pages aren't let ask for this either, see WebTab. One that was allowed before
         // the setting changed still gets here.)
         if (inPrivate && !setting("privacy.privateNotifications")) { n.close(); return }
-        showNotification(n.title, n.message, "", () => n.click(), () => n.close())
+        // (With the site it is from: it looks like Kite's own otherwise, or another site's.)
+        const site = Browser.hostOf(n.origin.toString())
+        showNotification(n.title, (site !== "" ? site + "\n" : "") + n.message, "", () => n.click(), () => n.close())
         n.show()
     }
 
@@ -1424,7 +1431,9 @@ QtObject {
     // desktop sent along with the click, or "" (for showInFolder). `timeoutSeconds`:
     // how long it stays (0 or none: as the desktop's settings say).
     function showNotification(title, text, iconUrl, onClick, onClose, buttons, timeoutSeconds) {
-        const n = notificationComponent.createObject(app, {title: title, text: text})
+        // (The desktop reads a notification's text as markup: a page's or a file's words
+        // are shown as they are, not as links or pictures of its making.)
+        const n = notificationComponent.createObject(app, {title: title, text: PlainText.escaped(text)})
         if (timeoutSeconds > 0) {
             n.flags = Notification.Persistent
             notificationCloserComponent.createObject(n, {notification: n, interval: timeoutSeconds * 1000})

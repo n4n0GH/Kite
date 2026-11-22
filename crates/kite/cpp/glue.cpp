@@ -57,7 +57,7 @@ public:
 extern "C" {
 struct KiteBuf { unsigned char *ptr; size_t len; size_t cap; };
 void kite_buf_free(KiteBuf b);
-KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime, int *cors);
+KiteBuf kite_serve(const char *url, const char *initiator, int inPrivate, int *status, KiteBuf *mime, int *cors, int *alone);
 KiteBuf kite_certificate_page(const char *host, const char *chainJson, const char *error);
 KiteBuf kite_intercept(const char *url, const char *firstParty, const char *initiator, const char *type, const char *method, int inPrivate);
 void kite_cookie_event(const char *json, int removed, int initial);
@@ -248,7 +248,8 @@ public:
         int status = 0;
         KiteBuf mimeBuf{nullptr, 0, 0};
         int cors = 0;
-        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), m_private ? 1 : 0, &status, &mimeBuf, &cors));
+        int alone = 0;
+        QByteArray body = takeBuf(kite_serve(url.constData(), initiator.constData(), m_private ? 1 : 0, &status, &mimeBuf, &cors, &alone));
         QByteArray mime = takeBuf(mimeBuf);
         if (status == 404) { job->fail(QWebEngineUrlRequestJob::UrlNotFound); return; }
         if (status == 403) { job->fail(QWebEngineUrlRequestJob::RequestDenied); return; }
@@ -260,6 +261,9 @@ public:
         // Only web-accessible extension files are readable by other origins;
         // everything else (api.js with its token, kite: pages) stays opaque.
         if (cors) headers.insert("Access-Control-Allow-Origin", "*");
+        // A page of Kite's that stands alone (ffi.rs, stands_alone): its scripts run,
+        // but as an origin of its own, not as one of Kite's pages.
+        if (alone) headers.insert("Content-Security-Policy", "sandbox allow-scripts");
         headers.insert("Cache-Control", "no-cache");
         job->setAdditionalResponseHeaders(headers);
         job->reply(mime, buffer);

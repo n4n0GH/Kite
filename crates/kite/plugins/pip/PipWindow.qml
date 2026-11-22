@@ -42,6 +42,7 @@ Window {
             anchors { fill: parent; margins: Kirigami.Units.smallSpacing }
             QQC2.Label {
                 Layout.fillWidth: true
+                textFormat: Text.PlainText
                 text: pip.pageTitle
                 elide: Text.ElideRight
                 color: "white"

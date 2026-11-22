@@ -18,9 +18,32 @@ Window {
     modality: Qt.ApplicationModal
     color: Kirigami.Theme.backgroundColor
 
-    function show(req, i) { request = req; info = i; answered = false; visible = true; raise(); requestActivate() }
-    function answer(ok) { answered = true; Extensions.confirmInstall(request, ok); visible = false }
-    onClosing: if (!answered) Extensions.confirmInstall(request, false)
+    // One question at a time. A page can have an add-on offered whenever it likes: a
+    // second one, arriving while the first is being read, doesn't take its place under
+    // the pointer (it waits its turn, and beyond a few is turned down unasked). And
+    // "Add" only works once the question has been up for a moment, so a click meant for
+    // something else, which the window came up under, doesn't answer it.
+    property var waiting: []
+    property bool armed: false
+    property Timer arming: Timer { interval: 1000; onTriggered: dlg.armed = true }
+    function show(req, i) {
+        if (visible && !answered) {
+            if (waiting.length < 3) waiting = waiting.concat([{request: req, info: i}])
+            else Extensions.confirmInstall(req, false)
+            return
+        }
+        request = req; info = i; answered = false; armed = false
+        visible = true; raise(); requestActivate()
+        arming.restart()
+    }
+    function next() {
+        if (waiting.length === 0) return
+        const n = waiting[0]
+        waiting = waiting.slice(1)
+        Qt.callLater(() => show(n.request, n.info))
+    }
+    function answer(ok) { answered = true; Extensions.confirmInstall(request, ok); visible = false; next() }
+    onClosing: if (!answered) { answered = true; Extensions.confirmInstall(request, false); next() }
 
     ColumnLayout {
         id: layout
@@ -75,12 +98,13 @@ Window {
             wrapMode: Text.Wrap
             opacity: 0.7
             font: Kirigami.Theme.smallFont
+            textFormat: Text.PlainText
             text: "Version " + dlg.info.version + (dlg.info.previousVersion ? " (currently " + dlg.info.previousVersion + ")" : "") + " · ID " + dlg.info.id
         }
         RowLayout {
             Layout.alignment: Qt.AlignRight
             QQC2.Button { text: "Cancel"; icon.name: "dialog-cancel"; onClicked: dlg.answer(false) }
-            QQC2.Button { text: dlg.info.update ? "Update" : "Add"; icon.name: "dialog-ok"; highlighted: true; onClicked: dlg.answer(true) }
+            QQC2.Button { text: dlg.info.update ? "Update" : "Add"; icon.name: "dialog-ok"; highlighted: true; enabled: dlg.armed; onClicked: dlg.answer(true) }
         }
     }
 }

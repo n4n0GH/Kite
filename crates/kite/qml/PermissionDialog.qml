@@ -21,11 +21,11 @@ Window {
     ColumnLayout {
         id: layout
         anchors { fill: parent; margins: Kirigami.Units.gridUnit }
-        Kirigami.Heading { level: 3; Layout.fillWidth: true; wrapMode: Text.Wrap; text: (dlg.req.name || "An extension") + " requests additional permissions." }
+        Kirigami.Heading { textFormat: Text.PlainText; level: 3; Layout.fillWidth: true; wrapMode: Text.Wrap; text: (dlg.req.name || "An extension") + " requests additional permissions." }
         QQC2.Label { text: "It wants to:" }
         Repeater {
             model: (dlg.req.warnings && dlg.req.warnings.length) ? dlg.req.warnings : (dlg.req.permissions || [])
-            delegate: QQC2.Label { required property string modelData; text: "• " + modelData; Layout.fillWidth: true; wrapMode: Text.Wrap }
+            delegate: QQC2.Label { textFormat: Text.PlainText; required property string modelData; text: "• " + modelData; Layout.fillWidth: true; wrapMode: Text.Wrap }
         }
         RowLayout {
             Layout.alignment: Qt.AlignRight

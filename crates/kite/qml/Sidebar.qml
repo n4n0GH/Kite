@@ -6,6 +6,7 @@ import QtWebChannel
 import org.kde.kirigami as Kirigami
 import org.kde.kite
 import "extcall.js" as ExtCall
+import "plaintext.js" as PlainText
 
 // Falkon's SideBar: bookmarks, history, or an extension's sidebar_action panel.
 QQC2.Pane {
@@ -80,7 +81,7 @@ QQC2.Pane {
                 height: visible ? implicitHeight : 0
                 icon.name: modelData.type === "folder" ? "folder-bookmark" : modelData.type === "up" ? "go-up" : root.mode === "history" ? "document-open-recent" : "text-html"
                 text: modelData.title || modelData.url || ""
-                QQC2.ToolTip.text: modelData.url || ""
+                QQC2.ToolTip.text: PlainText.plain(modelData.url || "")
                 QQC2.ToolTip.visible: hovered && !!modelData.url
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 onClicked: {
@@ -104,12 +105,14 @@ QQC2.Pane {
                         spacing: 0
                         Layout.fillWidth: true
                         QQC2.Label {
+                            textFormat: Text.PlainText
                             text: row.text
                             elide: root.mode === "history" ? Text.ElideMiddle : Text.ElideRight
                             Layout.fillWidth: true
                         }
                         QQC2.Label {
                             visible: !!row.modelData.pageTitle
+                            textFormat: Text.PlainText
                             text: row.modelData.pageTitle || ""
                             opacity: 0.7
                             font: Kirigami.Theme.smallFont

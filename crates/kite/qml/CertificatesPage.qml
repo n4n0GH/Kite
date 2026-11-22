@@ -48,7 +48,7 @@ Kirigami.ScrollablePage {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 0
-                    QQC2.Label { Layout.fillWidth: true; elide: Text.ElideRight; text: row.modelData.host }
+                    QQC2.Label { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; text: row.modelData.host }
                     QQC2.Label {
                         Layout.fillWidth: true
                         font: Kirigami.Theme.smallFont
@@ -63,6 +63,7 @@ Kirigami.ScrollablePage {
                         font: Kirigami.Theme.smallFont
                         wrapMode: Text.Wrap
                         opacity: 0.7
+                        textFormat: Text.PlainText
                         text: row.modelData.description
                     }
                 }

@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // One tab in the tab strip (horizontal or vertical, see TabStrip.qml). Supports drag-to-reorder, middle-click close,
 // pinning, audio indicator and a context menu (Falkon's TabContextMenu).
@@ -313,7 +314,7 @@ Item {
     }
 
     HoverHandler { id: hover }
-    QQC2.ToolTip.text: root.containerInfo ? root.title + "\n" + root.containerInfo.name + " container" : root.title
+    QQC2.ToolTip.text: PlainText.plain(root.containerInfo ? root.title + "\n" + root.containerInfo.name + " container" : root.title)
     QQC2.ToolTip.visible: hover.hovered && !dragHandler.active
     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay * 2
 

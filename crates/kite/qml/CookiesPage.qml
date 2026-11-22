@@ -99,7 +99,7 @@ Kirigami.ScrollablePage {
                             page.open_ = next
                         }
                     }
-                    QQC2.Label { Layout.fillWidth: true; elide: Text.ElideRight; text: site.modelData.site }
+                    QQC2.Label { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; text: site.modelData.site }
                     QQC2.Label { opacity: 0.7; text: site.modelData.cookies.length + (site.modelData.cookies.length === 1 ? " cookie" : " cookies") }
                     QQC2.ToolButton {
                         icon.name: "configure"
@@ -126,12 +126,13 @@ Kirigami.ScrollablePage {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            QQC2.Label { Layout.fillWidth: true; elide: Text.ElideRight; text: row.modelData.name }
+                            QQC2.Label { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; text: row.modelData.name }
                             QQC2.Label {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.7
+                                textFormat: Text.PlainText
                                 text: row.modelData.value
                             }
                             QQC2.Label {
@@ -139,6 +140,7 @@ Kirigami.ScrollablePage {
                                 elide: Text.ElideRight
                                 font: Kirigami.Theme.smallFont
                                 opacity: 0.7
+                                textFormat: Text.PlainText
                                 text: [row.modelData.domain + row.modelData.path, page.expires(row.modelData), page.flags(row.modelData)].filter(t => t).join(" · ")
                             }
                         }

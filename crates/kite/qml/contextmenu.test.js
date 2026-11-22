@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/contextmenu.js', 'utf8').replace('.pragma library', '');
-const { linkLeadsToImage, linkOpenable } = new Function(src + '\nreturn {linkLeadsToImage, linkOpenable};')();
+const { linkLeadsToImage, linkOpenable, imageOpenable } = new Function(src + '\nreturn {linkLeadsToImage, linkOpenable, imageOpenable};')();
 
 test('a thumbnail linking to its full picture', () => {
   assert.ok(linkLeadsToImage('https://i.4cdn.org/g/123.jpg', 'https://i.4cdn.org/g/123s.jpg', true));
@@ -41,3 +41,15 @@ test('pages of one kind link to their own kind', () => {
   assert.ok(!linkOpenable('file:///etc/passwd', 'kite:start'));
 });
 
+
+test('a picture opens in a tab when it is the web\'s or the page\'s own picture', () => {
+  const page = 'https://site.example/a';
+  for (const ok of ['https://cdn.example/a.png', 'data:image/png;base64,AAAA', 'DATA:image/gif;base64,AAAA', 'blob:https://site.example/1234'])
+    assert.ok(imageOpenable(ok, page), ok);
+  for (const bad of ['data:text/html,<script>1</script>', 'data:image/svg+xml,<svg onload=1>', 'blob:https://other.example/1234', 'file:///etc/passwd', 'kite:config', 'chrome://gpu', 'javascript:0', ''])
+    assert.ok(!imageOpenable(bad, page), bad);
+});
+
+test('the browser\'s own internals are not a website\'s to link to', () => {
+  for (const bad of ['chrome://crash', 'devtools://devtools/x', 'qrc:/x.qml']) assert.ok(!linkOpenable(bad, 'https://evil.example/'), bad);
+});

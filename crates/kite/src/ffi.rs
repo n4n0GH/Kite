@@ -204,13 +204,30 @@ pub unsafe extern "C" fn kite_certificate_page(host: *const c_char, chain_json: 
 /// Serve `moz-extension://` and `kite:` URLs. Returns the body; sets HTTP-like
 /// status and mime type.
 #[no_mangle]
-pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, status: *mut i32, mime: *mut KiteBuf, cors: *mut std::ffi::c_int) -> KiteBuf {
+pub unsafe extern "C" fn kite_serve(url: *const c_char, initiator: *const c_char, in_private: std::ffi::c_int, status: *mut i32, mime: *mut KiteBuf, cors: *mut std::ffi::c_int, alone: *mut std::ffi::c_int) -> KiteBuf {
     let (url, initiator) = (s(url), s(initiator));
     let (code, ty, body) = serve(url, initiator, in_private != 0);
     *status = code;
+    *alone = (code == 200 && stands_alone(url)) as std::ffi::c_int;
     *mime = KiteBuf::from_vec(ty.into_bytes());
     *cors = (code == 200 && readable_cross_origin(url, initiator)) as std::ffi::c_int;
     KiteBuf::from_vec(body)
+}
+
+/// Whether a page of Kite's is served as an origin of its own (a sandbox, glue.cpp),
+/// apart from Kite's other pages, which are all one origin with each other.
+///
+/// The pages that hold what changes things: `kite:config` and `kite:welcome`, with
+/// their tokens. A script on any other `kite:` page (a start page somebody else wrote
+/// and the user copied in, or a hole in one of Kite's own) could else open one of them
+/// and read it. And the pages web content can lead to, the warnings: whatever got to
+/// run there would not be one of Kite's pages to the rest.
+///
+/// None of them needs its origin: they keep nothing, load nothing, and talk to Kite
+/// through the console.
+fn stands_alone(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("kite:") else { return false };
+    matches!(rest.split(['?', '#']).next().unwrap_or(""), "config" | "welcome" | "blocked" | "dangerous" | "https-only")
 }
 
 /// Whether other origins may read this response: only an extension's
@@ -1211,6 +1228,18 @@ mod tests {
         assert_eq!(web_address("http://localhost:8080/"), "http://localhost:8080/");
         for other in ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)", "kite:start?add=x.y", "kite:config", "file:///etc/passwd", "data:text/html,x", "about:blank", "", "kde.org", "https://"] {
             assert_eq!(web_address(other), "", "{other}");
+        }
+    }
+
+    #[test]
+    fn the_pages_with_something_to_guard_stand_alone() {
+        for alone in ["kite:config", "kite:welcome", "kite:blocked?why=listed&url=https://kde.org/", "kite:dangerous?url=x", "kite:https-only?url=x", "kite:config#x"] {
+            assert!(stands_alone(alone), "{alone}");
+        }
+        // The others share an origin: the start page's form goes to kite:search, a copied
+        // start page keeps its storage and loads its own files.
+        for together in ["kite:start", "kite:newtab", "kite:search?q=x", "kite:startpage/home/", "kite:reader?id=1", "kite:favicon?url=x", "kite:configuration", "moz-extension://a/config", "https://kde.org/config"] {
+            assert!(!stands_alone(together), "{together}");
         }
     }
 

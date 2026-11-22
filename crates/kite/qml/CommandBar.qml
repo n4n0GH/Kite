@@ -221,6 +221,7 @@ QQC2.Popup {
                     }
                     QQC2.Label {
                         visible: !!row.modelData.detail
+                        textFormat: Text.PlainText
                         text: row.modelData.detail || ""
                         elide: Text.ElideMiddle
                         opacity: 0.6

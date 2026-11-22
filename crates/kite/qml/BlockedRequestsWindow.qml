@@ -3,6 +3,7 @@ import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.kite
+import "plaintext.js" as PlainText
 
 // What the content blocker blocked on pages of a site this session, newest first: from the
 // count in the address bar's blocker menu.
@@ -70,14 +71,14 @@ ManagerWindow {
                 width: ListView.view.width
                 contentItem: ColumnLayout {
                     spacing: 2
-                    QQC2.Label { text: modelData.url; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                    QQC2.Label { textFormat: Text.PlainText; text: modelData.url; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     QQC2.Label {
                         font: Kirigami.Theme.smallFont
                         opacity: 0.75
                         text: page.kind(modelData.kind) + " — " + page.time(modelData.at) + (modelData.replaced ? " — given a stand-in instead" : "")
                     }
                 }
-                QQC2.ToolTip.text: modelData.url
+                QQC2.ToolTip.text: PlainText.plain(modelData.url)
                 QQC2.ToolTip.visible: hovered && modelData.url.length > 80
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 onClicked: entryMenu.popup()

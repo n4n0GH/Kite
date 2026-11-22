@@ -2907,7 +2907,8 @@ fn named_sessions() -> kite_core::session::NamedSessions {
 static FRAME_SECRET: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     // (Random letters and digits: the script holds it in a string.)
     let mut bytes = [0u8; 24];
-    let _ = getrandom::getrandom(&mut bytes);
+    // (No secret, no Kite: with the zeros left there, any page could speak as Kite's own scripts.)
+    getrandom::getrandom(&mut bytes).expect("random bytes for the frame secret");
     format!("kiteframe{}:", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
 });
 
