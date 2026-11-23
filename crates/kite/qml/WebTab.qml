@@ -153,13 +153,13 @@ Item {
     // Run code in the isolated world of the page and all its frames, for plugins;
     // `each(frame, result)` with what each answers. (Qt's frames don't run it
     // without a callback.)
+    // Returns how many frames were asked; `each` also hears which answer is the top frame's.
     function runInFrames(code, each) {
         // (A tab not loaded has no page to run it in.)
-        if (!web.mainFrame || unloaded) return
-        for (const f of [web.mainFrame].concat(allFrames(web.mainFrame, []))) {
-            const frame = f
-            frame.runJavaScript(code, 1, r => { if (each) each(frame, r) })
-        }
+        if (!web.mainFrame || unloaded) return 0
+        const frames = [web.mainFrame].concat(allFrames(web.mainFrame, []))
+        frames.forEach((frame, at) => frame.runJavaScript(code, 1, r => { if (each) each(frame, r, at === 0) }))
+        return frames.length
     }
     function runInMainFrame(code) { if (web.mainFrame) web.mainFrame.runJavaScript(code, 1, () => {}) }
     function frameDown(frame, name, arg) {

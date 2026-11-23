@@ -160,28 +160,35 @@ Item {
     property var hintFrames: ({})    // label → frame
     property string typed: ""
     property int hintRound: 0
+    // What's being collected: {round, tab, newTab, counts, asked, answered}.
+    property var hintAsk: null
     function startHints(tab, newTab) {
         endHints()
-        const round = ++hintRound
-        const counts = []
-        tab.runInFrames("globalThis.__kiteVim ? __kiteVim.hintsCollect() : 0", (frame, count) => {
-            if (count > 0) counts.push({frame, count})
-        })
-        // Frames answer in their own time; those that don't aren't waited for.
-        hintWait.tab = tab
-        hintWait.newTab = newTab
-        hintWait.round = round
-        hintWait.counts = counts
+        const ask = {round: ++hintRound, tab, newTab, counts: [], asked: -1, answered: 0}
+        hintAsk = ask
+        // The page is waited for: a long one takes its time to look at all it has, and giving
+        // up on it said there was nothing to follow. Once it has answered, its frames get a
+        // moment more; those that never answer aren't waited for.
+        hintWait.interval = 5000
         hintWait.restart()
+        ask.asked = tab.runInFrames("globalThis.__kiteVim ? __kiteVim.hintsCollect() : 0", (frame, count, top) => {
+            if (root.hintAsk !== ask) return
+            if (count > 0) ask.counts.push({frame, count})
+            ask.answered++
+            if (ask.answered === ask.asked) root.hintsCollected()
+            else if (top) { hintWait.interval = 120; hintWait.restart() }
+        })
+        if (ask.asked === 0 || ask.answered === ask.asked) hintsCollected()
+    }
+    function hintsCollected() {
+        const ask = hintAsk
+        hintAsk = null
+        hintWait.stop()
+        if (ask && ask.round === hintRound) showHints(ask.tab, ask.newTab, ask.counts)
     }
     Timer {
         id: hintWait
-        property var tab
-        property bool newTab
-        property int round
-        property var counts
-        interval: 120
-        onTriggered: if (round === root.hintRound) root.showHints(tab, newTab, counts)
+        onTriggered: root.hintsCollected()
     }
     function showHints(tab, newTab, counts) {
         const total = counts.reduce((sum, c) => sum + c.count, 0)
@@ -212,6 +219,8 @@ Item {
     }
     function endHints() {
         hintRound++
+        hintAsk = null
+        hintWait.stop()
         if (!hintTab) return
         const tab = hintTab
         toAll("globalThis.__kiteVim && __kiteVim.hintsEnd()")

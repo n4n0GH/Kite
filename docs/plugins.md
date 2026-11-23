@@ -187,7 +187,7 @@ open need a reload, unless the plugin handles them itself (Vim Keys does).
 | Direction | How |
 |---|---|
 | Page script to window | `kitePluginSend(m)`, which arrives as `win.pluginMessage(tab, {plugin, m})`. Every plugin's window item hears every message, so **check `message.plugin`** first |
-| Window to page script | `tab.runInMainFrame(code)`, or `tab.runInFrames(code, (frame, result) => …)` for all frames with their results |
+| Window to page script | `tab.runInMainFrame(code)`, or `tab.runInFrames(code, (frame, result, top) => …)` for all frames with their results (`top`: the answer is the top frame's); it returns how many frames it asked |
 
 **Page content is untrusted.** The page can't forge the messages, but what your script reads from it
 can be anything, and it can imitate whatever a world `0` script tells yours through the DOM. Treat it as text. Never put it into code you run, or into markup.
