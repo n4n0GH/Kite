@@ -183,7 +183,8 @@ Item {
         Behavior on y { enabled: !bg.lifted; NumberAnimation { duration: Kirigami.Units.shortDuration; easing.type: Easing.OutCubic } }
         scale: lifted ? 1.04 : 1
         Behavior on scale { NumberAnimation { duration: Kirigami.Units.shortDuration } }
-        opacity: lifted ? 0.9 : 1
+        // (Fainter over the other pane, where it would go.)
+        opacity: lifted ? (root.browser.paneDrop || root.browser.tabTear ? 0.45 : 0.9) : 1
         shadow.size: lifted ? Kirigami.Units.gridUnit * 0.6 : 0
         shadow.yOffset: lifted ? 2 : 0
         shadow.color: Qt.rgba(0, 0, 0, 0.35)
@@ -339,13 +340,23 @@ Item {
 
     // Drag to reorder: the tab swaps places with its neighbours as its
     // centre passes over them (pinned and unpinned tabs stay in their own
-    // sections).
+    // sections). In split view, a tab dragged over the other pane, its tab
+    // strip or its page, goes there when let go (BrowserWindow.paneDropAt).
+    // Dragged away from the tab bar, or out of the window, it gets a window of
+    // its own (BrowserWindow.tabTearAt).
     DragHandler {
         id: dragHandler
         target: null
-        // (In a tree, sideways too: that changes the tab's depth.)
-        xAxis.enabled: !root.vertical || root.browser.treeEnabled
-        yAxis.enabled: root.vertical
+        // (Any way: along the strip, sideways in a tree for the tab's depth, and
+        // out of the strip.)
+        xAxis.enabled: true
+        yAxis.enabled: true
+        // Where the pointer is in the window (it is gone from the handler once let go).
+        property point scenePos
+        onCentroidChanged: if (active && centroid.pressedButtons !== Qt.NoButton) { scenePos = centroid.scenePosition; Qt.callLater(update) }
+        // The tabs that go with it: its group, or its descendants.
+        function moving() { return wholeGroup ? root.browser.groupTabs(root.group) : root.browser.treeTabs(root.tabId) }
+        function tearing() { return root.browser.tabTearAt(root.tabList, root.vertical, scenePos, moving().length) }
         cursorShape: active ? Qt.ClosedHandCursor : Qt.ArrowCursor
         // Position along the strip at drag start, distance dragged, and how
         // far the strip has scrolled meanwhile give the dragged tab's
@@ -372,6 +383,7 @@ Item {
                 startFaceY = root.face.y
                 startDepth = wantedDepth = dropDepth = root.treeDepth
                 root.browser.treeDragging = true
+                scenePos = centroid.scenePosition
                 startPos = root.vertical ? root.y : root.x
                 startScroll = root.tabList.scrollPos
                 pos = startPos
@@ -380,7 +392,16 @@ Item {
                 if (!wholeGroup) root.browser.setCurrentIndex(root.index)
             } else {
                 root.tabList.autoScroll = 0
-                root.browser.finishTabDrag(wholeGroup ? -1 : root.tabId, wantedDepth)
+                // (This tab's place in its strip is gone once it changes pane.)
+                const browser = root.browser, id = root.tabId, gid = wholeGroup ? root.group : "", depth = wantedDepth
+                const drop = browser.paneDropAt(id, scenePos)
+                const away = !drop && tearing() ? moving() : null, at = scenePos
+                browser.paneDrop = null
+                browser.tabTear = null
+                if (drop) browser.dragToPane(id, gid, drop.pane, drop.index)
+                browser.finishTabDrag(gid ? -1 : id, drop ? 0 : depth)
+                // (Once the drag is over: this tab is gone with it.)
+                if (away) Qt.callLater(() => browser.moveTabsToNewWindow(away, at))
             }
         }
         onAlongChanged: if (active) Qt.callLater(update)
@@ -388,6 +409,13 @@ Item {
         function update() {
             if (!active) return
             pos = startPos + along + root.tabList.scrollPos - startScroll
+            // Over the other pane it stays where it is here.
+            const drop = root.browser.paneDropAt(root.tabId, scenePos)
+            root.browser.paneDrop = drop
+            // Away from the tab bar too, where letting go gives it a window.
+            const away = !drop && tearing()
+            root.browser.tabTear = away ? {x: scenePos.x, y: scenePos.y, text: wholeGroup ? root.groupInfo.name + " (" + root.groupSize + ")" : root.treeCount > 0 ? root.title + " and " + root.treeCount + " more" : root.title} : null
+            if (drop || away) { root.tabList.autoScroll = 0; return }
             const centre = pos + size / 2
             let to = root.vertical ? root.tabList.indexAt(root.width / 2, centre) : root.tabList.indexAt(centre, root.height / 2)
             if (to < 0) to = centre < 0 ? 0 : root.browser.count - 1
@@ -500,6 +528,14 @@ Item {
                 after: duplicateItem
                 onChosen: c => { const t = root.browser.tabById(root.tabId); root.browser.openTab(t.url, {container: c, index: root.index + 1, background: false}) }
             }
+            // To a saved session (not from a private window).
+            property SendToSessionMenu _sendMenu: SendToSessionMenu {
+                title: "Send " + menu.tabsWord + " to Session"
+                win: root.browser
+                parentMenu: menu
+                after: newWindowItem
+                tabs: () => menu.targets
+            }
             // Tree-style tabs.
             QQC2.MenuItem {
                 visible: root.treeCount > 0
@@ -524,7 +560,14 @@ Item {
                 onTriggered: { for (const id of menu.unloadable) root.browser.tabById(id).unload() }
             }
             QQC2.MenuItem { text: root.muted ? "Unmute Tab" : "Mute Tab"; icon.name: root.muted ? "audio-volume-high" : "audio-volume-muted"; onTriggered: { const t = root.browser.tabById(root.tabId); t.view.audioMuted = !t.view.audioMuted } }
-            QQC2.MenuItem { text: "Move to New Window"; icon.name: "window-new"; onTriggered: { const t = root.browser.tabById(root.tabId); root.browser.app.newWindow({urls: [t.url], privateMode: root.browser.privateMode}); root.browser.closeTab(root.index) } }
+            QQC2.MenuItem {
+                id: newWindowItem
+                text: menu.n > 1 ? "Move " + menu.n + " Tabs to New Window" : "Move to New Window"
+                icon.name: "window-new"
+                // (Not a window's only tabs.)
+                enabled: root.browser.count > menu.n
+                onTriggered: { const browser = root.browser, ids = menu.targets; Qt.callLater(() => browser.moveTabsToNewWindow(ids)) }
+            }
             QQC2.MenuItem { text: "Bookmark Tab…"; icon.name: "bookmark-new"; onTriggered: { const t = root.browser.tabById(root.tabId); Browser.addBookmark(t.url, t.title, ""); root.browser.toast("Bookmarked " + t.title, "bookmarks") } }
             QQC2.MenuItem { text: "Bookmark All Tabs"; icon.name: "bookmarks"; onTriggered: root.browser.bookmarkAllTabs() }
             QQC2.MenuSeparator {}

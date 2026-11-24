@@ -27,6 +27,7 @@ const TOGGLES = [
     {page: "tabs", text: "Open popup windows in tabs", key: "tabs.openPopupsInTabs"},
     {page: "tabs", text: "Return to the tab a closed tab was opened from", key: "tabs.selectOpenerOnClose"},
     {page: "tabs", text: "Close window when the last tab is closed", key: "tabs.closeWindowWithLastTab"},
+    {page: "tabs", text: "Keep tabs open here when they are sent to a session", key: "tabs.keepWhenSentToSession"},
     {page: "browsing", text: "Enable JavaScript", key: "web.javascript"},
     {page: "browsing", text: "Load images automatically", key: "web.autoloadImages"},
     {page: "browsing", text: "Allow local storage", key: "web.localStorage"},

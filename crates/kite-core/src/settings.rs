@@ -55,6 +55,8 @@ pub fn defaults() -> Map<String, Value> {
         "tabs.switchToNewTabFromLink": false,
         // Closing a tab opened from another goes back to that one.
         "tabs.selectOpenerOnClose": true,
+        // Tabs sent to a saved session (the tab menu's "Send to Session") stay open here too.
+        "tabs.keepWhenSentToSession": false,
         // Browsing
         "web.javascript": true,
         "web.autoloadImages": true,

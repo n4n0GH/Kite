@@ -929,6 +929,12 @@ ManagerWindow {
                 Hint { text: "Once the other tabs it opened next to the closed one are closed as well." }
                 Check { text: "Close window when the last tab is closed"; key: "tabs.closeWindowWithLastTab" }
             }
+            // (BrowserWindow.sendTabsToSession)
+            SectionHeader { text: "Sessions" }
+            Form {
+                Check { text: "Keep tabs open here when they are sent to a session"; key: "tabs.keepWhenSentToSession" }
+                Hint { text: "A tab's menu sends it to a saved session, to open again with that session. Otherwise it closes here, as a tab moved there." }
+            }
             // ("tabs.unloadInactive", WebTab.unload())
             SectionHeader { text: "Unloading" }
             Form {

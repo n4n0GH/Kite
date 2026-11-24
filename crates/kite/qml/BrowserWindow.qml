@@ -419,6 +419,70 @@ QQC2.ApplicationWindow {
         if (rest.length === 0) endSplitIfEmpty()
         setCurrentIndex(indexOfTab(id))
     }
+    // ---- dragging a tab to the other pane (TabButton's drag) --------------------
+    // The tab strips there are (TabStrip.qml), to find the one a tab is dragged over.
+    property var tabStrips: []
+    // Where the tab being dragged would land in the other pane, while it is over
+    // that pane's strip or its page: {pane, index, strip}. `index` is its place in
+    // the list (before that row; -1 over the page), which `strip` marks.
+    property var paneDrop: null
+    // (`p`: where the pointer is, in the window.)
+    function paneDropAt(id, p) {
+        if (!split) return null
+        const to = 1 - paneOf(id)
+        for (const s of tabStrips) {
+            if (s.pane !== to) continue
+            const at = s.dropIndexAt(p)
+            if (at >= 0) return {pane: to, index: at, strip: s}
+        }
+        const area = paneArea(to), q = area.mapFromItem(null, p.x, p.y)
+        return q.x >= 0 && q.y >= 0 && q.x < area.width && q.y < area.height ? {pane: to, index: -1, strip: null} : null
+    }
+    // Dropped there: the tab with its descendants, or its whole group (`gid`),
+    // goes to `pane`, before row `at` of the list (-1: after that pane's tabs).
+    // As with moveToOtherPane, a tab leaves its group and the tree it was in; a
+    // whole group stays one.
+    function dragToPane(id, gid, pane, at) {
+        const ids = gid ? groupTabs(gid) : treeTabs(id)
+        if (!split || !ids.length || paneOf(ids[0]) === pane) return
+        const from = 1 - pane
+        if (at < 0) { const there = paneTabs(pane); at = indexOfTab(there[there.length - 1]) + 1 }
+        // (The tab it goes before, as leaving a group or a tree moves rows.)
+        const before = at < tabModel.count ? tabModel.get(at).tabId : -1
+        // The pane they leave shows the tab after them, or the last one left.
+        const was = paneTabs(from), stay = was.filter(x => !ids.includes(x))
+        const after = was.slice(was.indexOf(ids[0])).find(x => !ids.includes(x))
+        const next = after !== undefined ? after : stay.length ? stay[stay.length - 1] : -1
+        if (!gid) {
+            removeFromGroup(id)
+            // (Out of a tree, past its end: what it leaves stays whole. In a flat
+            // list its descendants stay behind, and go to its parent.)
+            const top = TabTree.ancestors(treeRows(), id).pop()
+            if (!treeEnabled) detachFromTree(id)
+            else if (top !== undefined) {
+                const i = indexOfTab(id), end = indexOfTab(top) + tabModel.get(indexOfTab(top)).treeCount
+                tabModel.setProperty(i, "treeParent", -1)
+                if (i + ids.length - 1 < end) moveRangeTo(i, i + ids.length - 1, end)
+            }
+        }
+        for (const x of ids) tabModel.setProperty(indexOfTab(x), "pane", pane)
+        countPane1()
+        const first = indexOfTab(ids[0]), last = first + ids.length - 1
+        let pinned = 0
+        while (pinned < tabModel.count && tabModel.get(pinned).pinned) pinned++
+        at = before >= 0 ? indexOfTab(before) : tabModel.count
+        at = tabModel.get(first).pinned ? Math.min(at, pinned) : Math.max(at, pinned)
+        // (A group isn't put into another: it goes after it.)
+        if (gid) while (at > 0 && at < tabModel.count && tabModel.get(at).group !== "" && tabModel.get(at).group !== gid && tabModel.get(at - 1).group === tabModel.get(at).group) at++
+        if (at > last + 1) moveRangeTo(first, last, at - 1)
+        else if (at < first) moveRangeTo(first, last, at)
+        if (ids.includes(paneTab[from])) setPaneTab(from, next)
+        if (!stay.length) endSplitIfEmpty()
+        groupsVersion++
+        // The tab dragged is the one shown there; a group leaves that as it is.
+        const shown = gid ? (currentTab ? currentTab.tabId : -1) : id
+        if (shown >= 0) setCurrentIndex(indexOfTab(shown))
+    }
     // A pane without tabs: the right one closes; the left one takes the
     // right one's tabs.
     function endSplitIfEmpty() {
@@ -757,10 +821,11 @@ QQC2.ApplicationWindow {
         return t
     }
 
-    function closeTab(index) {
+    // (`moved`: it goes on in another window, and isn't one of the closed tabs.)
+    function closeTab(index, moved) {
         if (index < 0 || index >= tabModel.count) return
         const t = tabAt(index)
-        if (t && !privateMode) Browser.pushClosedTab(JSON.stringify(t.saveState()))
+        if (t && !privateMode && !moved) Browser.pushClosedTab(JSON.stringify(t.saveState()))
         const id = tabModel.get(index).tabId
         const pane = tabModel.get(index).pane
         const wasCurrent = index === currentIndex
@@ -1142,6 +1207,44 @@ QQC2.ApplicationWindow {
         shown: bw.tabBarShown
     }
 
+    // A tab dragged away from the tab bar: what letting go does, beside the pointer.
+    Rectangle {
+        parent: bw.contentItem
+        z: 1000
+        visible: !!bw.tabTear
+        x: bw.tabTear ? Math.max(0, Math.min(bw.tabTear.x + Kirigami.Units.gridUnit, bw.width - width)) : 0
+        y: bw.tabTear ? Math.max(0, Math.min(bw.tabTear.y + Kirigami.Units.gridUnit, bw.height - height)) : 0
+        width: Math.min(tearRow.implicitWidth + Kirigami.Units.largeSpacing * 2, Kirigami.Units.gridUnit * 18)
+        height: tearRow.implicitHeight + Kirigami.Units.largeSpacing * 2
+        radius: Kirigami.Units.cornerRadius
+        color: Kirigami.Theme.backgroundColor
+        border.color: Kirigami.Theme.highlightColor
+        RowLayout {
+            id: tearRow
+            anchors.centerIn: parent
+            width: parent.width - Kirigami.Units.largeSpacing * 2
+            spacing: Kirigami.Units.smallSpacing * 2
+            Kirigami.Icon { source: "window-new"; Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium; Layout.preferredHeight: Layout.preferredWidth }
+            ColumnLayout {
+                spacing: 0
+                Layout.fillWidth: true
+                QQC2.Label { text: "Move to New Window"; font.weight: Font.DemiBold; Layout.fillWidth: true; elide: Text.ElideRight }
+                QQC2.Label { textFormat: Text.PlainText; text: bw.tabTear ? bw.tabTear.text : ""; opacity: 0.7; font: Kirigami.Theme.smallFont; Layout.fillWidth: true; elide: Text.ElideRight }
+            }
+        }
+    }
+
+    // Split view: the pane a tab dragged over its page would go to.
+    component PaneDropMarker: Rectangle {
+        property int pane
+        z: 3
+        anchors.fill: parent
+        visible: !!bw.paneDrop && bw.paneDrop.pane === pane && !bw.paneDrop.strip
+        color: Qt.alpha(Kirigami.Theme.highlightColor, 0.15)
+        border.color: Kirigami.Theme.highlightColor
+        border.width: 2
+    }
+
     // Split view: a line along the top of the active pane.
     component PaneMarker: Rectangle {
         property int pane
@@ -1281,6 +1384,7 @@ QQC2.ApplicationWindow {
             }
 
             PaneMarker { pane: 0 }
+            PaneDropMarker { pane: 0 }
 
             // Toasts
             Rectangle {
@@ -1314,6 +1418,7 @@ QQC2.ApplicationWindow {
             // Remember the width the user drags it to.
             onWidthChanged: if (bw.split && splitView.resizing && width > 0) bw.rightPaneWidth = width
             PaneMarker { pane: 1 }
+            PaneDropMarker { pane: 1 }
         }
 
         SideTabs { side: "right" }
@@ -1453,6 +1558,61 @@ QQC2.ApplicationWindow {
 
     function saveSessionAs() { part(sessionDialogsPart).save() }
     function manageSessions() { part(sessionDialogsPart).manage() }
+    // Tabs sent to a saved session (SendToSessionMenu.qml): they join its first
+    // window with their tree among themselves, and a group that goes whole. Here
+    // they close, as tabs sent away ("tabs.keepWhenSentToSession": they stay).
+    function sendTabsToSession(ids, name) {
+        if (privateMode) return false
+        const {rows, tabs, groups} = leavingTabs(ids)
+        const error = Browser.addToNamedSession(name, JSON.stringify(tabs), JSON.stringify(groups))
+        if (error) { toast(error, "dialog-error"); return false }
+        // (From whichever window is left, should this one close with its last tab.)
+        const sent = (tabs.length === 1 ? "Sent the tab" : "Sent " + tabs.length + " tabs") + " to “" + name + "”", main = app
+        if (app.setting("tabs.keepWhenSentToSession")) selectedTabs = []
+        else closeTabs(rows.map(r => r.id))
+        Qt.callLater(() => main.toast(sent, "document-send"))
+        return true
+    }
+    function sendTabsToNewSession(ids) { part(sessionDialogsPart).sendTo(ids) }
+    // Tabs that leave this window together, as a saved window holds them: {rows, tabs,
+    // groups}, with their tree among themselves and the groups that go whole (TabTree.sent).
+    function leavingTabs(ids) {
+        const rows = TabTree.sent(treeRows(), ids.filter(id => tabById(id)))
+        const groups = {}
+        const tabs = rows.map(r => {
+            if (r.group) groups[r.group] = tabGroups[r.group]
+            return Object.assign(tabById(r.id).saveState(), {pane: 0, group: r.group, treeParent: r.parent, treeCollapsed: r.collapsed})
+        })
+        return {rows, tabs, groups}
+    }
+    // Tabs to a window of their own: the tab menu, or a tab dragged away from the
+    // tab bar (`at`: where it was let go, in this window). A page's view can't change
+    // windows, so the new window opens their pages again, as a restored one does.
+    function moveTabsToNewWindow(ids, at) {
+        const {rows, tabs, groups} = leavingTabs(ids)
+        if (!tabs.length || tabs.length >= tabModel.count) return null
+        const current = Math.max(0, rows.findIndex(r => currentTab && r.id === currentTab.tabId))
+        // This window's size, where the tab was let go; a maximized one's is the desktop's to give.
+        const floating = visibility === Window.Windowed
+        const geometry = floating ? [x + (at ? Math.round(at.x) - Kirigami.Units.gridUnit * 4 : Kirigami.Units.gridUnit * 2), y + (at ? Math.round(at.y) - Kirigami.Units.gridUnit : Kirigami.Units.gridUnit * 2), width, height] : undefined
+        selectedTabs = []
+        const w = app.newWindow({privateMode: privateMode, tabs: tabs, geometry: geometry, saved: {current: current, paneCurrent: [current, -1], groups: groups}})
+        for (const r of rows.slice().reverse()) closeTab(indexOfTab(r.id), true)
+        return w
+    }
+
+    // ---- dragging a tab away from the tab bar (TabButton's drag) ---------------
+    // Let go there, or outside the window, it gets a window of its own. While it is
+    // held there: {x, y, text}, for the card that says so.
+    property var tabTear: null
+    // (`list`: the tab's strip; `p`: the pointer, in the window; `moving`: how many tabs.)
+    function tabTearAt(list, vertical, p, moving) {
+        // (Not a window's only tabs: that would be the same window again.)
+        if (popupType || tabModel.count <= moving) return false
+        if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height) return true
+        const q = list.mapFromItem(null, p.x, p.y), far = Kirigami.Units.gridUnit * 3
+        return vertical ? q.x < -far || q.x > list.width + far : q.y < -far || q.y > list.height + far
+    }
 
     // A tab group's menu (its chip or header).
     QQC2.Menu {
@@ -1480,6 +1640,7 @@ QQC2.ApplicationWindow {
         }
         QQC2.MenuItem { text: groupMenu.info.collapsed ? "Expand Group" : "Collapse Group"; icon.name: groupMenu.info.collapsed ? "arrow-down" : "arrow-right"; onTriggered: bw.setGroupCollapsed(groupMenu.gid, !groupMenu.info.collapsed) }
         QQC2.MenuItem {
+            id: newTabInGroupItem
             text: "New Tab in Group"
             icon.name: "tab-new"
             onTriggered: {
@@ -1487,6 +1648,14 @@ QQC2.ApplicationWindow {
                 const last = bw.indexOfTab(members[members.length - 1])
                 bw.openTab(bw.app.newTabUrl(), {background: false, index: last + 1, pane: bw.paneOf(members[0]), group: groupMenu.gid}).focusLocationBar()
             }
+        }
+        // (A property: a Menu declared inside a Menu is always added to it.)
+        property SendToSessionMenu _sendMenu: SendToSessionMenu {
+            title: "Send Group to Session"
+            win: bw
+            parentMenu: groupMenu
+            after: newTabInGroupItem
+            tabs: () => bw.groupTabs(groupMenu.gid)
         }
         QQC2.MenuSeparator {}
         QQC2.MenuItem { text: "Ungroup"; icon.name: "object-ungroup"; onTriggered: bw.ungroup(groupMenu.gid) }

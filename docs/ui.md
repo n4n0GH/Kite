@@ -74,6 +74,11 @@ holds one strip per pane. The tab bar's place comes from the `tabs.position` set
 itself; with `tabs.styleDrawn`, a horizontal tab's shape comes from the application style instead
 (`StyledTab.qml`, qqc2-desktop-style's `StyleItem`), and Kite keeps its own when that isn't installed.
 
+A tab's drag is `TabButton.qml`'s `dragHandler`. Along its strip it reorders the tab. In split view,
+over the other pane's strip or page, it moves the tab there (`BrowserWindow.paneDropAt`, `dragToPane`).
+Away from the tab bar, or outside the window, it gives the tab a window of its own (`tabTearAt`,
+`moveTabsToNewWindow`): the new window opens the page again, since a view can't change windows.
+
 Each `WebTab.qml` holds the page's own overlays: the certificate warning, permission prompts,
 `AutofillPopup.qml`. Plugins put theirs in its `pageArea` (Reader View's controls).
 
@@ -95,6 +100,7 @@ separately**. A new command needs adding to each one where it belongs.
 | Back and forward history | Holding Back or Forward | `historyMenu` in `BrowserWindow.qml` |
 | Bookmark folders | Everywhere bookmarks are listed | `BookmarkFolderMenu.qml` (loads itself recursively) |
 | Containers, profiles, sessions | Submenus of the above | `ContainerMenu.qml`, `ProfileMenu.qml`, `SessionMenu.qml` |
+| Send to Session | Submenu of the tab menu and of a tab group's menu | `SendToSessionMenu.qml`, `BrowserWindow.sendTabsToSession` |
 | Extension's menu | Right-click on an extension's button | `extMenu` in `ExtensionButtons.qml` |
 | Library's lists | Right-click in the Library | `LibraryWindow.qml` |
 
@@ -141,7 +147,7 @@ settings it may not change, and plugins it may not switch, aren't listed.
 | An extension asking for permissions | `PermissionDialog.qml` |
 | HTTP and proxy login | `AuthDialog.qml` |
 | Master password | `MasterPasswordDialog.qml` |
-| Save, rename and manage sessions | `SessionDialogs.qml` |
+| Save, rename and manage sessions, name one for tabs sent to it | `SessionDialogs.qml` |
 | Customize Toolbar | `CustomizeToolbarDialog.qml` |
 | Where to save a download | `SaveDialog.qml` |
 | Print | `crates/kite/cpp/print.cpp` (Qt's own dialog) |

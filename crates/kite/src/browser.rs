@@ -559,6 +559,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "saveNamedSession"]
         fn save_named_session(self: &Browser, name: &QString, windows: &QString) -> QString;
+        /// Tabs sent to one from an open window (`SavedWindow::take_tabs`), with the
+        /// groups that come with them; a session not there is made of them.
+        #[qinvokable]
+        #[cxx_name = "addToNamedSession"]
+        fn add_to_named_session(self: &Browser, name: &QString, tabs: &QString, groups: &QString) -> QString;
         #[qinvokable]
         #[cxx_name = "renameNamedSession"]
         fn rename_named_session(self: &Browser, from: &QString, to: &QString) -> QString;
@@ -1850,6 +1855,18 @@ impl qobject::Browser {
         }
         let result = serde_json::from_str(&windows.to_string()).map_err(anyhow::Error::from).and_then(|w| named_sessions().save(&name.to_string(), w, kite_core::util::now_ms()));
         q(result.err().map(|e| e.to_string()).unwrap_or_default())
+    }
+
+    fn add_to_named_session(&self, name: &QString, tabs: &QString, groups: &QString) -> QString {
+        if app().private {
+            return q("A private Kite doesn't keep sessions.");
+        }
+        let result = (|| {
+            let tabs = serde_json::from_str(&tabs.to_string())?;
+            let groups = serde_json::from_str(&groups.to_string())?;
+            named_sessions().add_tabs(&name.to_string(), tabs, &groups, kite_core::util::now_ms())
+        })();
+        q(result.err().map(|e: anyhow::Error| e.to_string()).unwrap_or_default())
     }
 
     fn rename_named_session(&self, from: &QString, to: &QString) -> QString {

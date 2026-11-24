@@ -48,7 +48,10 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   and as a file tree in vertical lists; dragged as a whole. Ctrl/Shift+click selects
   several tabs for the tab menu.
 * **Split view:** two pages side by side, resizable, each with its own tabs (the tab bar
-  splits with them); "Open Link in New Split Tab".
+  splits with them); "Open Link in New Split Tab". A tab goes to the other side from its menu,
+  or dragged onto that side's tabs or its page.
+* **Tabs to a window of their own:** drag a tab away from the tab bar, or out of the window, and
+  let go; with it go its group or, in a tree, the tabs under it. Or "Move to New Window" in its menu.
 * **Toolbar and menus:** customizable toolbar, optional classic menu bar (Alt shows it),
   bookmarks toolbar, an extensions panel with pin/unpin.
 * **Keyboard shortcuts:** every Kite action can get its own keys (Settings → Shortcuts),
@@ -59,6 +62,8 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
   Or save the page as a PDF without printing.
 * **Sessions:** open windows and tabs saved under a name, with their groups, trees, containers and
   split view, to open beside what is open or switch to (Sessions menu, or the command palette).
+  A tab's menu sends it, or the tabs selected, to a saved session or a new one, and a group's
+  menu the whole group: they close here and open again with that session.
 * **Plugins:** optional features built into Kite, off until you want them (Settings → Plugins, or
   the command palette). So far: mouse gestures, with the button to choose and strokes of your own to record; and Vim keys,
   to scroll, follow links by typing their labels, open addresses and handle tabs from the keyboard;

@@ -102,6 +102,22 @@ function roots(rows, ids) {
     return ids.filter(id => !ancestors(rows, id).some(up => ids.includes(up)))
 }
 
+// What the tabs `ids` keep of all this when they are sent away together (to a
+// saved session): for each, in the rows' order, {id, parent, collapsed, group}.
+// `parent` counts among them (-1: none), and is the nearest ancestor that goes
+// along. A group goes along when all its tabs do; of one that stays, they are out.
+function sent(rows, ids) {
+    const tree = compute(rows)
+    const indexOf = id => rows.findIndex(r => r.id === id)
+    const going = rows.map((r, i) => i).filter(i => ids.includes(rows[i].id))
+    const whole = g => g !== "" && rows.every(r => r.group !== g || ids.includes(r.id))
+    return going.map(i => {
+        let up = tree[i].parent
+        while (up >= 0 && !ids.includes(up)) up = tree[indexOf(up)].parent
+        return {id: rows[i].id, parent: up >= 0 ? going.indexOf(indexOf(up)) : -1, collapsed: tree[i].collapsed, group: whole(rows[i].group) ? rows[i].group : ""}
+    })
+}
+
 // The ids of the tab's ancestors, nearest first.
 function ancestors(rows, id) {
     const out = []

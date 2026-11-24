@@ -76,6 +76,69 @@ pub struct SavedWindow {
     pub groups: serde_json::Map<String, serde_json::Value>,
 }
 
+impl SavedWindow {
+    /// Tabs sent here from an open window: after the tabs it has, the pinned ones
+    /// after its pinned ones. A tab's `tree_parent` counts among the tabs sent
+    /// (-1: none of them). `groups` are the groups that come with them, by the ids
+    /// the tabs name: one whose id is in use here gets another, and a tab naming
+    /// a group that didn't come is in none.
+    pub fn take_tabs(&mut self, tabs: Vec<SavedTab>, groups: &serde_json::Map<String, serde_json::Value>) {
+        let mut group_ids = std::collections::HashMap::new();
+        for t in tabs.iter().filter(|t| !t.pinned && !t.group.is_empty()) {
+            let Some(group) = groups.get(&t.group) else { continue };
+            if group_ids.contains_key(&t.group) {
+                continue;
+            }
+            let mut id = t.group.clone();
+            let mut n = 2;
+            while self.groups.contains_key(&id) {
+                id = format!("{}-{n}", t.group);
+                n += 1;
+            }
+            self.groups.insert(id.clone(), group.clone());
+            group_ids.insert(t.group.clone(), id);
+        }
+
+        // The tabs here make room for the pinned ones, and what counts them follows.
+        let pinned_here = self.tabs.iter().take_while(|t| t.pinned).count();
+        let pinned_sent = tabs.iter().filter(|t| t.pinned).count();
+        let moved = |i: i64| if i >= pinned_here as i64 { i + pinned_sent as i64 } else { i };
+        for t in &mut self.tabs {
+            t.tree_parent = moved(t.tree_parent);
+        }
+        self.current = moved(self.current as i64) as usize;
+        for c in &mut self.pane_current {
+            *c = moved(*c);
+        }
+
+        // Where each tab sent ends up.
+        let (mut next_pinned, mut next) = (pinned_here, self.tabs.len() + pinned_sent);
+        let place: Vec<usize> = tabs
+            .iter()
+            .map(|t| {
+                let at = if t.pinned { &mut next_pinned } else { &mut next };
+                *at += 1;
+                *at - 1
+            })
+            .collect();
+        let is_pinned: Vec<bool> = tabs.iter().map(|t| t.pinned).collect();
+        let parents: Vec<i64> = tabs.iter().map(|t| t.tree_parent).collect();
+        let (mut pinned, mut rest) = (Vec::new(), Vec::new());
+        for (i, mut t) in tabs.into_iter().enumerate() {
+            // (A parent is a tab above its child, and pinned tabs are in no tree or group.)
+            let parent = usize::try_from(t.tree_parent).ok().filter(|p| *p < i && !is_pinned[*p] && !t.pinned);
+            t.tree_parent = parent.map_or(-1, |p| place[p] as i64);
+            t.tree_collapsed = t.tree_collapsed && !t.pinned && parents.iter().enumerate().any(|(j, p)| *p == i as i64 && j > i && !is_pinned[j]);
+            t.group = if t.pinned { String::new() } else { group_ids.get(&t.group).cloned().unwrap_or_default() };
+            // (Split view is the window's it was in.)
+            t.pane = 0;
+            if t.pinned { pinned.push(t) } else { rest.push(t) }
+        }
+        self.tabs.splice(pinned_here..pinned_here, pinned);
+        self.tabs.extend(rest);
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionFile {
     #[serde(default)]
@@ -227,6 +290,29 @@ impl NamedSessions {
         self.store()
     }
 
+    /// Tabs sent to a session from an open window (`SavedWindow::take_tabs`): its
+    /// first window takes them. A session that isn't there is made of them.
+    pub fn add_tabs(&mut self, name: &str, tabs: Vec<SavedTab>, groups: &serde_json::Map<String, serde_json::Value>, now: i64) -> anyhow::Result<()> {
+        let name = Self::clean_name(name)?;
+        if tabs.is_empty() {
+            anyhow::bail!("There are no tabs to send.");
+        }
+        let at = match self.items.iter().position(|s| same_name(&s.name, &name)) {
+            Some(at) => at,
+            None => {
+                self.items.push(NamedSession { name, saved: now, windows: Vec::new() });
+                self.items.len() - 1
+            }
+        };
+        let session = &mut self.items[at];
+        session.saved = now;
+        if session.windows.is_empty() {
+            session.windows.push(SavedWindow::default());
+        }
+        session.windows[0].take_tabs(tabs, groups);
+        self.store()
+    }
+
     pub fn rename(&mut self, from: &str, to: &str) -> anyhow::Result<()> {
         let to = Self::clean_name(to)?;
         if !same_name(from, &to) && self.get(&to).is_some() {
@@ -311,6 +397,82 @@ mod tests {
         all.delete("three").unwrap();
         assert_eq!(all.list().len(), 1);
         assert_eq!(NamedSessions::load(path).list().len(), 1);
+    }
+
+    fn tab(url: &str) -> SavedTab {
+        SavedTab { url: url.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn tabs_sent_to_a_session_join_its_first_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.json");
+        let mut all = NamedSessions::load(path.clone());
+        all.save("Work", vec![window(&["https://a.example/", "https://b.example/"]), window(&["https://c.example/"])], 1).unwrap();
+        all.save("Other", vec![window(&["https://o.example/"])], 2).unwrap();
+        let none = serde_json::Map::new();
+        all.add_tabs("work", vec![tab("https://d.example/"), tab("https://e.example/")], &none, 3).unwrap();
+
+        let again = NamedSessions::load(path);
+        let s = again.get("Work").unwrap();
+        assert_eq!(s.windows[0].tabs.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), ["https://a.example/", "https://b.example/", "https://d.example/", "https://e.example/"]);
+        assert_eq!(s.windows[1], window(&["https://c.example/"]));
+        // It is the one changed last, and the other is as it was.
+        assert_eq!(again.list().iter().map(|s| (s.name.as_str(), s.tabs)).collect::<Vec<_>>(), [("Work", 5), ("Other", 1)]);
+    }
+
+    #[test]
+    fn tabs_sent_to_no_session_make_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut all = NamedSessions::load(dir.path().join("s.json"));
+        let none = serde_json::Map::new();
+        assert!(all.add_tabs("  ", vec![tab("https://a.example/")], &none, 1).is_err());
+        assert!(all.add_tabs("Later", vec![], &none, 1).is_err());
+        assert!(all.list().is_empty());
+        all.add_tabs(" Later ", vec![tab("https://a.example/")], &none, 1).unwrap();
+        assert_eq!(all.list(), [NamedSessionInfo { name: "Later".into(), saved: 1, windows: 1, tabs: 1 }]);
+    }
+
+    #[test]
+    fn tabs_sent_keep_their_tree_group_and_pin() {
+        // Here: a pinned tab, a tab and its child (the current one), in a group "g1".
+        let mut w = window(&["https://pin.example/", "https://a.example/", "https://b.example/"]);
+        w.tabs[0].pinned = true;
+        w.tabs[1].group = "g1".into();
+        w.tabs[2].group = "g1".into();
+        w.tabs[2].tree_parent = 1;
+        w.current = 2;
+        w.pane_current = vec![2, -1];
+        w.groups.insert("g1".into(), serde_json::json!({"name": "Here"}));
+
+        // Sent: a pinned tab, a collapsed parent with two children in a group that
+        // is also called "g1", a tab of a group that didn't come, a tab from the
+        // right pane with a collapsed mark and no children.
+        let mut sent = vec![tab("https://p.example/"), tab("https://x.example/"), tab("https://y.example/"), tab("https://z.example/"), tab("https://q.example/"), tab("https://r.example/")];
+        sent[0].pinned = true;
+        sent[0].group = "g1".into();
+        for i in 1..4 {
+            sent[i].group = "g1".into();
+        }
+        sent[1].tree_collapsed = true;
+        sent[2].tree_parent = 1;
+        sent[3].tree_parent = 2;
+        sent[4].group = "gone".into();
+        sent[5].pane = 1;
+        sent[5].tree_collapsed = true;
+        let mut groups = serde_json::Map::new();
+        groups.insert("g1".into(), serde_json::json!({"name": "Sent"}));
+        w.take_tabs(sent, &groups);
+
+        assert_eq!(w.tabs.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), ["https://pin.example/", "https://p.example/", "https://a.example/", "https://b.example/", "https://x.example/", "https://y.example/", "https://z.example/", "https://q.example/", "https://r.example/"]);
+        assert_eq!(w.tabs.iter().map(|t| t.pinned).collect::<Vec<_>>(), [true, true, false, false, false, false, false, false, false]);
+        // What was here is as it was, one further along.
+        assert_eq!((w.current, &w.pane_current, w.tabs[3].tree_parent), (3, &vec![3, -1], 2));
+        assert_eq!(w.tabs.iter().map(|t| t.group.as_str()).collect::<Vec<_>>(), ["", "", "g1", "g1", "g1-2", "g1-2", "g1-2", "", ""]);
+        assert_eq!((w.groups["g1"]["name"].as_str(), w.groups["g1-2"]["name"].as_str(), w.groups.len()), (Some("Here"), Some("Sent"), 2));
+        assert_eq!(w.tabs.iter().map(|t| t.tree_parent).collect::<Vec<_>>(), [-1, -1, -1, 2, -1, 4, 5, -1, -1]);
+        assert_eq!(w.tabs.iter().map(|t| t.tree_collapsed).collect::<Vec<_>>(), [false, false, false, false, true, false, false, false, false]);
+        assert!(w.tabs.iter().all(|t| t.pane == 0));
     }
 
     // What BrowserWindow.saveState() sends: everything it holds has to come

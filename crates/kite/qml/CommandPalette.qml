@@ -49,6 +49,8 @@ CommandBar {
             const name = s.name
             out.push({prefix: "Sessions", title: "Open " + name, icon: "document-open", detail: s.tabs + (s.tabs === 1 ? " tab" : " tabs"), run: () => app.openNamedSession(name, false)})
             out.push({prefix: "Sessions", title: "Switch to " + name, icon: "document-open", detail: "closes the windows open now", run: () => app.openNamedSession(name, true)})
+            // (The current tab, or the tabs selected with it.)
+            if (!win.privateMode && win.currentTab) out.push({prefix: "Sessions", title: "Send tab to " + name, icon: "document-send", detail: win.selectedTabs.length > 1 ? win.selectedTabs.length + " selected tabs" : "", run: () => win.sendTabsToSession(win.actionTabs(win.currentTab.tabId), name)})
         }
         const here = Browser.currentProfile()
         for (const p of JSON.parse(Browser.profiles())) {

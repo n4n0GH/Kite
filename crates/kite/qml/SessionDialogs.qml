@@ -10,24 +10,30 @@ Item {
     property var win
     readonly property var app: win.app
 
-    function save() { nameDialog.ask("", "Save Current Session", "Save") }
+    function save() { nameDialog.ask("", "Save Current Session") }
     function manage() { list.reload(); manager.open() }
+    // A new session for tabs sent to one (BrowserWindow.sendTabsToSession).
+    function sendTo(ids) { nameDialog.ask("", ids.length === 1 ? "Send Tab to New Session" : "Send " + ids.length + " Tabs to New Session", ids) }
     function describe(s) {
         const count = (n, one) => n + " " + one + (n === 1 ? "" : "s")
         return count(s.windows, "window") + ", " + count(s.tabs, "tab") + " · " + new Date(s.saved).toLocaleString(Qt.locale(), Locale.ShortFormat)
     }
 
-    // A name for a new session, or a new name for one (`renaming`).
+    // A name for a new session, or a new name for one (`renaming`). The new one
+    // holds the windows open now, or the tabs being sent to it (`sending`).
     Kirigami.PromptDialog {
         id: nameDialog
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
         property string renaming: ""
+        property var sending: null
         property var taken: []
-        // (Saving under a name in use replaces that session; renaming can't.)
+        // (Saving under a name in use replaces that session, and tabs sent to it join
+        // it; renaming can't.)
         readonly property bool exists: taken.includes(name.text.trim().toLowerCase())
-        function ask(from, heading, button) {
+        function ask(from, heading, tabs) {
             renaming = from
+            sending = tabs || null
             title = heading
             name.text = from
             taken = JSON.parse(Browser.namedSessions()).map(s => s.name.toLowerCase()).filter(n => n !== from.toLowerCase())
@@ -38,6 +44,7 @@ Item {
         function finish() {
             const text = name.text.trim()
             if (text === "" || (renaming !== "" && exists)) return
+            if (sending) { close(); dialogs.win.sendTabsToSession(sending, text); return }
             const error = renaming !== "" ? Browser.renameNamedSession(renaming, text) : dialogs.app.saveNamedSession(text)
             if (error) dialogs.win.toast(error, "dialog-error")
             else if (renaming === "") dialogs.win.toast("Saved session “" + text + "”", "document-save")
@@ -57,7 +64,7 @@ Item {
             }
             QQC2.Label {
                 visible: nameDialog.exists
-                text: nameDialog.renaming !== "" ? "There is a session with this name." : "This replaces the session with this name."
+                text: nameDialog.renaming !== "" ? "There is a session with this name." : nameDialog.sending ? "The session with this name gets them." : "This replaces the session with this name."
                 color: Kirigami.Theme.neutralTextColor
                 font: Kirigami.Theme.smallFont
             }
@@ -128,7 +135,7 @@ Item {
                         RowButton {
                             text: "Rename"
                             icon.name: "edit-rename"
-                            onClicked: nameDialog.ask(row.modelData.name, "Rename Session", "Rename")
+                            onClicked: nameDialog.ask(row.modelData.name, "Rename Session")
                         }
                         RowButton {
                             text: "Delete"

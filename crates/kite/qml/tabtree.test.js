@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const src = fs.readFileSync(__dirname + '/tabtree.js', 'utf8').replace('.pragma library', '');
-const T = new Function(src + '\nreturn {compute, parentAt, dropParent, ancestors, roots, stepTarget};')();
+const T = new Function(src + '\nreturn {compute, parentAt, dropParent, ancestors, roots, stepTarget, sent};')();
 
 // [id, parent, extras]
 const rows = list => list.map(([id, parent, more]) => Object.assign({id, parent, collapsed: false, pinned: false, pane: 0, group: ''}, more));
@@ -210,4 +210,24 @@ test('stepping stays among its siblings', () => {
   assert.deepStrictEqual(step(list, 3, -1), {to: 1});
   assert.strictEqual(step(list, 2, -1), null);
   assert.strictEqual(step(list, 3, 1), null);
+});
+
+test('tabs sent away keep their tree among themselves', () => {
+  // 1 > 2 > 3, 1 > 4, 5
+  const list = rows([[1, -1, {collapsed: true}], [2, 1], [3, 2], [4, 1], [5, -1]]);
+  const out = T.sent(list, [5, 3, 1]);
+  assert.deepStrictEqual(out.map(t => t.id), [1, 3, 5]);
+  // (3 goes under 1, the nearest of its ancestors that goes along.)
+  assert.deepStrictEqual(out.map(t => t.parent), [-1, 0, -1]);
+  assert.deepStrictEqual(out.map(t => t.collapsed), [true, false, false]);
+  // Without their parent, they are at the top.
+  assert.deepStrictEqual(T.sent(list, [2, 4]).map(t => t.parent), [-1, -1]);
+  assert.deepStrictEqual(T.sent(list, [2, 3]).map(t => t.parent), [-1, 0]);
+});
+
+test('a group goes along when all its tabs do', () => {
+  const g = {group: 'g'}, h = {group: 'h'};
+  const list = rows([[1, -1], [2, -1, g], [3, 2, g], [4, -1, h], [5, -1, h]]);
+  assert.deepStrictEqual(T.sent(list, [1, 2, 3, 4]).map(t => t.group), ['', 'g', 'g', '']);
+  assert.deepStrictEqual(T.sent(list, [3]), [{id: 3, parent: -1, collapsed: false, group: ''}]);
 });

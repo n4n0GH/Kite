@@ -25,6 +25,29 @@ Rectangle {
     implicitWidth: vertical ? Kirigami.Units.gridUnit * 14 : 0
     color: browser.privateMode ? Qt.darker(Kirigami.Theme.backgroundColor, 1.35) : Qt.darker(Kirigami.Theme.backgroundColor, 1.08)
 
+    // Where something dropped at a place on the bar goes in the list: before the
+    // tab there, or after it past its middle; at the end beside the tabs.
+    function indexAtPoint(x, y) {
+        const p = strip.mapFromItem(stripRoot, x, y)
+        if (p.x < 0 || p.y < 0 || p.x > strip.width || p.y > strip.height) return strip.count
+        const cx = p.x + strip.contentX, cy = p.y + strip.contentY
+        const i = strip.indexAt(cx, cy)
+        if (i < 0) return strip.count
+        const item = strip.itemAtIndex(i)
+        const after = stripRoot.vertical ? cy - item.y > item.height / 2 : cx - item.x > item.width / 2
+        return i + (after ? 1 : 0)
+    }
+    // Split view: a tab dragged here from the other pane's strip
+    // (BrowserWindow.paneDropAt). `scene`: a place in the window; -1 when not on this bar.
+    function dropIndexAt(scene) {
+        const p = stripRoot.mapFromItem(null, scene.x, scene.y)
+        return p.x >= 0 && p.y >= 0 && p.x < stripRoot.width && p.y < stripRoot.height ? indexAtPoint(p.x, p.y) : -1
+    }
+    Component.onCompleted: browser.tabStrips = browser.tabStrips.concat([stripRoot])
+    Component.onDestruction: if (browser) browser.tabStrips = browser.tabStrips.filter(s => s !== stripRoot)
+    // Where the marker is: a drop from outside, or that tab.
+    readonly property int markerIndex: dropArea.index >= 0 ? dropArea.index : browser.paneDrop && browser.paneDrop.strip === stripRoot ? browser.paneDrop.index : -1
+
     // Right-click on the bar (outside a tab): tab bar options.
     TapHandler {
         acceptedButtons: Qt.RightButton
@@ -59,16 +82,7 @@ Rectangle {
         // usable is dragged over the bar.
         property int index: -1
         function usable(d) { return (d.hasUrls && d.urls.length > 0) || (d.hasText && d.text.trim() !== "") }
-        function update(x, y) {
-            const p = strip.mapFromItem(dropArea, x, y)
-            if (p.x < 0 || p.y < 0 || p.x > strip.width || p.y > strip.height) { index = strip.count; return }
-            const cx = p.x + strip.contentX, cy = p.y + strip.contentY
-            const i = strip.indexAt(cx, cy)
-            if (i < 0) { index = strip.count; return }
-            const item = strip.itemAtIndex(i)
-            const after = stripRoot.vertical ? cy - item.y > item.height / 2 : cx - item.x > item.width / 2
-            index = i + (after ? 1 : 0)
-        }
+        function update(x, y) { index = stripRoot.indexAtPoint(x, y) }
         onEntered: drag => {
             if (!usable(drag)) { drag.accepted = false; index = -1; return }
             drag.accept(Qt.CopyAction)
@@ -97,14 +111,14 @@ Rectangle {
     Rectangle {
         id: dropMarker
         z: 2
-        visible: dropArea.index >= 0
+        visible: stripRoot.markerIndex >= 0
         color: Kirigami.Theme.highlightColor
         readonly property var edge: {
-            if (dropArea.index < 0) return Qt.point(0, 0)
+            if (stripRoot.markerIndex < 0) return Qt.point(0, 0)
             const n = strip.count
-            const item = n === 0 ? null : strip.itemAtIndex(Math.min(dropArea.index, n - 1))
+            const item = n === 0 ? null : strip.itemAtIndex(Math.min(stripRoot.markerIndex, n - 1))
             if (!item) return strip.mapToItem(stripRoot, 0, 0)
-            const end = dropArea.index >= n
+            const end = stripRoot.markerIndex >= n
             return stripRoot.vertical ? strip.mapToItem(stripRoot, 0, item.y - strip.contentY + (end ? item.height : 0))
                                       : strip.mapToItem(stripRoot, item.x - strip.contentX + (end ? item.width : 0), 0)
         }
