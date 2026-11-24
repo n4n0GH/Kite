@@ -1,0 +1,207 @@
+# Builds Kite as an AppImage when a release is published and attaches it to
+# the release, together with its .zsync file. The AppImage carries where its
+# releases are (LDAI_UPDATE_INFORMATION in the build script), so AppImageUpdate,
+# Gear Lever and the like find a newer Kite by themselves and fetch only what
+# changed; the .zsync file is what they read for that, so both files belong to
+# every release.
+#
+# Can also be started by hand from the Actions page. The files are then an
+# artifact of the run, with a list of what the AppImage holds beside them.
+#
+# As in flatpak.yml, what runs here is named by what it is: each action by its
+# commit (the tag it was is in the comment beside it), the container by its
+# digest. To take a newer one, look at what changed, then put its commit or
+# digest here:
+#   git ls-remote https://github.com/<owner>/<action> 'refs/tags/<tag>^{}'
+
+name: AppImage
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    # (Reads the source and no more: the release is written to by a job of its
+    # own, below, which runs nothing but GitHub's own tools.)
+    permissions:
+      contents: read
+    container:
+      # What Kite is developed on. The AppImage is made of this system's Qt,
+      # QtWebEngine and KDE libraries, so they are what it is tested with. Its
+      # C library is newer than most systems have; the AppImage brings it along
+      # for those (add_own_glibc in the build script). (The image as it was on
+      # 2026-11-24; the first step brings it to what the repository has.)
+      image: opensuse/tumbleweed@sha256:f26ddcca0da4c43ceb68118dff95ded51cde50effadbf95a8f94536920abe47d
+    env:
+      # Packman's Essentials: ffmpeg with the codecs openSUSE leaves out. See below.
+      PACKMAN: https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Tumbleweed/Essentials
+      PACKMAN_KEY: F8875B880D518B6B8C530D1345A1D0671ABD1AFB
+    steps:
+      - name: Bring the container in step with its repository
+        run: |
+          zypper --non-interactive refresh
+          # The image and the repository are not of the same day. Where the
+          # image is ahead, the packages to build with ask for older libraries
+          # than it has, and nothing can be installed. This puts what is in the
+          # image at what the repository has, older or newer.
+          zypper --non-interactive dup --allow-downgrade --no-recommends
+          zypper --non-interactive install --no-recommends curl gpg2
+
+      # QtWebEngine plays video and sound with the system's ffmpeg, which the
+      # AppImage carries. openSUSE's own leaves out codecs that are under
+      # patents; Packman's has them, and is what Kite's AppImages have always
+      # been made with. Its key is taken by its fingerprint, not as whatever
+      # the mirror hands out.
+      - name: Add Packman, for the codecs
+        run: |
+          curl -fsSL --retry 3 -o /tmp/packman.key "$PACKMAN/repodata/repomd.xml.key"
+          got=$(gpg --show-keys --with-colons /tmp/packman.key | awk -F: '$1 == "fpr" { print $10; exit }')
+          if [[ $got != "$PACKMAN_KEY" ]]; then
+            echo "Packman's key is $got, not the $PACKMAN_KEY expected here." >&2
+            exit 1
+          fi
+          rpm --import /tmp/packman.key
+          zypper --non-interactive addrepo --refresh --priority 90 "$PACKMAN/" packman-essentials
+          zypper --non-interactive refresh packman-essentials
+
+      # The build script bundles what the system has, and leaves out what it
+      # hasn't without a word: every package here is either built with or ends
+      # up in the AppImage. The second half is what the AppImage of 0.10.12,
+      # made on a desktop, drew from; "Check that nothing is missing" below
+      # holds the build to it.
+      - name: Install what Kite is built and bundled with
+        run: |
+          zypper --non-interactive install --no-recommends \
+            git tar gzip file binutils gawk findutils sed which \
+            gcc-c++ cargo rust pkgconf-pkg-config rsvg-convert desktop-file-utils \
+            wayland-devel \
+            qt6-base-devel qt6-declarative-devel qt6-quickcontrols2-devel \
+            qt6-network-devel qt6-widgets-devel qt6-printsupport-devel \
+            qt6-webenginecore-devel qt6-webchannel-devel \
+            \
+            qt6-webengine qt6-webengine-imports qt6-webchannel-imports \
+            qt6-declarative-imports qt6-translations \
+            qt6-wayland qt6-wayland-decoration-client-adwaita qt6-imageformats \
+            qt6-network-tls qt6-networkinformation-nm qt6-networkinformation-glib \
+            qt6-networkinformation-connman qt6-printsupport-cups \
+            qt6-platformtheme-gtk3 qt6-sql-sqlite libQt6Svg6 \
+            qt6-virtualkeyboard qt6-virtualkeyboard-imports qt6-pdf-imports \
+            qt6-3d-imports \
+            kf6-kirigami-imports kf6-qqc2-desktop-style qqc2-breeze-style6 \
+            breeze6-style union6 plasma6-integration-plugin \
+            libplasma6-components layer-shell-qt6 \
+            kf6-ki18n-imports kf6-kitemmodels-imports kf6-knotifications-imports \
+            kf6-sonnet-imports kf6-prison-imports kf6-bluez-qt-imports \
+            kf6-kio kf6-kwindowsystem kf6-kimageformats kf6-purpose \
+            mozilla-nss mozilla-nss-certs
+          # Packman comes first where it has a package, which is how ffmpeg gets
+          # here. Should that ever not hold, the AppImage would quietly play less.
+          if ! rpm -qa --qf '%{NAME} %{VENDOR}\n' 'libavcodec*' | grep -qi packman; then
+            echo "ffmpeg's libavcodec is not Packman's:" >&2
+            rpm -qa --qf '  %{NAME} %{VERSION} %{VENDOR}\n' 'libavcodec*' >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the AppImage
+        run: packaging/appimage/build-appimage.sh --standalone
+
+      # One of each kind of thing the script takes from the system if it is
+      # there. A package that is no longer installed, or has changed its name,
+      # ends the build here instead of in an AppImage without file dialogs.
+      - name: Check that nothing is missing
+        run: |
+          cd target/appimage/AppDir
+          missing=0
+          for path in \
+            .DirIcon \
+            usr/libexec/QtWebEngineProcess \
+            usr/resources/qtwebengine_resources.pak \
+            usr/translations/qtbase_de.qm \
+            'usr/share/icu/*/icudt*.dat' \
+            usr/share/kf6/purpose \
+            usr/glibc/libc.so.6 \
+            'usr/lib/libQt6WebEngineCore.so.*' \
+            'usr/lib/libavcodec.so.*' 'usr/lib/libx264.so.*' 'usr/lib/libx265.so.*' \
+            usr/lib/libnss3.so usr/lib/libsoftokn3.so \
+            usr/plugins/platforms/libqxcb.so usr/plugins/platforms/libqwayland.so \
+            usr/plugins/wayland-shell-integration \
+            usr/plugins/wayland-decoration-client \
+            usr/plugins/wayland-graphics-integration-client \
+            usr/plugins/platformthemes/KDEPlasmaPlatformTheme6.so \
+            usr/plugins/styles/breeze6.so \
+            usr/plugins/kf6/kirigami/platform \
+            usr/plugins/kf6/kio/kio_file.so \
+            usr/plugins/kf6/kwindowsystem/KF6WindowSystemKWaylandPlugin.so \
+            usr/plugins/kf6/purpose/clipboardplugin.so \
+            usr/plugins/printsupport usr/plugins/tls usr/plugins/imageformats \
+            usr/qml/QtWebEngine usr/qml/QtWebChannel usr/qml/QtQuick/Controls \
+            usr/qml/org/kde/kirigami usr/qml/org/kde/desktop \
+            usr/qml/org/kde/qqc2desktopstyle usr/qml/org/kde/purpose
+          do
+            # (A pattern stands for whatever it matches.)
+            if ! compgen -G "$path" > /dev/null; then
+              echo "Not in the AppImage: $path" >&2
+              missing=1
+            fi
+          done
+          exit $missing
+
+      # It starts, with the libraries it carries, where there is no FUSE.
+      - name: Start it
+        run: |
+          version=$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          said=$(APPIMAGE_EXTRACT_AND_RUN=1 timeout 300 dist/Kite-"$version"-*.AppImage --version)
+          echo "$said"
+          [[ $said == *"$version"* ]]
+
+      # For comparing one build with another: what the AppImage holds.
+      - name: List what the AppImage holds
+        run: |
+          mkdir -p listing
+          (cd target/appimage/AppDir && find . -mindepth 1 \( -type f -o -type l \) -printf '%P\n' | LC_ALL=C sort) > listing/Kite-AppImage-contents.txt
+          rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE} %{VENDOR}\n' | LC_ALL=C sort > listing/Kite-AppImage-built-with.txt
+          wc -l listing/*.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kite-appimage
+          path: |
+            dist/Kite-*.AppImage
+            dist/Kite-*.AppImage.zsync
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kite-appimage-contents
+          path: listing/
+          if-no-files-found: error
+
+  # The one job that may write to the release. It takes the files the build
+  # made and attaches them with GitHub's own command line tool, which runners
+  # come with.
+  attach:
+    name: Attach the AppImage to the release
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: kite-appimage
+      - name: Attach the AppImage and its .zsync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" Kite-*.AppImage Kite-*.AppImage.zsync --clobber --repo "$GITHUB_REPOSITORY"
