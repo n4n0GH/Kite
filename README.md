@@ -225,6 +225,13 @@ Publishing a release on GitHub runs `.github/workflows/flatpak.yml`: it builds t
 GitHub Pages, with `flatpak/make-site.sh`. The repository is signed when the secret
 `FLATPAK_GPG_PRIVATE_KEY` holds a GPG private key.
 
+It also runs `.github/workflows/appimage.yml`, which builds the AppImage with the script above in an
+openSUSE Tumbleweed container and attaches it to the release with its `.zsync` file. ffmpeg there is
+Packman's, as on the desktop the AppImages used to be made on, so that they play the same video. The
+script bundles what the system has and says nothing about what it hasn't, so the workflow looks for one
+of each kind of thing in the result, starts it, and keeps a list of the AppImage's files as an artifact
+of the run, for comparing one build with another.
+
 ## Architecture
 
 Developer documentation is in [docs/](docs/README.md): the architecture in detail, where each part
