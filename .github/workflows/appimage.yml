@@ -53,7 +53,8 @@ jobs:
           # than it has, and nothing can be installed. This puts what is in the
           # image at what the repository has, older or newer.
           zypper --non-interactive dup --allow-downgrade --no-recommends
-          zypper --non-interactive install --no-recommends curl gpg2
+          # (What the next step looks at Packman's key with.)
+          zypper --non-interactive install --no-recommends curl gpg2 gawk
 
       # QtWebEngine plays video and sound with the system's ffmpeg, which the
       # AppImage carries. openSUSE's own leaves out codecs that are under
@@ -63,7 +64,9 @@ jobs:
       - name: Add Packman, for the codecs
         run: |
           curl -fsSL --retry 3 -o /tmp/packman.key "$PACKMAN/repodata/repomd.xml.key"
-          got=$(gpg --show-keys --with-colons /tmp/packman.key | awk -F: '$1 == "fpr" { print $10; exit }')
+          # (The first fingerprint is the key's own. Everything is read: a reader
+          # that left early would end the step by the writer's failure.)
+          got=$(gpg --show-keys --with-colons /tmp/packman.key | awk -F: '$1 == "fpr" && !seen++ { print $10 }')
           if [[ $got != "$PACKMAN_KEY" ]]; then
             echo "Packman's key is $got, not the $PACKMAN_KEY expected here." >&2
             exit 1
@@ -104,9 +107,10 @@ jobs:
             mozilla-nss mozilla-nss-certs
           # Packman comes first where it has a package, which is how ffmpeg gets
           # here. Should that ever not hold, the AppImage would quietly play less.
-          if ! rpm -qa --qf '%{NAME} %{VENDOR}\n' 'libavcodec*' | grep -qi packman; then
-            echo "ffmpeg's libavcodec is not Packman's:" >&2
-            rpm -qa --qf '  %{NAME} %{VERSION} %{VENDOR}\n' 'libavcodec*' >&2
+          codecs=$(rpm -qa --qf '%{NAME} %{VERSION} %{VENDOR}\n' 'libavcodec*')
+          echo "$codecs"
+          if [[ ${codecs,,} != *packman* ]]; then
+            echo "ffmpeg's libavcodec is not Packman's." >&2
             exit 1
           fi
 
