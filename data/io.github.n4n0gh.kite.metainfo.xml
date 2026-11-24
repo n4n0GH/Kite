@@ -35,6 +35,13 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.12" date="2026-11-24">
+      <description>
+        <p>Tabs can be sent to a saved session: a tab's menu sends it, or the tabs selected, to a session or a new one, and a group's menu the whole group. They open again with that session.</p>
+        <p>Drag a tab away from the tab bar, or out of the window, and it gets a window of its own. In split view, drag a tab onto the other side's tabs or its page to move it there.</p>
+        <p>With Vim keys, f finds its links on very long pages too, where it used to say there was nothing to follow.</p>
+      </description>
+    </release>
     <release version="0.10.11" date="2026-11-22">
       <description>
         <p>A security update, from a review of Kite's own code. Updating is recommended.</p>

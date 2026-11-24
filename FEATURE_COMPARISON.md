@@ -4,7 +4,7 @@ Desktop features, compared on Linux (Kite's only platform).
 
 **Legend:** ✅ built in · ⚠️ partial, hidden or experimental, or only through an extension · ❌ no
 
-The **Kite** column reflects Kite 0.10.11 (2026-11-22).
+The **Kite** column reflects Kite 0.10.12 (2026-11-24).
 The **Chrome** and **Firefox** columns reflect their stable releases as known in mid-2026. Both
 ship changes every four weeks, so check the newest versions before relying on a single row.
 
@@ -34,6 +34,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Split view (two pages side by side) | ✅ | ✅ | ⚠️ | Recent in Chrome; Firefox's is new or in testing. |
 | Split tab bar per pane | ✅ | ❌ | ❌ | Each pane gets its own strip of tabs. |
 | "Open link in new split tab" | ✅ | ✅ | ⚠️ | |
+| Drag a tab out to a window of its own | ✅ | ✅ | ✅ | Kite opens the page again in the new window. |
 | Select several tabs (Ctrl/Shift+click) | ✅ | ✅ | ✅ | |
 | Pinned tabs | ✅ | ✅ | ✅ | |
 | Mute tab | ✅ | ✅ | ✅ | |
@@ -43,7 +44,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Tree-style nested tabs | ✅ | ❌ | ⚠️ | Kite: an option for vertical lists. Firefox: through an add-on. |
 | Drop links, images or text on the tab bar | ✅ | ✅ | ✅ | Kite also shows a hidden tab bar while dragging. |
 | Session restore | ✅ | ✅ | ✅ | Kite also keeps split view and tab groups. |
-| Named sessions | ✅ | ❌ | ❌ | Chrome and Firefox need an extension. |
+| Named sessions | ✅ | ❌ | ❌ | Chrome and Firefox need an extension. Kite also sends single tabs to a saved session. |
 | Command palette (find any action or setting by typing) | ✅ | ⚠️ | ⚠️ | Kite: also switches settings. Chrome and Firefox: some actions from the address bar. |
 | Unload inactive tabs (memory saver) | ✅ | ✅ | ✅ | Kite: after 10 minutes unseen by default (adjustable), or from the tab menu. |
 | Picture-in-picture video | ⚠️ | ✅ | ✅ | Kite: its own (address bar button, video menu, Ctrl+Shift+]); not for videos in frames, no page API. |
