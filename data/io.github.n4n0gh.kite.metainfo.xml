@@ -35,6 +35,12 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.13" date="2026-11-25">
+      <description>
+        <p>Sites behind a bot check let Kite in: xdaforums.com no longer keeps it at "Hold tight", and forbes.com shows no captcha. Kite did not tell sites which languages you read, as every browser does.</p>
+        <p>Settings → Browsing has "Languages for pages": your system's languages unless you list your own.</p>
+      </description>
+    </release>
     <release version="0.10.12" date="2026-11-24">
       <description>
         <p>Tabs can be sent to a saved session: a tab's menu sends it, or the tabs selected, to a session or a new one, and a group's menu the whole group. They open again with that session.</p>
