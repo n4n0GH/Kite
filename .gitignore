@@ -4,3 +4,4 @@ RELEASE_PREP.md
 .*.kate-swp
 .flatpak-builder/
 build-flatpak/
+AUDIT.md
