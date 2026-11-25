@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.14" date="2026-11-25">
+      <description>
+        <p>Printing works in the Flatpak. A print job ended with "Printing needs CUPS' lp command", because the Flatpak has no such command; Kite now uses the one it has.</p>
+      </description>
+    </release>
     <release version="0.10.13" date="2026-11-25">
       <description>
         <p>Sites behind a bot check let Kite in: xdaforums.com no longer keeps it at "Hold tight", and forbes.com shows no captcha. Kite did not tell sites which languages you read, as every browser does.</p>
