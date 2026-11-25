@@ -402,7 +402,7 @@ against.
   can be allowed in its details in the Extensions window. Taking that back leaves its content
   scripts in open private pages until they are reloaded, cut off from the extension.
 * Form autofill: no card autofill. In frames nested inside frames, suggestions open at the pointer.
-* Printing goes through CUPS' `lp`; a page's print button prints the whole page, also from a frame.
+* Printing goes through CUPS' `lp` (`lpr` where that is missing, as in the Flatpak); a page's print button prints the whole page, also from a frame.
 * Picture-in-picture: videos inside frames (embedded players) are not offered, and pages'
   own picture-in-picture buttons (`requestPictureInPicture()`) don't work. On Wayland its
   window only stays on top under KDE Plasma, which is asked to keep it there.

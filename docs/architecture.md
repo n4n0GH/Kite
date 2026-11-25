@@ -96,7 +96,7 @@ are a `KiteBuf`, released with `kite_buf_free`.
 |---|---|
 | `cpp/bootstrap.cpp` | Start-up, the application-wide input filter `KiteInputFilter` (Alt menu bar, mouse gestures), favicon tracking |
 | `cpp/glue.cpp` | `KiteSchemeHandler` (`kite:`, `moz-extension:`), `KiteInterceptor` (every request), cookie store hooks, DNS over HTTPS, the certificate lookup for `kite:certificate` |
-| `cpp/print.cpp` | Qt's print dialog, then CUPS through `lp` |
+| `cpp/print.cpp` | Qt's print dialog, then CUPS through `lp` or `lpr` |
 | `cpp/profiles.cpp` | The profile picker (cards, and the dialog that crops a profile's picture), and the dialog asking for the parent password |
 
 ### Web pages and the browser

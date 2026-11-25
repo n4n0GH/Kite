@@ -1,5 +1,5 @@
 // Printing: Qt's print dialog, then the page as a PDF made by Chromium for the
-// chosen paper (Main.qml), which goes to CUPS with lp. QtWebEngine's QML view
+// chosen paper (Main.qml), which goes to CUPS with lp or lpr. QtWebEngine's QML view
 // has no way to print to a printer itself; this keeps the text sharp too.
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -12,6 +12,7 @@
 #include <QPageSize>
 #include <QPrintDialog>
 #include <QSet>
+#include <QStandardPaths>
 #include <QPrinter>
 #include <QProcess>
 #include <QPointer>
@@ -122,12 +123,14 @@ extern "C" void kite_cpp_print_dialog(const char *title)
     watchPropertiesPanel(dialog);
 }
 
-// The options lp gets for the dialog's choices.
-static QStringList lpArguments(const QPrinter &printer, const QString &path)
+// The options lp gets for the dialog's choices; or lpr, which is the one CUPS
+// command Flatpak's runtime has, and names three of them differently.
+static QStringList lpArguments(const QPrinter &printer, const QString &path, bool lpr)
 {
-    QStringList args{QStringLiteral("-d"), printer.printerName(), QStringLiteral("-t"), g_title};
+    QStringList args{lpr ? QStringLiteral("-P") : QStringLiteral("-d"), printer.printerName(),
+                     lpr ? QStringLiteral("-T") : QStringLiteral("-t"), g_title};
     if (printer.copyCount() > 1) {
-        args << QStringLiteral("-n") << QString::number(printer.copyCount());
+        args << (lpr ? QStringLiteral("-#") : QStringLiteral("-n")) << QString::number(printer.copyCount());
         if (printer.collateCopies()) args << QStringLiteral("-o") << QStringLiteral("collate=true");
     }
     QStringList options;
@@ -151,8 +154,8 @@ static QStringList lpArguments(const QPrinter &printer, const QString &path)
         options.erase(std::remove_if(options.begin(), options.end(), [&](const QString &o) { return o.startsWith(name); }), options.end());
         options << name + pairs[i + 1];
     }
+    if (!printer.pageRanges().isEmpty()) options << QStringLiteral("page-ranges=%1").arg(printer.pageRanges().toString());
     for (const QString &o : options) args << QStringLiteral("-o") << o;
-    if (!printer.pageRanges().isEmpty()) args << QStringLiteral("-P") << printer.pageRanges().toString();
     args << path;
     return args;
 }
@@ -171,12 +174,13 @@ extern "C" void kite_cpp_print_submit()
         kite_print_done(ok, message.constData());
         return;
     }
+    const bool lpr = QStandardPaths::findExecutable(QStringLiteral("lp")).isEmpty();
     auto *lp = new QProcess;
     const QString printerName = g_printer->printerName();
     QObject::connect(lp, &QProcess::errorOccurred, lp, [lp](QProcess::ProcessError e) {
         if (e != QProcess::FailedToStart) return;
         finishJob();
-        kite_print_done(0, "Printing needs CUPS' lp command, which wasn't found");
+        kite_print_done(0, "Printing needs CUPS' lp or lpr command; neither was found");
         lp->deleteLater();
     });
     QObject::connect(lp, &QProcess::finished, lp, [lp, printerName](int code, QProcess::ExitStatus) {
@@ -186,7 +190,7 @@ extern "C" void kite_cpp_print_submit()
         kite_print_done(code == 0, message.constData());
         lp->deleteLater();
     });
-    lp->start(QStringLiteral("lp"), lpArguments(*g_printer, pdf));
+    lp->start(lpr ? QStringLiteral("lpr") : QStringLiteral("lp"), lpArguments(*g_printer, pdf, lpr));
 }
 
 extern "C" void kite_cpp_print_cancel()

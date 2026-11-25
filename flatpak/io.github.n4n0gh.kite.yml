@@ -51,6 +51,8 @@ finish-args:
   # portal can ask it too, but gives it 25 seconds and then opens a second one,
   # and answers nobody while it waits (crates/kite-core/src/filemanager.rs).
   - --talk-name=org.freedesktop.FileManager1
+  # Printing: the system's CUPS, also where it listens on its socket alone.
+  - --socket=cups
   # Geolocation, for pages the user allows it.
   - --system-talk-name=org.freedesktop.GeoClue2
   # Not granted, and so not available inside the sandbox: native messaging hosts
