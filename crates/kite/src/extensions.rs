@@ -413,8 +413,10 @@ impl qobject::Extensions {
         if a.shared.settings().get_bool("extensions.enabled") {
             for e in rt.registry.enabled().filter(|e| !in_private || e.runs_in_private()) {
                 let Some(token) = rt.token_of(&e.info.id) else { continue };
+                // (None: the engine has no world left for this one's scripts.)
+                let Some(world) = rt.world_of(&e.info.id) else { continue };
                 tokens.push(token.to_owned());
-                for s in scripts::content_scripts(e, token, rt.world_of(&e.info.id), &rt.dynamic_scripts(&e.info.id)) {
+                for s in scripts::content_scripts(e, token, world, &rt.dynamic_scripts(&e.info.id)) {
                     out.push(json!({"name": s.name, "sourceCode": s.source, "worldId": s.world, "runsOnSubFrames": s.all_frames, "injectionPoint": s.injection_point}));
                 }
             }

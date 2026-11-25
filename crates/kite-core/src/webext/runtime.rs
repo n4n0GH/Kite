@@ -233,6 +233,9 @@ struct QueuedCall {
 const BACKGROUND_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 const NO_RECEIVER: &str = "Could not establish connection. Receiving end does not exist.";
+/// The last of the engine's script worlds; extensions' start at 10.
+const LAST_WORLD: u32 = 255;
+const NO_WORLD: &str = "Too many extensions were loaded in this session to run another's scripts in pages; restart Kite";
 
 fn arg(args: &[Value], i: usize) -> Value {
     args.get(i).cloned().unwrap_or(Value::Null)
@@ -355,9 +358,16 @@ impl Runtime {
             self.blocking.add_token(&t, id);
             self.ext_tokens.insert(id.to_owned(), t);
         }
+        // A world of its own for its content scripts, where its token is. The engine
+        // has no more than these: an extension past the last gets none (and runs no
+        // scripts in pages) rather than another's.
         if !self.worlds.contains_key(id) {
-            self.worlds.insert(id.to_owned(), self.next_world);
-            self.next_world = (self.next_world + 1).min(255);
+            if self.next_world <= LAST_WORLD {
+                self.worlds.insert(id.to_owned(), self.next_world);
+                self.next_world += 1;
+            } else {
+                log::warn!("{id}: no world left for its content scripts; restart Kite to free those of removed extensions");
+            }
         }
         self.load_dnr(id);
     }
@@ -390,8 +400,9 @@ impl Runtime {
     pub fn token_of(&self, ext: &str) -> Option<&str> {
         self.ext_tokens.get(ext).map(String::as_str)
     }
-    pub fn world_of(&self, ext: &str) -> u32 {
-        self.worlds.get(ext).copied().unwrap_or(10)
+    /// The world the extension's content scripts run in; none if the engine's ran out.
+    pub fn world_of(&self, ext: &str) -> Option<u32> {
+        self.worlds.get(ext).copied()
     }
     pub fn ext_for_token(&self, token: &str) -> Option<&str> {
         self.tokens.get(token).map(String::as_str)
@@ -1638,7 +1649,7 @@ impl Runtime {
                 log::debug!("context {ctx} registered: {} in {} (tab {}, frame {})", info["kind"], origin.view, origin.tab_id, info["frameId"]);
                 // (A content script is one whatever it calls itself: `from_content`.)
                 let kind = if self.from_content(origin, ext_id) { "content".to_owned() } else { info["kind"].as_str().unwrap_or("content").to_owned() };
-                let url = info["url"].as_str().unwrap_or_default().to_owned();
+                let url = context_url(info["url"].as_str().unwrap_or_default(), &origin.document, kind == "content");
                 self.ctxs.insert(
                     ctx.into(),
                     Context {
@@ -2051,7 +2062,8 @@ impl Runtime {
                     "executeScript" => self.world_code(e, &src),
                     _ => Self::css_code(&src, &src, name == "removeCSS"),
                 };
-                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": self.world_of(ext_id), "code": code, "wrapResult": name == "executeScript", "allFrames": details["allFrames"], "checkedUrl": url}))
+                let Some(world) = self.world_of(ext_id) else { return now!(Err(NO_WORLD.into())) };
+                self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": world, "code": code, "wrapResult": name == "executeScript", "allFrames": details["allFrames"], "checkedUrl": url}))
             }
 
             // ---------------- scripting (MV3) ----------------
@@ -2070,6 +2082,7 @@ impl Runtime {
                     Ok(v) => v.join("\n"),
                     Err(err) => return now!(Err(err)),
                 };
+                let Some(own_world) = self.world_of(ext_id) else { return now!(Err(NO_WORLD.into())) };
                 let (code, world) = if name == "executeScript" {
                     let body = if let Some(func) = d["func"].as_str() {
                         format!("({func})(...{})", serde_json::to_string(&d["args"].as_array().cloned().unwrap_or_default()).unwrap())
@@ -2079,11 +2092,11 @@ impl Runtime {
                     if d["world"] == "MAIN" {
                         (body, 0)
                     } else {
-                        (self.world_code(e, &body), self.world_of(ext_id))
+                        (self.world_code(e, &body), own_world)
                     }
                 } else {
                     let css = d["css"].as_str().map(str::to_owned).unwrap_or(file_src);
-                    (Self::css_code(&css, &css, name == "removeCSS"), self.world_of(ext_id))
+                    (Self::css_code(&css, &css, name == "removeCSS"), own_world)
                 };
                 self.ui(origin, ctx, call_id, ext_id, "tabs.runInWorld", json!({"tabId": tab, "world": world, "code": code, "wrapResult": name == "executeScript", "scripting": true, "allFrames": d["target"]["allFrames"], "checkedUrl": url}))
             }
@@ -3018,6 +3031,22 @@ impl Runtime {
     }
 }
 
+/// The address a context goes by (`sender.url`, and `sender.origin` from it): the one
+/// it gives, as long as the document the engine has for its calls doesn't say
+/// otherwise. That one is a whole address for a page or a tab's own document and
+/// only a site for a frame, so it can't simply be used instead. Where the engine
+/// names no site (a sandboxed frame, a file), the given one stands, except that a
+/// content script is never at one of an extension's pages.
+fn context_url(given: &str, document: &str, content: bool) -> String {
+    let site = |u: &str| origin_of(u.strip_prefix("blob:").unwrap_or(u));
+    match (site(given), site(document)) {
+        (Some(g), Some(d)) if g != d => document.to_owned(),
+        (Some(_), None) if content && given.starts_with(&format!("{}:", super::SCHEME)) => document.to_owned(),
+        _ if given.is_empty() => document.to_owned(),
+        _ => given.to_owned(),
+    }
+}
+
 /// Origin as browsers report it in `MessageSender.origin`. The WHATWG URL
 /// spec gives non-special schemes (like moz-extension:) an opaque "null"
 /// origin, but Firefox reports `moz-extension://<uuid>`, and extensions such
@@ -3332,6 +3361,64 @@ mod tests {
         rt.call(&web, &tok, "cs", "_.register", json!([{"kind": "tab"}]), 9);
         let fx = rt.call(&web, &tok, "cs", "_.close", json!([]), 10);
         assert!(closes(&fx).is_none() && reply(&fx).is_err());
+    }
+
+    #[test]
+    fn a_context_is_where_the_engine_has_it() {
+        let own = "moz-extension://0a1b/popup.html";
+        // What it says, where the engine agrees or names no site.
+        assert_eq!(context_url("https://kde.org/a?b#c", "https://kde.org/", true), "https://kde.org/a?b#c");
+        assert_eq!(context_url("https://kde.org/frame.html", "https://kde.org", true), "https://kde.org/frame.html");
+        assert_eq!(context_url("https://kde.org/frame.html", "null", true), "https://kde.org/frame.html");
+        assert_eq!(context_url("about:blank", "https://kde.org", true), "about:blank");
+        assert_eq!(context_url("blob:https://kde.org/1-2", "https://kde.org", true), "blob:https://kde.org/1-2");
+        assert_eq!(context_url("file:///home/me/a.html", "file:///home/me/a.html", true), "file:///home/me/a.html");
+        assert_eq!(context_url(own, "moz-extension://0a1b", false), own);
+        assert_eq!(context_url("", own, false), own);
+        // Not another site's, and never one of the extension's pages from a content script.
+        assert_eq!(context_url("https://bank.example/", "https://evil.example/x", true), "https://evil.example/x");
+        assert_eq!(context_url(own, "https://evil.example/x", true), "https://evil.example/x");
+        assert_eq!(context_url("blob:https://bank.example/1", "https://evil.example", true), "https://evil.example");
+        assert_eq!(context_url(own, "null", true), "null");
+        assert_eq!(context_url(own, "", true), "");
+        assert_eq!(context_url("https://kde.org:8443/", "https://kde.org/", true), "https://kde.org/");
+    }
+
+    #[test]
+    fn a_content_script_cannot_pose_as_a_page_to_its_extension() {
+        let (_d, mut rt, tok) = setup();
+        let bg = page(&rt, "t@x", "bg:t@x", -1);
+        rt.call(&bg, &tok, "bg", "_.register", json!([{"kind": "background"}]), 1);
+        rt.call(&bg, &tok, "bg", "_.ready", json!([]), 1);
+        rt.call(&bg, &tok, "bg", "_.listen", json!(["runtime.onMessage", true]), 1);
+        let popup = rt.registry.get("t@x").unwrap().url("popup.html");
+        let web = Origin { view: "tab:5".into(), tab_id: 5, window_id: 1, document: "https://evil.example/page".into() };
+        rt.call(&web, &tok, "cs", "_.register", json!([{"kind": "popup", "url": popup}]), 1);
+        let fx = rt.call(&web, &tok, "cs", "runtime.sendMessage", json!([{"hello": 1}]), 2);
+        let sender = fx
+            .iter()
+            .find_map(|e| match e {
+                Effect::Deliver { payload, .. } if payload.get("sender").is_some() => Some(payload["sender"].clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("a message with its sender: {fx:?}"));
+        assert_eq!(sender["url"], "https://evil.example/page");
+        assert_eq!(sender["origin"], "https://evil.example");
+        assert_eq!(sender["envType"], "content_child");
+    }
+
+    #[test]
+    fn an_extension_past_the_last_world_gets_none() {
+        let (_d, mut rt, _tok) = setup();
+        assert_eq!(rt.world_of("t@x"), Some(10));
+        rt.next_world = LAST_WORLD;
+        rt.prepare_extension("last@x");
+        rt.prepare_extension("late@x");
+        assert_eq!(rt.world_of("last@x"), Some(LAST_WORLD));
+        assert_eq!(rt.world_of("late@x"), None);
+        // (And the first keeps its own.)
+        rt.prepare_extension("t@x");
+        assert_eq!(rt.world_of("t@x"), Some(10));
     }
 
     #[test]
