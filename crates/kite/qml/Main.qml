@@ -307,7 +307,7 @@ QtObject {
     readonly property var liveKeys: ["web.javascript", "web.autoloadImages", "web.localStorage",
         "web.spatialNavigation", "web.smoothScrolling", "web.dnsPrefetch", "web.printBackgrounds", "web.pdfViewer", "appearance.forceDarkMode",
         "appearance.showBookmarksToolbar", "appearance.showStatusBar", "appearance.showMenuBar", "toolbar.items", "extensions.enabled", "extensions.unpinned", "tabs.position", "tabs.hideWhenSingle", "tabs.fillWidth", "tabs.styleDrawn", "tabs.tree", "shortcuts", "privacy.webrtcPublicOnly", "privacy.blockPings", "privacy.privateWindowColor", "privacy.containers", "privacy.containerList", "privacy.siteCookieRules", "privacy.antiFingerprinting", "tabs.unloadInactive", "general.homepageMode", "general.newTabPageMode", "startpage.home.file", "startpage.home.copy", "startpage.newtab.file", "startpage.newtab.copy"]
-    readonly property var profileKeys: ["web.userAgent", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
+    readonly property var profileKeys: ["web.userAgent", "web.languages", "web.spellcheck", "web.spellcheckLanguages", "downloads.directory"]
     property var liveSettings: liveKeys.reduce((o, k) => { o[k] = setting(k); return o }, {})
     property Connections _settingsConn: Connections {
         target: Browser
@@ -360,6 +360,11 @@ QtObject {
         // "kite:qtwebengine" keeps it; anything else is another browser's.
         const ua = setting("web.userAgent")
         p.httpUserAgent = ua === "kite:qtwebengine" ? defaultUserAgent : ua ? ua : defaultUserAgent.replace(/ ?QtWebEngine\/[\d.]+/, "")
+        // The languages pages are asked for (Settings → Browsing). QtWebEngine sends
+        // no Accept-Language unless given one, which no browser does: sites behind a
+        // bot check (bunny.net's, on xdaforums.com) then never let Kite in. Pages
+        // read the same list as navigator.languages.
+        p.httpAcceptLanguage = Browser.acceptLanguage()
         p.downloadPath = setting("downloads.directory")
         p.spellCheckEnabled = setting("web.spellcheck")
         // (As the dictionaries are named, e.g. en_US for "en-US"; util.rs.)

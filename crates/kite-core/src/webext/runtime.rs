@@ -1873,7 +1873,8 @@ impl Runtime {
             ("extension", "isAllowedFileSchemeAccess") => now!(Ok(json!(true))),
 
             // ---------------- i18n ----------------
-            ("i18n", "getAcceptLanguages") => now!(Ok(json!([super::i18n::ui_locale().replace('_', "-"), "en"]))),
+            // (What pages are asked for too: Settings → Browsing, or the system's.)
+            ("i18n", "getAcceptLanguages") => now!(Ok(json!(crate::util::page_languages(&self.shared.settings().get_str("web.languages"))))),
             ("i18n", "detectLanguage") => now!(Ok(json!({"isReliable": false, "languages": []}))),
 
             // ---------------- storage ----------------

@@ -85,6 +85,7 @@ ship changes every four weeks, so check the newest versions before relying on a 
 | Per-site forced dark mode | ✅ | ❌ | ❌ | Chrome and Firefox: only global or through extensions. |
 | Per-site custom CSS | ✅ | ❌ | ⚠️ | Firefox: userContent.css, which isn't per site. |
 | Per-site custom JavaScript | ✅ | ❌ | ❌ | Chrome and Firefox need a userscript extension. |
+| Choose the languages pages are asked for | ✅ | ✅ | ✅ | Kite: your system's, or a list of your own in Settings. |
 
 ## Privacy and security
 

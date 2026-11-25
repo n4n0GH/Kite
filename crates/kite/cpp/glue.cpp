@@ -66,6 +66,7 @@ void kite_rpc_job_gone(quint64 job);
 KiteBuf kite_user_agent_for(const char *url);
 bool kite_do_not_track();
 bool kite_gpc();
+KiteBuf kite_accept_language();
 bool kite_send_referer();
 int kite_cookie_policy();
 int kite_cookie_rule(const char *host);
@@ -321,6 +322,20 @@ public:
         const QByteArray ini = info.initiator().toString().toUtf8();
         if (kite_do_not_track()) info.setHttpHeader("DNT", "1");
         if (kite_gpc()) info.setHttpHeader("Sec-GPC", "1");
+        // The languages pages are asked for. The profile has them too (Main.qml), but
+        // when they change while Kite runs, Qt gives the network the bare list, without
+        // the weights every browser sends ("fr-CH,fr" for "fr-CH,fr;q=0.9"), until Kite
+        // is started again. A page's own, as a script may set for its requests, stays.
+        {
+            const QByteArray languages = takeBuf(kite_accept_language());
+            if (!languages.isEmpty()) {
+                bool own = false;
+                const auto headers = info.httpHeaders();
+                for (auto it = headers.cbegin(); it != headers.cend() && !own; ++it)
+                    own = it.key().compare("accept-language", Qt::CaseInsensitive) == 0;
+                if (!own) info.setHttpHeader("Accept-Language", languages);
+            }
+        }
         // An empty Referer set here removes the request's referrer.
         if (!kite_send_referer()) info.setHttpHeader("Referer", QByteArray());
         // Make addons.mozilla.org treat Kite as Firefox.

@@ -132,6 +132,9 @@ native messaging hosts (KeePassXC's, say), importing from other browsers' profil
 * **Settings:** laid out like System Settings, with changes waiting for Apply (or Cancel) at the
   bottom; leaving a page with changes asks first. Spell checking uses the system's QtWebEngine
   dictionaries, listed in Settings → Browsing.
+* **Languages for pages:** sites are asked for pages in your system's languages, as other browsers
+  ask (`Accept-Language`, and `navigator.languages` for the page); or in the ones you list, the
+  one you'd like most first (Settings → Browsing).
 * **Crash reports:** a log of warnings and errors and a report of the last crash, kept on the
   computer (`~/.local/share/kite/logs/<profile>/`) and shown after a crash, with the system's
   backtrace from `coredumpctl` where there is one. Addresses from private windows are scrambled

@@ -68,6 +68,7 @@ pub fn defaults() -> Map<String, Value> {
         "web.printBackgrounds": true,
         "web.pdfViewer": true,                // PDF documents open in the tab; off: they download
         "web.userAgent": "",
+        "web.languages": "",                  // the languages pages are asked for ("de, en-US, en"); "" = the system's
         // Google's sign-in refuses Kite unless it appears as Firefox there.
         "web.googleSignIn": true,
         "devtools.place": "right",             // "right" | "bottom" | "window"

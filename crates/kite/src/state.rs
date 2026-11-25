@@ -213,6 +213,9 @@ pub struct Privacy {
     pub site_user_agents: std::sync::RwLock<std::collections::HashMap<String, String>>,
     /// QtWebEngine's own user agent, naming it (set from QML once known).
     pub qtwebengine_user_agent: std::sync::RwLock<String>,
+    /// The `Accept-Language` header the profiles were last given (browser.rs,
+    /// `accept_language`), for the interceptor to send as well.
+    pub accept_language: std::sync::RwLock<String>,
 }
 
 impl Privacy {

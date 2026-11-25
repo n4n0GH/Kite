@@ -339,6 +339,15 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "spellCheckLanguages"]
         fn spell_check_languages(self: &Browser) -> QString;
+        /// The `Accept-Language` header for the profiles: "web.languages", or the system's.
+        /// Asked for whenever the profiles are given it, and kept for the interceptor.
+        #[qinvokable]
+        #[cxx_name = "acceptLanguage"]
+        fn accept_language(self: &Browser) -> QString;
+        /// The system's languages as "web.languages" is written, for Settings to show.
+        #[qinvokable]
+        #[cxx_name = "systemLanguages"]
+        fn system_languages(self: &Browser) -> QString;
         /// The page script making all pages see the user agent chosen for all
         /// sites, when it's another browser's ("" = none).
         #[qinvokable]
@@ -1735,6 +1744,15 @@ impl qobject::Browser {
     fn spell_check_languages(&self) -> QString {
         let wanted: Vec<String> = serde_json::from_value(app().shared.settings().get("web.spellcheckLanguages")).unwrap_or_default();
         self.resolve_spell_languages(&q(serde_json::to_string(&wanted).unwrap_or_default()))
+    }
+    fn accept_language(&self) -> QString {
+        let languages = kite_core::util::page_languages(&app().shared.settings().get_str("web.languages"));
+        let header = kite_core::util::accept_language_header(&languages);
+        *app().privacy.accept_language.write().unwrap() = header.clone();
+        q(header)
+    }
+    fn system_languages(&self) -> QString {
+        q(kite_core::util::system_languages().join(", "))
     }
     fn global_identity_script(&self) -> QString {
         crate::ffi::global_user_agent().map(|ua| identity_script(&ua)).unwrap_or_default()

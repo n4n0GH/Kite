@@ -891,6 +891,13 @@ pub extern "C" fn kite_send_referer() -> bool {
     app().send_referer.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The `Accept-Language` header requests go out with (Settings → Browsing, "Languages
+/// for pages"), as the profiles have it.
+#[no_mangle]
+pub extern "C" fn kite_accept_language() -> KiteBuf {
+    KiteBuf::from_vec(app().privacy.accept_language.read().unwrap().clone().into_bytes())
+}
+
 /// Cookie policy ("privacy.cookies"): 0 = all, 1 = no third-party, 2 = none.
 #[no_mangle]
 pub extern "C" fn kite_cookie_policy() -> std::ffi::c_int {

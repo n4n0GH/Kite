@@ -167,6 +167,100 @@ pub fn resolve_spell_languages(wanted: &[String], available: &[String]) -> Vec<S
     out
 }
 
+/// One language as pages are asked for it ("de", "en-US", "zh-Hant-TW"), from what a
+/// person or the system writes ("en_US.UTF-8", "EN-us"). None if it isn't one.
+fn language_tag(written: &str) -> Option<String> {
+    let name = written.trim().split(['.', '@']).next().unwrap_or("").replace('_', "-");
+    let parts: Vec<&str> = name.split('-').collect();
+    let language = parts[0];
+    if !(2..=3).contains(&language.len()) || !language.chars().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    if parts[1..].iter().any(|p| p.is_empty() || p.len() > 8 || !p.chars().all(|c| c.is_ascii_alphanumeric())) {
+        return None;
+    }
+    let mut out = language.to_ascii_lowercase();
+    for part in &parts[1..] {
+        out.push('-');
+        match part.len() {
+            // A region ("US"), a script ("Hant"), anything else as it is.
+            2 => out.push_str(&part.to_ascii_uppercase()),
+            4 if part.chars().all(|c| c.is_ascii_alphabetic()) => {
+                out.push_str(&part[..1].to_ascii_uppercase());
+                out.push_str(&part[1..].to_ascii_lowercase());
+            }
+            _ => out.push_str(&part.to_ascii_lowercase()),
+        }
+    }
+    Some(out)
+}
+
+/// The languages chosen in Settings ("web.languages": "de, en-US, en"), most wanted
+/// first. What isn't a language is left out, and so is one that's there twice.
+pub fn chosen_languages(chosen: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in chosen.split([',', ';', ' ', '\n', '\t']).filter_map(language_tag) {
+        if !out.contains(&tag) {
+            out.push(tag);
+        }
+    }
+    out
+}
+
+/// The languages to ask pages for when none are chosen, as Chrome makes them up from
+/// the system's: each language as it's spoken there and on its own, then English, which
+/// most pages have. `language` is the `LANGUAGE` variable ("de:en", for people who want
+/// more than one), `locale` the system's ("de_DE.UTF-8").
+pub fn languages_from_system(language: Option<&str>, locale: &str) -> Vec<String> {
+    let mut wanted: Vec<String> = language.unwrap_or("").split(':').filter_map(language_tag).collect();
+    if wanted.is_empty() {
+        wanted.extend(language_tag(locale));
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |tag: String| {
+        if !out.contains(&tag) {
+            out.push(tag);
+        }
+    };
+    for tag in wanted {
+        let alone = tag.split('-').next().unwrap_or("").to_owned();
+        add(tag);
+        // (English alone comes last, after the English of the United States: "en-GB, en-US, en".)
+        if alone != "en" {
+            add(alone);
+        }
+    }
+    add("en-US".into());
+    add("en".into());
+    out
+}
+
+/// The system's languages (see `languages_from_system`).
+pub fn system_languages() -> Vec<String> {
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let locale = var("LC_ALL").or_else(|| var("LC_MESSAGES")).or_else(|| var("LANG")).unwrap_or_default();
+    languages_from_system(var("LANGUAGE").as_deref(), &locale)
+}
+
+/// The languages pages are asked for: those chosen, or the system's.
+pub fn page_languages(chosen: &str) -> Vec<String> {
+    let own = chosen_languages(chosen);
+    if own.is_empty() { system_languages() } else { own }
+}
+
+/// The `Accept-Language` header for these languages, written as Chrome writes it: the
+/// first as it is, each after it a tenth less wanted ("de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7").
+/// QtWebEngine sends none unless it's given one, and a request without it reads as a
+/// program's, not a browser's: sites behind a bot check then never let Kite in.
+pub fn accept_language_header(languages: &[String]) -> String {
+    languages
+        .iter()
+        .enumerate()
+        .map(|(i, tag)| if i == 0 { tag.clone() } else { format!("{tag};q=0.{}", 10usize.saturating_sub(i).max(1)) })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// A current Firefox's user agent, for the sites that only work for known browsers.
 pub const FIREFOX_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
@@ -265,6 +359,43 @@ mod spell_tests {
         }
         assert_eq!(spell_dictionaries(dir.path()), ["de_DE", "en_US"]);
         assert!(spell_dictionaries(&dir.path().join("missing")).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+
+    #[test]
+    fn the_systems_languages_are_asked_for_as_chrome_does() {
+        assert_eq!(languages_from_system(None, "en_US.UTF-8"), ["en-US", "en"]);
+        assert_eq!(languages_from_system(None, "de_DE.UTF-8"), ["de-DE", "de", "en-US", "en"]);
+        assert_eq!(languages_from_system(None, "en_GB.UTF-8"), ["en-GB", "en-US", "en"]);
+        assert_eq!(languages_from_system(None, "sr_RS@latin"), ["sr-RS", "sr", "en-US", "en"]);
+        assert_eq!(languages_from_system(Some("de:fr_CH"), "en_US.UTF-8"), ["de", "fr-CH", "fr", "en-US", "en"], "LANGUAGE comes first");
+        for none in ["", "C", "POSIX", "C.UTF-8"] {
+            assert_eq!(languages_from_system(None, none), ["en-US", "en"], "{none:?}");
+            assert_eq!(languages_from_system(Some(none), none), ["en-US", "en"], "{none:?}");
+        }
+    }
+
+    #[test]
+    fn chosen_languages_are_taken_as_written_but_only_languages() {
+        assert_eq!(chosen_languages("de, en-US, en"), ["de", "en-US", "en"]);
+        assert_eq!(chosen_languages(" DE_de;en-us  zh-hant-tw,de-DE "), ["de-DE", "en-US", "zh-Hant-TW"], "however they're written, each once");
+        assert_eq!(chosen_languages("es-419"), ["es-419"]);
+        assert!(chosen_languages("").is_empty());
+        assert!(chosen_languages("english, x, de\r\nX-Evil: 1, q=0.5, *").iter().eq(["de"].iter()), "{:?}", chosen_languages("english, x, de\r\nX-Evil: 1, q=0.5, *"));
+    }
+
+    #[test]
+    fn the_header_is_written_as_chrome_writes_it() {
+        let list = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(accept_language_header(&list(&["en-US", "en"])), "en-US,en;q=0.9");
+        assert_eq!(accept_language_header(&list(&["de-DE", "de", "en-US", "en"])), "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7");
+        let many: Vec<String> = (0..12).map(|i| format!("l{}", (b'a' + i) as char)).collect();
+        assert!(accept_language_header(&many).ends_with("li;q=0.2,lj;q=0.1,lk;q=0.1,ll;q=0.1"), "never less than a tenth");
+        assert_eq!(accept_language_header(&[]), "");
     }
 }
 

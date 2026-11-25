@@ -1009,6 +1009,16 @@ ManagerWindow {
                 onEdited: w.set("web.userAgent", value)
             }
             Hint { text: "What Kite tells sites it is. Kite's default leaves out “QtWebEngine”, which few browsers send and so would make you easier to recognise; some sites need it to work, though. Sites can also have one of their own, in Site Settings." }
+            QQC2.TextField {
+                Kirigami.FormData.label: "Languages for pages:"
+                Layout.fillWidth: true
+                Layout.maximumWidth: Kirigami.Units.gridUnit * 24
+                Accessible.name: "Languages for pages"
+                placeholderText: Browser.systemLanguages()
+                text: w.get("web.languages")
+                onEditingFinished: if (text.trim() !== w.get("web.languages")) w.set("web.languages", text.trim())
+            }
+            Hint { text: "The languages you want pages in, the one you'd like most first, as in “de, en-US, en”. Sites that come in several go by this. Empty: your system's, shown in grey." }
           }
           SectionHeader { text: "Scrolling" }
           Form {

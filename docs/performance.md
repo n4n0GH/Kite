@@ -237,8 +237,11 @@ later, they would come after the page's own.
 - **Speedometer on the new engine.** Kite scored 26.75 on QtWebEngine 6.11.2 and 25.8 on 6.140.0
   on the same day; Falkon 26.7 and 26.3 two days before, and 25.2 now. Whether the engine got
   slower or the sessions differ was not looked into.
-- **forbes.com** shows Kite a captcha where Falkon and Firefox get the page. Kite's user agent and
-  its privacy settings were ruled out as the cause.
+- **forbes.com** showed Kite a captcha where Falkon and Firefox got the page. Kite's user agent
+  and its privacy settings were ruled out as the cause. Found later, with xdaforums.com never
+  letting Kite past its check: Kite sent no `Accept-Language` header, which QtWebEngine leaves out
+  unless it is given one, and a request without it reads as a program's. Kite sends it since
+  (Settings → Browsing, "Languages for pages"), and both sites open.
 
 ## Limits
 
