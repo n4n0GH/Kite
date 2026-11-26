@@ -1292,13 +1292,55 @@ QQC2.ApplicationWindow {
 
         SideTabs { side: "left" }
 
-        Sidebar {
-            id: sidebarPanel
-            visible: bw.sidebar !== "" && !bw.contentFullScreen && !bw.bare
-            QQC2.SplitView.preferredWidth: Kirigami.Units.gridUnit * 16
-            QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 10
-            win: bw
-            mode: bw.sidebar
+        // The sidebar: slides in from the window's side when opened and out when closed,
+        // as docked developer tools do (WebTab), at the width the user last gave it.
+        Item {
+            id: sidebarSlot
+            readonly property bool wanted: bw.sidebar !== ""
+            // How much of it is in: 0 to 1.
+            property real shown: 0
+            property real savedWidth: Kirigami.Units.gridUnit * 16
+            // What it shows: also on its way out, when the window's says nothing any more.
+            property string lastMode: ""
+            readonly property string mode: wanted ? bw.sidebar : (shown > 0 ? lastMode : "")
+            // On its way out, the page beside it has the width it will end up with from the
+            // start and moves along, its far side past the pane's edge: a page growing with
+            // every frame trails a strip it hasn't drawn yet. 0: the pane's width.
+            property real heldPageWidth: 0
+            visible: shown > 0 && !bw.contentFullScreen && !bw.bare
+            clip: true
+            QQC2.SplitView.preferredWidth: savedWidth * shown
+            QQC2.SplitView.minimumWidth: wanted && !sidebarSlide.running ? Kirigami.Units.gridUnit * 10 : 0
+            // Remember the width the user drags it to.
+            onWidthChanged: if (wanted && splitView.resizing && width > 0) savedWidth = width
+            onWantedChanged: {
+                if (wanted) lastMode = bw.sidebar
+                sidebarSlide.stop()
+                heldPageWidth = 0
+                if (!visible && !wanted || sidebarSlide.duration === 0 || bw.contentFullScreen || bw.bare) { shown = wanted ? 1 : 0; return }
+                // (The slot's room and its handle's.)
+                if (!wanted) heldPageWidth = content.x + content.width - x
+                sidebarSlide.to = wanted ? 1 : 0
+                sidebarSlide.easing.type = wanted ? Easing.OutCubic : Easing.InCubic
+                sidebarSlide.start()
+            }
+            Connections { target: bw; function onSidebarChanged() { if (bw.sidebar !== "") sidebarSlot.lastMode = bw.sidebar } }
+            Component.onCompleted: if (wanted) { lastMode = bw.sidebar; shown = 1 }
+            NumberAnimation {
+                id: sidebarSlide
+                target: sidebarSlot; property: "shown"
+                duration: Kirigami.Units.longDuration
+                onRunningChanged: if (!running) sidebarSlot.heldPageWidth = 0
+            }
+            Sidebar {
+                id: sidebarPanel
+                // Whole, and at the page's edge, while the slot shows more or less of it.
+                width: sidebarSlot.shown < 1 ? sidebarSlot.savedWidth : parent.width
+                height: parent.height
+                x: parent.width - width
+                win: bw
+                mode: sidebarSlot.mode
+            }
         }
 
         // The left pane (the only one without split view).
@@ -1306,6 +1348,7 @@ QQC2.ApplicationWindow {
             id: content
             QQC2.SplitView.fillWidth: true
             QQC2.SplitView.minimumWidth: Kirigami.Units.gridUnit * 12
+            clip: sidebarSlot.heldPageWidth > 0
             // Each tab's view sits in its pane's area; each pane shows its
             // current tab. (z: under what's shown over the page, wherever it moves.)
             Component {
@@ -1315,7 +1358,7 @@ QQC2.ApplicationWindow {
                     app: bw.app
                     z: -1
                     parent: bw.paneArea(pane)
-                    width: parent ? parent.width : 0
+                    width: parent ? (parent === content && sidebarSlot.heldPageWidth > 0 ? sidebarSlot.heldPageWidth : parent.width) : 0
                     height: parent ? parent.height - (findBar.visible && findBar.parent === parent ? findBar.height : 0) : 0
                     visible: tabId === bw.paneTab[pane]
                 }
