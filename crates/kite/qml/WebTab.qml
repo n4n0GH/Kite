@@ -407,7 +407,7 @@ Item {
         if (wakeLockHeld) return "keeping the screen on"
         if (web.loading) return "loading"
         if (formDirty) return "unsent form input"
-        if (devTools.active) return "developer tools open"
+        if (devTools.active && !devToolsClosing) return "developer tools open"
         if (pinned && wt.app.setting("tabs.unloadKeepPinned")) return "pinned"
         if (url === "" || url.startsWith("kite:") || url === "about:blank" || isReader) return "browser page"
         return ""
@@ -564,6 +564,28 @@ Item {
         const least = Kirigami.Units.gridUnit * 12
         return Math.max(Math.min(least, whole / 2), Math.min(wanted, whole - least))
     }
+    // Docked tools slide in from their edge when opened, at the size they'll have (not
+    // squeezed into the growing slot: they are loading just then), the page giving way
+    // as they come, and out again when closed. How much of them is in: 0 to 1.
+    property real devToolsShown: 1
+    readonly property real devToolsShownSpace: devToolsSpace * devToolsShown
+    // Closed, and on their way out: gone when the slide ends.
+    property bool devToolsClosing: false
+    // What the page leaves them. On their way out it has its whole room back at once and
+    // they leave over it: a page growing along would trail a strip it hasn't drawn yet.
+    readonly property real devToolsPageSpace: devToolsClosing ? 0 : devToolsShownSpace
+    NumberAnimation {
+        id: devToolsSlide
+        target: wt; property: "devToolsShown"
+        duration: Kirigami.Units.longDuration
+        onFinished: if (wt.devToolsClosing) wt.devToolsGone()
+    }
+    function slideDevTools(to) {
+        devToolsSlide.stop()
+        devToolsSlide.to = to
+        devToolsSlide.easing.type = to ? Easing.OutCubic : Easing.InCubic
+        devToolsSlide.start()
+    }
     readonly property bool devToolsFocused: devTools.item !== null && devTools.item.view.activeFocus
     // A page being loaded takes the keyboard by itself, in QtWebEngine, as its view gets
     // replaced, however the load came about and before anything says it started. Typing
@@ -573,27 +595,53 @@ Item {
     property bool pageFocusAsked: false
     function devToolsFocusTaken() {
         const now = Date.now()
-        return devTools.item !== null && !pageFocusAsked && now - devToolsLostFocusAt < 100 && now - window.lastPointerPress > 500
+        return devTools.item !== null && !devToolsClosing && !pageFocusAsked && now - devToolsLostFocusAt < 100 && now - window.lastPointerPress > 500
     }
     function showDevTools() {
         if (!devTools.active) {
             devToolsPlace = app.setting("devtools.place")
             devToolsWidth = app.setting("devtools.width")
             devToolsHeight = app.setting("devtools.height")
+            devToolsShown = 0
             devTools.active = true
+            if (devToolsDocked !== "") slideDevTools(1)
+            else devToolsShown = 1
+        } else if (devToolsClosing) {
+            // Asked for again while on their way out: back in.
+            devToolsClosing = false
+            devTools.item.attach()
+            slideDevTools(1)
         }
         devTools.item.present()
     }
     function closeDevTools() {
+        if (!devTools.active || devToolsClosing) return
         const focused = devToolsFocused
-        devTools.active = false
+        if (devToolsDocked !== "" && devToolsSlide.duration > 0) {
+            devToolsClosing = true
+            // (Let go of the page first: tools attached to a page being resized have it
+            // show its size in a corner.)
+            devTools.item.detach()
+            slideDevTools(0)
+        } else {
+            devToolsGone()
+        }
         if (focused) focusPage()
     }
+    function devToolsGone() {
+        devToolsSlide.stop()
+        devToolsClosing = false
+        devTools.active = false
+        devToolsShown = 1
+    }
     function toggleDevTools() {
-        if (devTools.active) closeDevTools()
+        if (devTools.active && !devToolsClosing) closeDevTools()
         else showDevTools()
     }
     function setDevToolsPlace(place) {
+        if (devToolsClosing) return
+        devToolsSlide.stop()
+        devToolsShown = 1
         devToolsPlace = place
         Browser.setSetting("devtools.place", JSON.stringify(place))
         devTools.item.settle()
@@ -717,8 +765,8 @@ Item {
 
         Item {
             id: viewHolder
-            width: wt.devToolsDocked === "right" ? parent.width - wt.devToolsSpace : parent.width
-            height: wt.devToolsDocked === "bottom" ? parent.height - wt.devToolsSpace : parent.height
+            width: wt.devToolsDocked === "right" ? parent.width - wt.devToolsPageSpace : parent.width
+            height: wt.devToolsDocked === "bottom" ? parent.height - wt.devToolsPageSpace : parent.height
 
             Loader {
                 anchors.fill: parent
@@ -1192,8 +1240,15 @@ Item {
             visible: wt.devToolsDocked !== ""
             x: wt.devToolsDocked === "right" ? parent.width - width : 0
             y: wt.devToolsDocked === "bottom" ? parent.height - height : 0
-            width: wt.devToolsDocked === "right" ? wt.devToolsSpace : parent.width
-            height: wt.devToolsDocked === "bottom" ? wt.devToolsSpace : parent.height
+            width: wt.devToolsDocked === "right" ? wt.devToolsShownSpace : parent.width
+            height: wt.devToolsDocked === "bottom" ? wt.devToolsShownSpace : parent.height
+            clip: wt.devToolsShown < 1
+            // The tools are in here, whole, while the slot grows to show them.
+            Item {
+                id: devToolsHolder
+                width: wt.devToolsDocked === "right" ? wt.devToolsSpace : parent.width
+                height: wt.devToolsDocked === "bottom" ? wt.devToolsSpace : parent.height
+            }
             Kirigami.Separator {
                 width: wt.devToolsDocked === "right" ? implicitWidth : parent.width
                 height: wt.devToolsDocked === "right" ? parent.height : implicitHeight
@@ -1615,7 +1670,10 @@ Item {
             readonly property alias view: toolsView
             anchors.fill: parent
             // Where the tab says, which can't be a binding: the loader sets the parent too.
-            function settle() { parent = wt.devToolsPlace === "window" ? toolsWindow.contentItem : devToolsSlot }
+            function settle() { parent = wt.devToolsPlace === "window" ? toolsWindow.contentItem : devToolsHolder }
+            // (While they slide out, and should they be asked back in meanwhile.)
+            function detach() { toolsView.inspectedView = null }
+            function attach() { toolsView.inspectedView = web }
             function present() {
                 if (wt.devToolsPlace === "window") { toolsWindow.show(); toolsWindow.raise(); toolsWindow.requestActivate() }
                 toolsView.forceActiveFocus()
@@ -1688,6 +1746,13 @@ Item {
                     }
                     // (Its own close button, beside its tabs.)
                     onWindowCloseRequested: Qt.callLater(wt.closeDevTools)
+                    // The view is black until the tools have something to draw, which
+                    // would be what slides in.
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Kirigami.Theme.backgroundColor
+                        visible: toolsView.loadProgress === 0
+                    }
                 }
             }
         }
