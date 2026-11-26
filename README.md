@@ -238,7 +238,9 @@ of the run, for comparing one build with another.
 ## Architecture
 
 Developer documentation is in [docs/](docs/README.md): the architecture in detail, where each part
-of the interface is defined, and how to write and install native plugins, with an example.
+of the interface is defined, and how to write and install native plugins, with an example. For a
+short version that doesn't expect you to know Rust or QML, start with
+[Kite in plain words](docs/in-plain-words.md).
 
 ```
 crates/kite-core   pure Rust, unit-tested, no Qt

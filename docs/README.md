@@ -2,6 +2,7 @@
 
 | Read this | For |
 |---|---|
+| [in-plain-words.md](in-plain-words.md) | The short version of all of these, for readers who don't write Rust, QML or C++ every day: what the parts are, what happens when, and the words the code uses |
 | [architecture.md](architecture.md) | The core components, how Rust, C++ and QML are glued together, and how the main things flow through them |
 | [ui.md](ui.md) | Which file defines which window, menu, dialog and settings page |
 | [parental-controls.md](parental-controls.md) | Child profiles: the parent password, the lists of blocked sites, safe search, what a child's profile may do, and what none of it holds against |
