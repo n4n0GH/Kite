@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.16" date="2026-11-26">
+      <description>
+        <p>Developer tools docked beside the page slide in when you open them and out when you close them, following your system's animation speed.</p>
+      </description>
+    </release>
     <release version="0.10.15" date="2026-11-25">
       <description>
         <p>Hardening for extensions: a content script can no longer tell its extension's background page that it is the popup or another site, and extensions never share a script world.</p>
