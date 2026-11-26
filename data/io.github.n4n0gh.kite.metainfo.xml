@@ -35,6 +35,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.17" date="2026-11-26">
+      <description>
+        <p>The bookmarks and history sidebar slides in when you open it and out when you close it, like the docked developer tools, and reopens at the width you last gave it.</p>
+      </description>
+    </release>
     <release version="0.10.16" date="2026-11-26">
       <description>
         <p>Developer tools docked beside the page slide in when you open them and out when you close them, following your system's animation speed.</p>
