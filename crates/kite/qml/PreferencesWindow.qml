@@ -875,6 +875,7 @@ ManagerWindow {
                 Check { text: "Show menu bar (or tap Alt to show it briefly)"; key: "appearance.showMenuBar" }
                 QQC2.Button { text: "Customize Toolbar…"; icon.name: "configure-toolbars"; enabled: !!w.app.activeWindow; onClicked: w.app.activeWindow.customizeToolbar() }
                 Check { Kirigami.FormData.label: "Status:"; text: "Show link targets when hovering links"; key: "appearance.showStatusBar" }
+                Check { Kirigami.FormData.label: "Animations:"; text: "Slide the sidebar and docked developer tools in and out"; key: "appearance.panelAnimations" }
             }
             SectionHeader { text: "Web Content" }
             Form {

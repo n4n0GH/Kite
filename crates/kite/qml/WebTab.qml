@@ -577,7 +577,7 @@ Item {
     NumberAnimation {
         id: devToolsSlide
         target: wt; property: "devToolsShown"
-        duration: Kirigami.Units.longDuration
+        duration: wt.app.liveSettings["appearance.panelAnimations"] ? Kirigami.Units.longDuration : 0
         onFinished: if (wt.devToolsClosing) wt.devToolsGone()
     }
     function slideDevTools(to) {
@@ -604,13 +604,14 @@ Item {
             devToolsHeight = app.setting("devtools.height")
             devToolsShown = 0
             devTools.active = true
-            if (devToolsDocked !== "") slideDevTools(1)
+            if (devToolsDocked !== "" && devToolsSlide.duration > 0) slideDevTools(1)
             else devToolsShown = 1
         } else if (devToolsClosing) {
             // Asked for again while on their way out: back in.
             devToolsClosing = false
             devTools.item.attach()
-            slideDevTools(1)
+            if (devToolsSlide.duration > 0) slideDevTools(1)
+            else { devToolsSlide.stop(); devToolsShown = 1 }
         }
         devTools.item.present()
     }

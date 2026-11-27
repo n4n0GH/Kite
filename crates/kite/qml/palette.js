@@ -16,6 +16,7 @@ const TOGGLES = [
     {page: "appearance", text: "Show bookmarks toolbar", key: "appearance.showBookmarksToolbar"},
     {page: "appearance", text: "Show menu bar (or tap Alt to show it briefly)", key: "appearance.showMenuBar"},
     {page: "appearance", text: "Show link targets when hovering links", key: "appearance.showStatusBar"},
+    {page: "appearance", text: "Slide the sidebar and docked developer tools in and out", key: "appearance.panelAnimations"},
     {page: "appearance", text: "Force dark mode on websites", key: "appearance.forceDarkMode"},
     {page: "appearance", text: "Overlay scrollbars (thin, widen on hover, hide when idle)", key: "appearance.overlayScrollbars", restart: true},
     {page: "tabs", text: "Hide the tab bar when only one tab is open", key: "tabs.hideWhenSingle"},

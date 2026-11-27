@@ -1329,7 +1329,7 @@ QQC2.ApplicationWindow {
             NumberAnimation {
                 id: sidebarSlide
                 target: sidebarSlot; property: "shown"
-                duration: Kirigami.Units.longDuration
+                duration: bw.app.liveSettings["appearance.panelAnimations"] ? Kirigami.Units.longDuration : 0
                 onRunningChanged: if (!running) sidebarSlot.heldPageWidth = 0
             }
             Sidebar {

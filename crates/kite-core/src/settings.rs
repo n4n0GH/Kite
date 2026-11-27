@@ -37,6 +37,8 @@ pub fn defaults() -> Map<String, Value> {
         "appearance.showBookmarksToolbar": true,
         "appearance.showStatusBar": true,
         "appearance.showMenuBar": false,
+        // The sidebar and docked developer tools slide in and out; off, they are there or gone at once.
+        "appearance.panelAnimations": true,
         // Navigation toolbar contents, in order (Customize Toolbar…).
         "toolbar.items": ["back", "forward", "reload", "home", "urlbar", "extensions", "downloads", "menu"],
         "appearance.defaultZoom": 100,
